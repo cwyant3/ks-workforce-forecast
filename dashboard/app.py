@@ -26,6 +26,7 @@ ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT))
 
 OUTPUT_DIR = ROOT / "data" / "outputs"
+QCEW_CACHE = ROOT / "data" / "qcew_cache"
 
 # ── All US states + DC: name → 2-digit FIPS ─────────────────────────────────
 STATE_FIPS: dict[str, str] = {
@@ -124,6 +125,15 @@ def load_data(state_fips: str):
             pd.read_parquet(state_file))
 
 
+@st.cache_data(show_spinner="Loading sector data…")
+def load_sector_data(state_fips: str):
+    county_file = OUTPUT_DIR / f"sector_projections_s{state_fips}.parquet"
+    state_file  = OUTPUT_DIR / f"state_sector_projection_s{state_fips}.parquet"
+    if not county_file.exists() or not state_file.exists():
+        return None, None
+    return pd.read_parquet(county_file), pd.read_parquet(state_file)
+
+
 def data_exists(state_fips: str) -> bool:
     return all((OUTPUT_DIR / f"{stem}_s{state_fips}.{ext}").exists()
                for stem, ext in [("projections", "parquet"),
@@ -140,8 +150,44 @@ def run_forecast_for_state(state_fips: str):
         n_sim=2000,
         start_year=2026,
         end_year=2035,
+        run_sectors=False,   # cohort only; sectors run separately
     )
     st.cache_data.clear()
+
+
+def run_sector_forecast_for_state(state_fips: str):
+    """Fetch QCEW and run sector model for a state that already has cohort data."""
+    from fetch_qcew   import fetch_state_qcew
+    from sector_model import run_all_sectors
+
+    proj_file    = OUTPUT_DIR / f"projections_s{state_fips}.parquet"
+    summary_file = OUTPUT_DIR / f"county_summary_s{state_fips}.csv"
+    proj_df      = pd.read_parquet(proj_file)
+    summary      = pd.read_csv(summary_file)
+
+    county_fips3 = summary["county_fips"].astype(str).str.zfill(3).tolist()
+    county_qcew, state_qcew, state_totals = fetch_state_qcew(
+        state_fips=state_fips,
+        county_fips3_list=county_fips3,
+        cache_dir=QCEW_CACHE,
+    )
+    county_sector_df, state_sector_df = run_all_sectors(
+        county_qcew  = county_qcew,
+        state_qcew   = state_qcew,
+        state_totals = state_totals,
+        cohort_proj  = proj_df,
+        state_fips   = state_fips,
+    )
+    county_sector_df.to_parquet(
+        OUTPUT_DIR / f"sector_projections_s{state_fips}.parquet", index=False)
+    state_sector_df.to_parquet(
+        OUTPUT_DIR / f"state_sector_projection_s{state_fips}.parquet", index=False)
+    st.cache_data.clear()
+
+
+def sector_data_exists(state_fips: str) -> bool:
+    return all((OUTPUT_DIR / f"{stem}_s{state_fips}.parquet").exists()
+               for stem in ["sector_projections", "state_sector_projection"])
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -350,8 +396,8 @@ def main():
     </div>""", unsafe_allow_html=True)
 
     # ── Tabs ──────────────────────────────────────────────────────────────
-    tab_overview, tab_county, tab_table, tab_method = st.tabs(
-        ["State Overview", "County Explorer", "Data Table", "Methodology"]
+    tab_overview, tab_county, tab_sector, tab_table, tab_method = st.tabs(
+        ["State Overview", "County Explorer", "Industry Forecast", "Data Table", "Methodology"]
     )
 
     # ═════════════════════════════════════════════════════════════════════
@@ -474,8 +520,10 @@ def main():
         fig_c.update_layout(
             title=dict(text=f"{selected_county}, {selected_state} — Working-Age Population Forecast",
                        font=dict(size=15, color=C_BLUE)),
-            xaxis=dict(title="Year", tickmode="linear", dtick=1),
-            yaxis=dict(title="Working-Age Population (18–64)", tickformat=","),
+            xaxis=dict(title="Year", tickmode="linear", dtick=1,
+                       title_font=dict(color="black"), tickfont=dict(color="black")),
+            yaxis=dict(title="Working-Age Population (18–64)", tickformat=",",
+                       title_font=dict(color="black"), tickfont=dict(color="black")),
             legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1,
                         font=dict(color="black")),
             plot_bgcolor=C_LIGHT, paper_bgcolor="white",
@@ -494,6 +542,271 @@ def main():
             tbl[c] = tbl[c].map(_fmt)
         tbl["% vs 2023"] = tbl["% vs 2023"].map(lambda x: f"{x:+.1f}%")
         st.dataframe(tbl, hide_index=True, use_container_width=True)
+
+    # ═════════════════════════════════════════════════════════════════════
+    # TAB 3 — INDUSTRY FORECAST
+    # ═════════════════════════════════════════════════════════════════════
+    with tab_sector:
+        from fetch_qcew import SECTOR_COLORS, SECTORS
+
+        if not sector_data_exists(state_fips):
+            st.markdown(
+                f'<div class="generate-box">'
+                f'<h3 style="margin-top:0">Industry Forecast not yet generated</h3>'
+                f'<p>Click below to fetch BLS QCEW employment data and run the sector model.<br>'
+                f'This takes <strong>10–20 minutes</strong> on first run '
+                f'(county QCEW files are cached after that).</p>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+            col_btn2 = st.columns([1, 2, 1])[1]
+            if col_btn2.button("Generate Industry Forecast",
+                               type="primary", use_container_width=True):
+                with st.spinner("Fetching QCEW data and running sector model…"):
+                    try:
+                        run_sector_forecast_for_state(state_fips)
+                        st.success("Industry forecast complete!")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Sector forecast failed: {e}")
+        else:
+            county_sector_df, state_sector_df = load_sector_data(state_fips)
+            if county_sector_df is None:
+                st.error("Sector data files exist but could not be loaded.")
+                st.stop()
+
+            sec_start = int(county_sector_df["year"].min())
+            sec_end   = int(county_sector_df["year"].max())
+
+            # ── KPI cards per sector (state level) ───────────────────────
+            st.markdown("### State Sector Employment Outlook")
+            kpi_cols = st.columns(len(SECTORS))
+            for col, sector in zip(kpi_cols, SECTORS):
+                s_rows = state_sector_df[state_sector_df["sector"] == sector]
+                emp_base = s_rows["emp_2023"].iloc[0] if len(s_rows) else None
+                emp_end  = s_rows[s_rows["year"] == sec_end]["emp_proj"]
+                emp_end  = float(emp_end.iloc[0]) if len(emp_end) else None
+                if emp_base and emp_end:
+                    pct = (emp_end - emp_base) / emp_base * 100
+                    dlt = _delta_html(pct)
+                else:
+                    dlt = ""
+                col.markdown(
+                    metric_card(
+                        sector,
+                        _fmt(emp_end) if emp_end else "—",
+                        dlt,
+                    ),
+                    unsafe_allow_html=True,
+                )
+
+            st.markdown("<br>", unsafe_allow_html=True)
+
+            # ── State sector trend chart ──────────────────────────────────
+            fig_state_sec = go.Figure()
+            for sector in SECTORS:
+                color = SECTOR_COLORS[sector]
+                s_rows = state_sector_df[state_sector_df["sector"] == sector].sort_values("year")
+                if s_rows.empty:
+                    continue
+                # CI band
+                fig_state_sec.add_trace(go.Scatter(
+                    x=pd.concat([s_rows["year"], s_rows["year"].iloc[::-1]]),
+                    y=pd.concat([s_rows["emp_ci_hi"], s_rows["emp_ci_lo"].iloc[::-1]]),
+                    fill="toself",
+                    fillcolor=f"rgba({int(color[1:3],16)},{int(color[3:5],16)},{int(color[5:7],16)},0.12)",
+                    line=dict(color="rgba(255,255,255,0)"),
+                    name=f"{sector} 80% CI", hoverinfo="skip", showlegend=False,
+                ))
+                # Projected line (dashed)
+                fig_state_sec.add_trace(go.Scatter(
+                    x=s_rows["year"], y=s_rows["emp_proj"],
+                    mode="lines+markers",
+                    name=sector,
+                    line=dict(color=color, width=2.5, dash="dash"),
+                    marker=dict(size=5),
+                    hovertemplate=f"<b>{sector}</b> %{{x}}<br>Projected: %{{y:,.0f}}<extra></extra>",
+                ))
+
+            fig_state_sec.update_layout(
+                title=dict(
+                    text=f"{selected_state} — Sector Employment Projections {sec_start}–{sec_end}",
+                    font=dict(size=15, color=C_BLUE),
+                ),
+                xaxis=dict(title="Year", tickmode="linear", dtick=1,
+                           title_font=dict(color="black"), tickfont=dict(color="black")),
+                yaxis=dict(title="Average Annual Employment", tickformat=",",
+                           title_font=dict(color="black"), tickfont=dict(color="black")),
+                legend=dict(orientation="h", yanchor="bottom", y=1.02,
+                            xanchor="right", x=1, font=dict(color="black")),
+                plot_bgcolor=C_LIGHT, paper_bgcolor="white",
+                margin=dict(t=80, b=40, l=60, r=30), hovermode="x unified",
+            )
+            st.plotly_chart(fig_state_sec, use_container_width=True)
+
+            st.markdown("---")
+
+            # ── County sector detail ──────────────────────────────────────
+            st.markdown(f"### {selected_county} — Sector Detail")
+
+            c_sec = county_sector_df[
+                county_sector_df["county_name"] == selected_county
+            ].copy()
+
+            if c_sec.empty:
+                st.info("No sector data available for this county.")
+            else:
+                # Sector selector for detailed CI chart
+                sec_choice = st.radio(
+                    "Select sector for detailed view",
+                    SECTORS,
+                    horizontal=True,
+                )
+
+                one = c_sec[c_sec["sector"] == sec_choice].sort_values("year")
+                color_c = SECTOR_COLORS[sec_choice]
+
+                if one.empty:
+                    st.warning(f"No projection data for {sec_choice} in {selected_county}.")
+                else:
+                    method_val = one["method"].iloc[0]
+                    sig_val    = bool(one["significant"].iloc[0])
+                    note_val   = one["note"].iloc[0]
+                    emp_2023   = one["emp_2023"].iloc[0]
+                    emp_end_c  = float(one[one["year"] == sec_end]["emp_proj"].iloc[0]) \
+                                 if len(one[one["year"] == sec_end]) else None
+
+                    # Method badge
+                    method_labels = {
+                        "option_b":          ("✔ Option B — Independent OLS Trend", C_GREEN),
+                        "option_a_fallback":  ("⚠ Option A — State Share (trend not significant)", C_GOLD),
+                        "option_a":          ("ℹ Option A — State Share Model", C_NEUTRAL),
+                        "no_data":           ("✗ No Data — Estimate Only", C_RED),
+                    }
+                    badge_text, badge_color = method_labels.get(
+                        method_val, (method_val, C_NEUTRAL))
+                    st.markdown(
+                        f'<div style="background:{badge_color}18; border-left:4px solid {badge_color}; '
+                        f'padding:0.5rem 0.8rem; border-radius:0 6px 6px 0; '
+                        f'font-size:0.85rem; margin-bottom:0.5rem;">'
+                        f'<strong>{badge_text}</strong><br>'
+                        f'<span style="color:#555">{note_val}</span></div>',
+                        unsafe_allow_html=True,
+                    )
+
+                    fig_sec_c = go.Figure()
+                    # CI band
+                    fig_sec_c.add_trace(go.Scatter(
+                        x=pd.concat([one["year"], one["year"].iloc[::-1]]),
+                        y=pd.concat([one["emp_ci_hi"], one["emp_ci_lo"].iloc[::-1]]),
+                        fill="toself",
+                        fillcolor=f"rgba({int(color_c[1:3],16)},{int(color_c[3:5],16)},{int(color_c[5:7],16)},0.15)",
+                        line=dict(color="rgba(255,255,255,0)"),
+                        name="80% CI", hoverinfo="skip",
+                    ))
+                    fig_sec_c.add_trace(go.Scatter(
+                        x=one["year"], y=one["emp_proj"],
+                        mode="lines+markers",
+                        name="Projected",
+                        line=dict(color=color_c, width=2.5, dash="dash"),
+                        marker=dict(size=6),
+                        hovertemplate="<b>%{x}</b><br>Projected: %{y:,.0f}<extra></extra>",
+                    ))
+                    if emp_2023 and not pd.isna(emp_2023):
+                        fig_sec_c.add_trace(go.Scatter(
+                            x=[2023], y=[emp_2023], mode="markers",
+                            name="2023 QCEW Baseline",
+                            marker=dict(color=C_GOLD, size=12, symbol="diamond"),
+                            hovertemplate=f"<b>2023 Baseline</b><br>%{{y:,.0f}}<extra></extra>",
+                        ))
+
+                    pct_lbl = ""
+                    if emp_2023 and emp_end_c and emp_2023 > 0:
+                        pct_lbl = f" ({(emp_end_c - emp_2023) / emp_2023 * 100:+.1f}% vs 2023)"
+
+                    fig_sec_c.update_layout(
+                        title=dict(
+                            text=f"{selected_county} — {sec_choice} Employment{pct_lbl}",
+                            font=dict(size=15, color=C_BLUE),
+                        ),
+                        xaxis=dict(title="Year", tickmode="linear", dtick=1,
+                                   title_font=dict(color="black"), tickfont=dict(color="black")),
+                        yaxis=dict(title="Average Annual Employment", tickformat=",",
+                                   title_font=dict(color="black"), tickfont=dict(color="black")),
+                        legend=dict(orientation="h", yanchor="bottom", y=1.02,
+                                    xanchor="right", x=1, font=dict(color="black")),
+                        plot_bgcolor=C_LIGHT, paper_bgcolor="white",
+                        margin=dict(t=80, b=40, l=60, r=30), hovermode="x unified",
+                    )
+                    st.plotly_chart(fig_sec_c, use_container_width=True)
+
+                # ── All-sector summary table for selected county ──────────
+                st.markdown("#### All Sectors — Summary")
+                tbl_cols = st.columns(2)
+
+                # Employment table
+                with tbl_cols[0]:
+                    st.markdown("**Employment Projections**")
+                    emp_rows = []
+                    for sector in SECTORS:
+                        s_row = c_sec[c_sec["sector"] == sector]
+                        if s_row.empty:
+                            continue
+                        emp_23 = s_row["emp_2023"].iloc[0]
+                        end_row = s_row[s_row["year"] == sec_end]
+                        emp_e   = float(end_row["emp_proj"].iloc[0])  if len(end_row) else None
+                        ci_lo   = float(end_row["emp_ci_lo"].iloc[0]) if len(end_row) else None
+                        ci_hi   = float(end_row["emp_ci_hi"].iloc[0]) if len(end_row) else None
+                        meth    = s_row["method"].iloc[0]
+                        pct_chg = ((emp_e - emp_23) / emp_23 * 100
+                                   if emp_23 and emp_e and emp_23 > 0 else None)
+                        emp_rows.append({
+                            "Sector":          sector,
+                            "2023 Baseline":   _fmt(emp_23) if emp_23 else "—",
+                            f"Proj {sec_end}": _fmt(emp_e)  if emp_e  else "—",
+                            "80% CI":          (f"{_fmt(ci_lo)} – {_fmt(ci_hi)}"
+                                                if ci_lo and ci_hi else "—"),
+                            "% Change":        f"{pct_chg:+.1f}%" if pct_chg else "—",
+                            "Model":           "B" if meth == "option_b" else "A*",
+                        })
+                    st.dataframe(pd.DataFrame(emp_rows), hide_index=True,
+                                 use_container_width=True)
+                    st.caption("Model: B = independent OLS trend  |  A* = state share model")
+
+                # Wage table
+                with tbl_cols[1]:
+                    st.markdown("**Projected Avg Annual Wages**")
+                    wage_rows = []
+                    for sector in SECTORS:
+                        s_row = c_sec[c_sec["sector"] == sector]
+                        if s_row.empty:
+                            continue
+                        end_row   = s_row[s_row["year"] == sec_end]
+                        start_row = s_row[s_row["year"] == sec_start]
+                        wage_s    = float(start_row["wage_proj"].iloc[0]) if len(start_row) else None
+                        wage_e    = float(end_row["wage_proj"].iloc[0])   if len(end_row)   else None
+                        pct_w     = ((wage_e - wage_s) / wage_s * 100
+                                     if wage_s and wage_e and wage_s > 0 else None)
+                        wage_rows.append({
+                            "Sector":          sector,
+                            f"{sec_start} Proj": f"${_fmt(wage_s)}" if wage_s else "—",
+                            f"{sec_end} Proj":   f"${_fmt(wage_e)}" if wage_e else "—",
+                            "% Change":          f"{pct_w:+.1f}%"  if pct_w  else "—",
+                        })
+                    st.dataframe(pd.DataFrame(wage_rows), hide_index=True,
+                                 use_container_width=True)
+
+            # ── Download ──────────────────────────────────────────────────
+            csv_sec = c_sec.to_csv(index=False).encode("utf-8") \
+                      if not c_sec.empty else b""
+            if csv_sec:
+                st.download_button(
+                    label=f"Download {selected_county} Sector Data (CSV)",
+                    data=csv_sec,
+                    file_name=(f"{selected_county.lower().replace(' ', '_')}_"
+                               f"sector_forecast_{sec_start}_{sec_end}.csv"),
+                    mime="text/csv",
+                )
 
     # ═════════════════════════════════════════════════════════════════════
     # TAB 3 — DATA TABLE
@@ -578,6 +891,7 @@ county of **{selected_state}** from a 2023 ACS baseline through {end_year}.
 |--------|-------------|
 | U.S. Census Bureau ACS 5-Year Estimates | Age-by-sex population (Table B01001) for 2015, 2019, 2021, 2023 |
 | CDC 2021 National Life Tables | Age-specific annual survival probabilities |
+| BLS Quarterly Census of Employment & Wages (QCEW) | County annual employment and wages by NAICS sector, 2015–2023 |
 
 ### Components Modeled Each Year
 1. **Survival** — Age-specific mortality applied to each 5-year cohort (CDC 2021 life tables)
@@ -601,6 +915,30 @@ from an **AR(1) process** (φ = 0.3) reflecting migration persistence year-over-
 | 50% CI (IQR) | P25–P75 | Core range — outcomes in this band half the time |
 | 80% CI | P10–P90 | Most likely range |
 | 90% CI | P5–P95 | Near-full uncertainty envelope |
+
+### Industry Sector Forecast
+County-level employment and wage projections for five sectors using BLS QCEW 2015–2023
+annual averages. NAICS code groupings:
+
+| Sector | NAICS Codes |
+|--------|------------|
+| Healthcare | 62 — Health Care & Social Assistance |
+| Manufacturing | 31–33 — Manufacturing (incl. production workers) |
+| Hospitality & Entertainment | 71 + 72 — Arts/Recreation + Accommodation/Food Services |
+| IT/Computer Services | 51 + 54 — Information + Professional/Scientific/Technical Services |
+| Skilled Trades | 22 + 23 + 81 — Utilities + Construction/HVAC/Heavy Equipment + Auto/Diesel Repair |
+
+**Option B** (independent OLS trend) — used when 2023 county employment ≥ 2,000 AND the
+OLS slope is statistically significant (p < 0.05). Confidence intervals are 80%
+prediction intervals from the regression.
+
+**Option A** (state share model) — used when employment < 2,000, trend is not significant,
+or data is suppressed. Projects the county's historical share of state sector employment
+multiplied by the state-level OLS projection. Where no county history exists, the county's
+share of state working-age population serves as the denominator proxy.
+
+Wage projections use county-level OLS where ≥3 observations are available; fall back to
+state-level wage trend otherwise.
 
 ### Limitations
 - National survival rates used; state-specific mortality may differ

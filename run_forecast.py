@@ -31,16 +31,20 @@ def _load_env():
 
 BASE_DIR    = Path(__file__).parent
 CACHE_DIR   = BASE_DIR / "data" / "acs_cache"
+QCEW_CACHE  = BASE_DIR / "data" / "qcew_cache"
 OUTPUT_DIR  = BASE_DIR / "data" / "outputs"
 
 # Ensure the project root is importable
 sys.path.insert(0, str(BASE_DIR))
 from fetch_acs    import fetch_all
 from cohort_model import run_all_counties
+from fetch_qcew   import fetch_state_qcew
+from sector_model import run_all_sectors
 
 
 def main(state_fips: str = "20", api_key: str | None = None,
-         n_sim: int = 2000, start_year: int = 2026, end_year: int = 2035):
+         n_sim: int = 2000, start_year: int = 2026, end_year: int = 2035,
+         run_sectors: bool = True):
 
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     CACHE_DIR.mkdir(parents=True,  exist_ok=True)
@@ -78,7 +82,37 @@ def main(state_fips: str = "20", api_key: str | None = None,
     state_proj.to_parquet(state_out, index=False)
     print(f"  Saved: {state_out.name}")
 
-    # ── 5. Print quick summary ─────────────────────────────────────────────
+    # ── 5. Fetch QCEW sector data (optional) ──────────────────────────────
+    if run_sectors:
+        print("\n=== STEP 5: Fetching BLS QCEW sector data ===")
+        QCEW_CACHE.mkdir(parents=True, exist_ok=True)
+        county_fips3 = summary["county_fips"].astype(str).str.zfill(3).tolist()
+        county_qcew, state_qcew, state_totals = fetch_state_qcew(
+            state_fips=state_fips,
+            county_fips3_list=county_fips3,
+            cache_dir=QCEW_CACHE,
+        )
+        print(f"  QCEW: {len(county_qcew)} county-sector-year rows, "
+              f"{len(state_qcew)} state-sector-year rows")
+
+        # ── 6. Run sector forecast model ───────────────────────────────────
+        print("\n=== STEP 6: Running industry sector forecast model ===")
+        county_sector_df, state_sector_df = run_all_sectors(
+            county_qcew  = county_qcew,
+            state_qcew   = state_qcew,
+            state_totals = state_totals,
+            cohort_proj  = proj_df,
+            state_fips   = state_fips,
+        )
+
+        sec_county_out = OUTPUT_DIR / f"sector_projections_s{state_fips}.parquet"
+        sec_state_out  = OUTPUT_DIR / f"state_sector_projection_s{state_fips}.parquet"
+        county_sector_df.to_parquet(sec_county_out, index=False)
+        state_sector_df.to_parquet(sec_state_out,   index=False)
+        print(f"  Saved: {sec_county_out.name}")
+        print(f"  Saved: {sec_state_out.name}")
+
+    # ── 7. Print quick summary ─────────────────────────────────────────────
     _print_summary(summary, state_fips, start_year, end_year)
 
     print(f"\nAll outputs in: {OUTPUT_DIR.resolve()}")
@@ -167,8 +201,10 @@ if __name__ == "__main__":
     parser.add_argument("--state",  default="20",  help="State FIPS code (default: 20 = Kansas)")
     parser.add_argument("--key",    default=None,  help="Census API key (overrides .env)")
     parser.add_argument("--sims",   default=2000,  type=int, help="Monte Carlo simulations per county")
-    parser.add_argument("--start",  default=2026,  type=int, help="Forecast start year")
-    parser.add_argument("--end",    default=2035,  type=int, help="Forecast end year")
+    parser.add_argument("--start",       default=2026,  type=int, help="Forecast start year")
+    parser.add_argument("--end",         default=2035,  type=int, help="Forecast end year")
+    parser.add_argument("--no-sectors",  action="store_true",
+                        help="Skip QCEW fetch and sector forecast (faster for cohort-only runs)")
     args = parser.parse_args()
 
     api_key = args.key or os.environ.get("CENSUS_API_KEY")
@@ -178,4 +214,5 @@ if __name__ == "__main__":
         print("  Census API key: not set (keyless mode — rate-limited)")
 
     main(state_fips=args.state, api_key=api_key,
-         n_sim=args.sims, start_year=args.start, end_year=args.end)
+         n_sim=args.sims, start_year=args.start, end_year=args.end,
+         run_sectors=not args.no_sectors)

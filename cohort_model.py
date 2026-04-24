@@ -1,0 +1,278 @@
+"""
+cohort_model.py
+Annual cohort-component workforce projection model with Monte Carlo confidence intervals.
+
+Components modeled each year:
+  1. Survival  — age-specific annual mortality (CDC 2021 national life tables)
+  2. Aging     — fraction of each cohort advances to the next cohort
+  3. Entries   — 15-17 cohort ages into 18-24 (youth pipeline)
+  4. Retirements — 60-64 cohort ages out of workforce into 65+
+  5. Migration — net annual migration drawn from estimated county-level distribution
+
+Confidence intervals are generated via Monte Carlo simulation (default 2 000 runs)
+by sampling migration rates from the county's estimated historical distribution.
+"""
+
+import numpy as np
+import pandas as pd
+
+# ── CDC 2021 Abridged Life Tables — annual probability of surviving one year ──
+# Source: National Vital Statistics Reports, Vol 72 No 12 (Nov 2023)
+ANNUAL_SURVIVAL: dict[str, float] = {
+    "under_5":  0.99912,
+    "5_9":      0.99985,
+    "10_14":    0.99975,
+    "15_17":    0.99957,
+    "18_24":    0.99915,
+    "25_29":    0.99870,
+    "30_34":    0.99820,
+    "35_39":    0.99736,
+    "40_44":    0.99614,
+    "45_49":    0.99430,
+    "50_54":    0.99155,
+    "55_59":    0.98751,
+    "60_64":    0.98143,
+    "65_69":    0.97218,
+    "70_74":    0.95754,
+    "75_plus":  0.90000,
+}
+
+# Width of each cohort in years → fraction that ages into next cohort annually
+COHORT_WIDTH: dict[str, int] = {
+    "15_17": 3,
+    "18_24": 7,
+    "25_29": 5,
+    "30_34": 5,
+    "35_39": 5,
+    "40_44": 5,
+    "45_49": 5,
+    "50_54": 5,
+    "55_59": 5,
+    "60_64": 5,   # aging out = retirement exit
+}
+
+WORKFORCE_GROUPS = ["18_24", "25_29", "30_34", "35_39", "40_44",
+                    "45_49", "50_54", "55_59", "60_64"]
+
+
+class CountyCohortModel:
+    """
+    Cohort-component model for a single county.
+
+    Parameters
+    ----------
+    baseline : dict
+        Population counts by age group for the ACS base year (2023).
+        Expected keys: pop_15_17, pop_18_24, ..., pop_60_64
+    history : list[dict]
+        List of {year, pop_working_age} dicts from ACS historical data
+        (used to estimate net migration rate and uncertainty).
+    n_sim : int
+        Number of Monte Carlo simulations for CI estimation.
+    base_year : int
+        ACS reference year (default 2023).
+    """
+
+    def __init__(self, baseline: dict, history: list[dict],
+                 n_sim: int = 2000, base_year: int = 2023):
+        self.baseline  = baseline
+        self.n_sim     = n_sim
+        self.base_year = base_year
+        self.mig_mean, self.mig_std = self._estimate_migration(history)
+
+    # ── Migration estimation ────────────────────────────────────────────────
+
+    def _estimate_migration(self, history: list[dict]) -> tuple[float, float]:
+        """
+        Estimate annual net migration rate (as fraction of working-age pop)
+        from observed historical working-age population change.
+
+        Method: cohort-survival residual.
+        Annual change rate minus natural attrition (~−0.3 %/yr mortality net
+        of no direct births into working-age range) = migration rate.
+        """
+        if len(history) < 2:
+            return 0.0, 0.005
+
+        history_sorted = sorted(history, key=lambda x: x["year"])
+        rates = []
+        for i in range(1, len(history_sorted)):
+            p0 = history_sorted[i - 1]["pop_working_age"]
+            p1 = history_sorted[i]["pop_working_age"]
+            n  = history_sorted[i]["year"] - history_sorted[i - 1]["year"]
+            if p0 <= 0 or n <= 0:
+                continue
+            annual_growth = (p1 / p0) ** (1.0 / n) - 1.0
+            # Natural annual change for working-age pop (mortality only, ~−0.3 %)
+            # Births don't enter the working-age range within a 4-year interval
+            natural_change = -0.003
+            rates.append(annual_growth - natural_change)
+
+        if not rates:
+            return 0.0, 0.005
+
+        mean = float(np.mean(rates))
+        # Minimum std of 0.5 % to reflect irreducible uncertainty in small counties
+        std  = float(max(np.std(rates, ddof=1) if len(rates) > 1 else 0, 0.005))
+        return mean, std
+
+    # ── Cohort step ────────────────────────────────────────────────────────
+
+    def _step(self, cohorts: dict[str, float], mig_rate: float) -> dict[str, float]:
+        """Advance all cohorts by exactly one year."""
+        new: dict[str, float] = {}
+
+        # 15-17: ages in from under-15 (held approximately constant as pipeline)
+        # → simplification: hold 15-17 steady minus its own mortality
+        new["15_17"] = cohorts.get("15_17", 0) * ANNUAL_SURVIVAL["15_17"]
+
+        # 18-24 receives from 15-17
+        aging_in_18  = cohorts.get("15_17", 0) * (1.0 / COHORT_WIDTH["15_17"])
+        aging_out_18 = cohorts.get("18_24", 0) * (1.0 / COHORT_WIDTH["18_24"])
+        new["18_24"]  = (cohorts.get("18_24", 0) - aging_out_18 + aging_in_18) \
+                        * ANNUAL_SURVIVAL["18_24"]
+
+        # 25-29 through 55-59: receive aging-in from prior cohort
+        prev_seq = ["18_24", "25_29", "30_34", "35_39", "40_44", "45_49", "50_54", "55_59"]
+        curr_seq = ["25_29", "30_34", "35_39", "40_44", "45_49", "50_54", "55_59", "60_64"]
+        for prev, curr in zip(prev_seq, curr_seq):
+            aging_in  = cohorts.get(prev, 0) * (1.0 / COHORT_WIDTH[prev])
+            aging_out = cohorts.get(curr, 0) * (1.0 / COHORT_WIDTH[curr])
+            new[curr] = (cohorts.get(curr, 0) - aging_out + aging_in) \
+                        * ANNUAL_SURVIVAL[curr]
+
+        # Apply net migration proportionally across working-age cohorts
+        wf_total = sum(new.get(g, 0) for g in WORKFORCE_GROUPS)
+        if wf_total > 0:
+            migration = wf_total * mig_rate
+            for g in WORKFORCE_GROUPS:
+                share     = new.get(g, 0) / wf_total
+                new[g]    = new.get(g, 0) + migration * share
+
+        return new
+
+    # ── Projection ─────────────────────────────────────────────────────────
+
+    def project(self, start_year: int = 2026, end_year: int = 2035) -> pd.DataFrame:
+        """
+        Run Monte Carlo projection from base_year to end_year.
+
+        Returns a DataFrame with columns:
+            year, mean, p5, p10, p25, p50, p75, p90, p95,
+            retirements_annual (median), entries_annual (median)
+        """
+        years          = list(range(start_year, end_year + 1))
+        n_years        = len(years)
+        warm_up_steps  = start_year - self.base_year  # steps before reporting
+
+        sims_wf    = np.zeros((self.n_sim, n_years))
+        sims_ret   = np.zeros((self.n_sim, n_years))
+        sims_entry = np.zeros((self.n_sim, n_years))
+
+        for s in range(self.n_sim):
+            # Draw a migration rate sequence for this simulation
+            # Use a slightly auto-correlated draw (AR(1) φ=0.3) to reflect that
+            # migration conditions tend to persist year-over-year
+            phi = 0.3
+            total_steps = warm_up_steps + n_years
+            mig_shocks  = np.random.normal(0, self.mig_std, total_steps)
+            mig_rates   = np.zeros(total_steps)
+            mig_rates[0] = self.mig_mean + mig_shocks[0]
+            for t in range(1, total_steps):
+                mig_rates[t] = self.mig_mean + phi * (mig_rates[t - 1] - self.mig_mean) \
+                               + np.sqrt(1 - phi**2) * mig_shocks[t]
+
+            # Initialize cohorts from 2023 baseline
+            cohorts = {g: float(self.baseline.get(f"pop_{g}", 0))
+                       for g in ["15_17"] + WORKFORCE_GROUPS}
+
+            # Warm-up: step from base_year → start_year (not recorded)
+            for t in range(warm_up_steps):
+                cohorts = self._step(cohorts, mig_rates[t])
+
+            # Forecast window
+            for i, t in enumerate(range(warm_up_steps, warm_up_steps + n_years)):
+                cohorts = self._step(cohorts, mig_rates[t])
+
+                wf = sum(cohorts.get(g, 0) for g in WORKFORCE_GROUPS)
+                # Annual retirements = 1-yr cohort aging out of 60-64
+                retirements = cohorts.get("60_64", 0) / COHORT_WIDTH["60_64"]
+                # Annual entries = 1-yr cohort aging from 15-17 into 18-24
+                entries = cohorts.get("15_17", 0) / COHORT_WIDTH["15_17"]
+
+                sims_wf[s, i]    = wf
+                sims_ret[s, i]   = retirements
+                sims_entry[s, i] = entries
+
+        percentiles = [5, 10, 25, 50, 75, 90, 95]
+        result = pd.DataFrame({"year": years})
+        for p in percentiles:
+            result[f"p{p}"] = np.percentile(sims_wf, p, axis=0)
+        result["mean"]              = sims_wf.mean(axis=0)
+        result["retirements_p50"]   = np.percentile(sims_ret,   50, axis=0)
+        result["entries_p50"]       = np.percentile(sims_entry, 50, axis=0)
+        result["mig_mean_pct"]      = self.mig_mean * 100
+        result["mig_std_pct"]       = self.mig_std  * 100
+
+        return result
+
+    # ── Convenience ────────────────────────────────────────────────────────
+
+    @property
+    def workforce_2023(self) -> float:
+        return sum(float(self.baseline.get(f"pop_{g}", 0)) for g in WORKFORCE_GROUPS)
+
+
+def run_all_counties(acs_df: pd.DataFrame,
+                     start_year: int = 2026,
+                     end_year: int   = 2035,
+                     n_sim: int      = 2000) -> pd.DataFrame:
+    """
+    Run CountyCohortModel for every county in the ACS DataFrame.
+
+    Parameters
+    ----------
+    acs_df : DataFrame from fetch_acs.fetch_all()
+    start_year, end_year : forecast window
+    n_sim : Monte Carlo draws per county
+
+    Returns
+    -------
+    Long-format DataFrame with one row per (county, year).
+    """
+    base_year = acs_df["year"].max()
+    baseline_df = acs_df[acs_df["year"] == base_year]
+
+    counties = baseline_df["county_fips"].unique()
+    print(f"Running projections for {len(counties)} counties "
+          f"({start_year}–{end_year}, {n_sim} simulations each)…")
+
+    all_results = []
+    for i, fips in enumerate(sorted(counties)):
+        county_rows = acs_df[acs_df["county_fips"] == fips].sort_values("year")
+        county_base = baseline_df[baseline_df["county_fips"] == fips].iloc[0]
+
+        history = county_rows[["year", "pop_working_age"]].to_dict("records")
+
+        baseline_dict = county_base.to_dict()
+
+        model   = CountyCohortModel(baseline_dict, history, n_sim=n_sim, base_year=base_year)
+        proj    = model.project(start_year, end_year)
+
+        proj["county_fips"]       = fips
+        proj["county_name"]       = county_base["county_name"]
+        proj["workforce_base"]    = model.workforce_2023
+        proj["pop_total_base"]    = float(county_base.get("pop_total", 0))
+        proj["state_fips"]        = county_base.get("state", "20")
+
+        all_results.append(proj)
+
+        if (i + 1) % 20 == 0 or (i + 1) == len(counties):
+            print(f"  {i+1}/{len(counties)} counties complete")
+
+    combined = pd.concat(all_results, ignore_index=True)
+    combined["pct_change_p50"] = (
+        (combined["p50"] - combined["workforce_base"]) / combined["workforce_base"] * 100
+    ).round(2)
+
+    return combined

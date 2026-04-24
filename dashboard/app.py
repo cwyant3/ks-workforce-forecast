@@ -203,8 +203,10 @@ def ci_chart(df: pd.DataFrame, title: str,
         ))
     fig.update_layout(
         title=dict(text=title, font=dict(size=15, color=C_BLUE)),
-        xaxis=dict(title="Year", tickmode="linear", dtick=1),
-        yaxis=dict(title="Working-Age Population (18–64)", tickformat=","),
+        xaxis=dict(title="Year", tickmode="linear", dtick=1,
+                   title_font=dict(color="black"), tickfont=dict(color="black")),
+        yaxis=dict(title="Working-Age Population (18–64)", tickformat=",",
+                   title_font=dict(color="black"), tickfont=dict(color="black")),
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1,
                     font=dict(color="black")),
         plot_bgcolor=C_LIGHT, paper_bgcolor="white",

@@ -13,10 +13,21 @@ To get a free Census API key (strongly recommended for repeated runs):
 """
 
 import argparse
+import os
 import sys
 from pathlib import Path
 
 import pandas as pd
+
+# Load .env if present (never committed — see .gitignore)
+def _load_env():
+    env_file = Path(__file__).parent / ".env"
+    if env_file.exists():
+        for line in env_file.read_text().splitlines():
+            line = line.strip()
+            if line and not line.startswith("#") and "=" in line:
+                k, v = line.split("=", 1)
+                os.environ.setdefault(k.strip(), v.strip())
 
 BASE_DIR    = Path(__file__).parent
 CACHE_DIR   = BASE_DIR / "data" / "acs_cache"
@@ -150,13 +161,21 @@ def _print_summary(summary: pd.DataFrame, state_fips: str, sy: int, ey: int):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Run KS workforce cohort-component forecast")
+    _load_env()
+
+    parser = argparse.ArgumentParser(description="Run workforce cohort-component forecast")
     parser.add_argument("--state",  default="20",  help="State FIPS code (default: 20 = Kansas)")
-    parser.add_argument("--key",    default=None,  help="Census API key (optional but recommended)")
+    parser.add_argument("--key",    default=None,  help="Census API key (overrides .env)")
     parser.add_argument("--sims",   default=2000,  type=int, help="Monte Carlo simulations per county")
     parser.add_argument("--start",  default=2026,  type=int, help="Forecast start year")
     parser.add_argument("--end",    default=2035,  type=int, help="Forecast end year")
     args = parser.parse_args()
 
-    main(state_fips=args.state, api_key=args.key,
+    api_key = args.key or os.environ.get("CENSUS_API_KEY")
+    if api_key:
+        print(f"  Census API key: loaded ({'--key flag' if args.key else '.env'})")
+    else:
+        print("  Census API key: not set (keyless mode — rate-limited)")
+
+    main(state_fips=args.state, api_key=api_key,
          n_sim=args.sims, start_year=args.start, end_year=args.end)

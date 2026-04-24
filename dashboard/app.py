@@ -12,6 +12,7 @@ To share with a colleague via the web, deploy to Streamlit Community Cloud:
     3. Set the working-directory secret to include the data/outputs/ folder.
 """
 
+import os
 import sys
 from pathlib import Path
 
@@ -26,6 +27,19 @@ ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT))
 
 OUTPUT_DIR = ROOT / "data" / "outputs"
+
+# Census API key — reads from Streamlit secrets (Cloud) or .env (local)
+def _census_api_key() -> str | None:
+    try:
+        return st.secrets["CENSUS_API_KEY"]
+    except Exception:
+        pass
+    env_file = ROOT / ".env"
+    if env_file.exists():
+        for line in env_file.read_text().splitlines():
+            if line.startswith("CENSUS_API_KEY="):
+                return line.split("=", 1)[1].strip()
+    return os.environ.get("CENSUS_API_KEY")
 
 # ── Page config ─────────────────────────────────────────────────────────────
 st.set_page_config(

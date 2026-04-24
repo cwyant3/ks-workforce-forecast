@@ -232,8 +232,9 @@ def state_choropleth(summary: pd.DataFrame, state_fips: str,
             [0.65, "#9EC8B9"], [1.0, "#2E8B57"],
         ],
         zmin=-z_max, zmax=z_max,
-        colorbar=dict(title=dict(text="% Change", side="right"),
-                      tickformat="+.0f", thickness=15),
+        colorbar=dict(title=dict(text="% Change", side="right", font=dict(color="black")),
+                      tickformat="+.0f", thickness=15,
+                      tickfont=dict(color="black")),
         marker_line_color="white", marker_line_width=0.5,
     ))
     fig.update_geos(scope="usa", fitbounds="locations", visible=False)

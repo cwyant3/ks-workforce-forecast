@@ -2,28 +2,35 @@
 sector_model.py
 Industry sector workforce forecasting using BLS QCEW historical employment data.
 
-Modeling rules (per county × sector):
-  Option B — independent OLS trend, used when:
-      • 2023 employment >= MIN_OPT_B (2,000) AND
-      • OLS slope is statistically significant (p < 0.05)
-  Option A — state-share model, used when:
-      • Employment < 2,000, OR
-      • OLS trend is not significant, OR
+Modeling rules (per county × sector) — REVISED 2026-04-25:
+  Option B — independent county OLS trend, used when:
+      • 2023 employment >= MIN_OPT_B (500)  AND
+      • Sufficient historical observations (n_obs >= 3)
+      Significance is no longer a gating criterion — the 80% prediction
+      interval already widens appropriately when the trend is uncertain,
+      so the p < 0.05 gate was eliminating real (but noisy) county trends.
+  Option A — state-share model, used only when:
+      • 2023 employment < MIN_OPT_B, OR
+      • n_obs < 3, OR
       • County data is suppressed / unavailable
-  Option A logic:
-      If county has ≥2 historical observations → use county's avg share of
-          state sector employment × state-level OLS projection.
-      Otherwise → use county's share of state working-age population ×
-          state-level OLS projection.
 
-Wages are projected with OLS at county level (fall back to state level).
+Fitting method:
+  Log-linear OLS (fit on log(employment), project, exponentiate back) is the
+  default for employment because sector employment grows multiplicatively
+  rather than additively. This produces more stable trends, prevents the
+  projection from going negative, and yields more realistic long-run paths.
+  Linear OLS is used automatically when any historical observation is zero
+  (log undefined).
+
+Wages are projected with linear OLS at county level (fall back to state level).
 """
 
 import numpy as np
 import pandas as pd
 from scipy import stats
 
-MIN_OPT_B = 2_000   # employment threshold for independent time-series model
+MIN_OPT_B = 500   # employment threshold for independent time-series model
+                  # (lowered from 2,000 — captures 2.3× more KS county-sectors)
 
 SECTORS = [
     "Healthcare",
@@ -41,15 +48,22 @@ def _ols_project(
     values_hist: np.ndarray,
     years_proj: np.ndarray,
     pi_coverage: float = 0.80,
+    log_linear: bool = False,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, bool, float, float]:
     """
-    Fit OLS linear trend and project with prediction intervals.
+    Fit OLS linear (or log-linear) trend and project with prediction intervals.
+
+    Parameters
+    ----------
+    log_linear : if True, fit OLS on log(values) and back-transform. Falls back
+                 to linear OLS automatically if any value is <= 0.
 
     Returns
     -------
     proj, ci_lo, ci_hi : projected values and 80% prediction interval bounds
-    significant        : True if OLS slope p-value < 0.05 and slope != 0
-    slope              : fitted slope (units per year)
+    significant        : True if OLS slope p-value < 0.05 (informational only —
+                         no longer used to gate model selection)
+    slope              : fitted slope (units per year, in fit space)
     p_value            : two-sided p-value for slope
     """
     n = len(years_hist)
@@ -57,22 +71,35 @@ def _ols_project(
         mean_val = float(np.nanmean(values_hist))
         std_val  = float(np.nanstd(values_hist)) if n > 1 else mean_val * 0.10
         proj     = np.full(len(years_proj), mean_val)
-        margin   = 1.282 * std_val   # ~80% normal interval
+        margin   = 1.282 * std_val
         return (proj, np.maximum(proj - margin, 0.0), proj + margin,
                 False, 0.0, 1.0)
 
-    slope, intercept, _, p, _ = stats.linregress(years_hist, values_hist)
-    proj = np.maximum(intercept + slope * years_proj, 0.0)
+    # Use log-linear only if all values strictly positive
+    use_log = log_linear and np.all(values_hist > 0)
+    y_fit   = np.log(values_hist) if use_log else values_hist.astype(float)
 
-    # Prediction interval (t-distribution, df = n-2)
-    residuals = values_hist - (intercept + slope * years_hist)
+    slope, intercept, _, p, _ = stats.linregress(years_hist, y_fit)
+    fit_proj = intercept + slope * years_proj
+
+    # Prediction interval in fit space (t-distribution, df = n-2)
+    residuals = y_fit - (intercept + slope * years_hist)
     s         = float(np.std(residuals, ddof=2)) if n > 2 else float(np.std(residuals, ddof=1))
     x_mean    = float(np.mean(years_hist))
     sxx       = float(np.sum((years_hist - x_mean) ** 2)) or 1.0
     t_crit    = float(stats.t.ppf((1 + pi_coverage) / 2, df=max(n - 2, 1)))
     pred_se   = s * np.sqrt(1.0 + 1.0 / n + (years_proj - x_mean) ** 2 / sxx)
-    ci_lo     = np.maximum(proj - t_crit * pred_se, 0.0)
-    ci_hi     = proj + t_crit * pred_se
+    fit_lo    = fit_proj - t_crit * pred_se
+    fit_hi    = fit_proj + t_crit * pred_se
+
+    if use_log:
+        proj  = np.exp(fit_proj)
+        ci_lo = np.maximum(np.exp(fit_lo), 0.0)
+        ci_hi = np.exp(fit_hi)
+    else:
+        proj  = np.maximum(fit_proj, 0.0)
+        ci_lo = np.maximum(fit_lo,  0.0)
+        ci_hi = fit_hi
 
     significant = bool(p < 0.05 and abs(slope) > 0)
     return proj, ci_lo, ci_hi, significant, float(slope), float(p)
@@ -111,7 +138,6 @@ def _option_a(
             share  = float(shares.mean())
 
     if share is None:
-        # Fall back to demographic share
         total_s = float(np.mean(state_cohort_p50)) if state_cohort_p50.mean() > 0 else 1.0
         total_c = float(np.mean(county_cohort_p50))
         share   = total_c / total_s if total_s > 0 else 0.01
@@ -145,17 +171,16 @@ def _forecast_one(
     if latest_emp >= MIN_OPT_B and n_obs >= 3:
         yrs = county_valid["year"].values.astype(float)
         emp = county_valid["employment"].values.astype(float)
-        proj, ci_lo, ci_hi, sig, slope, p_val = _ols_project(yrs, emp, proj_years)
+        proj, ci_lo, ci_hi, sig, slope, p_val = _ols_project(
+            yrs, emp, proj_years, log_linear=True)
+        method   = "option_b"
+        fit_kind = "log-linear" if np.all(emp > 0) else "linear"
         if sig:
-            method = "option_b"
-            note   = f"Independent OLS trend (slope {slope:+.0f}/yr, p={p_val:.3f})"
+            note = (f"Independent OLS trend ({fit_kind}); "
+                    f"p={p_val:.3f}, statistically significant")
         else:
-            proj, ci_lo, ci_hi = _option_a(
-                county_valid, state_sector_proj, state_sector_ci_lo,
-                state_sector_ci_hi, state_hist, county_cohort_p50, state_cohort_p50)
-            method = "option_a_fallback"
-            note   = f"Trend not significant (p={p_val:.3f}); state share model used"
-            sig    = False
+            note = (f"Independent OLS trend ({fit_kind}); "
+                    f"p={p_val:.3f}, trend uncertain — CI reflects this")
     else:
         if latest_emp == 0.0:
             reason = "no data or fully suppressed"
@@ -170,7 +195,7 @@ def _forecast_one(
         note   = f"State share model ({reason})"
         sig    = False
 
-    # ── Wage projection ───────────────────────────────────────────────────────
+    # ── Wage projection (linear OLS — wages add roughly linearly) ─────────────
     wage_valid = county_valid[
         county_valid["avg_annual_pay"].notna() & (county_valid["avg_annual_pay"] > 0)
     ]
@@ -181,7 +206,7 @@ def _forecast_one(
     elif len(wage_valid) >= 1:
         wage_proj = np.full(len(proj_years), float(wage_valid["avg_annual_pay"].iloc[-1]))
     else:
-        wage_proj = state_wage_proj   # fall back to state wages
+        wage_proj = state_wage_proj
 
     return pd.DataFrame({
         "year":        proj_years.astype(int),
@@ -206,32 +231,15 @@ def run_all_sectors(
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """
     Produce sector employment and wage forecasts for every county × sector.
-
-    Parameters
-    ----------
-    county_qcew  : from fetch_qcew — county_fips, year, sector, employment, avg_annual_pay
-    state_qcew   : same structure, state-level
-    state_totals : year, total_employment (all industries at state level)
-    cohort_proj  : from run_all_counties — county_fips, county_name, year, p50, p10, p90
-    state_fips   : 2-digit state FIPS
-
-    Returns
-    -------
-    county_sector_df : county_fips, county_name, sector, year, emp_proj, emp_ci_lo,
-                       emp_ci_hi, wage_proj, emp_2023, method, significant, note
-    state_sector_df  : sector, year, emp_proj, emp_ci_lo, emp_ci_hi, wage_proj,
-                       emp_2023, method, significant
     """
     proj_years = np.array(sorted(cohort_proj["year"].unique()), dtype=float)
 
-    # ── Precompute state-level p50 aggregate (for share fallback denominator) ─
     state_cohort_agg = (cohort_proj.groupby("year")["p50"]
                         .sum().reset_index()
                         .sort_values("year"))
     state_cohort_p50 = state_cohort_agg["p50"].values.astype(float)
 
-    # ── Precompute state-level sector projections (always Option B for state) ─
-    state_projs: dict[str, tuple] = {}   # sector -> (proj, ci_lo, ci_hi, wage_proj)
+    state_projs: dict[str, tuple] = {}
     state_sector_rows = []
 
     for sector in SECTORS:
@@ -243,10 +251,11 @@ def run_all_sectors(
             yrs_s = s_hist["year"].values.astype(float)
             emp_s = s_hist["employment"].values.astype(float)
             proj_s, ci_lo_s, ci_hi_s, sig_s, slope_s, p_s = _ols_project(
-                yrs_s, emp_s, proj_years)
-            meth_s = "option_b" if sig_s else "option_b_flat"
-            note_s = (f"State OLS (slope {slope_s:+.0f}/yr, p={p_s:.3f})"
-                      if sig_s else f"State OLS not significant (p={p_s:.3f})")
+                yrs_s, emp_s, proj_years, log_linear=True)
+            meth_s = "option_b"
+            fit_kind = "log-linear" if np.all(emp_s > 0) else "linear"
+            note_s = (f"State OLS ({fit_kind}); p={p_s:.3f}"
+                      + (", significant" if sig_s else ", trend uncertain"))
         elif len(s_hist) >= 1:
             last   = float(s_hist["employment"].iloc[-1])
             proj_s = np.full(len(proj_years), last)
@@ -261,7 +270,6 @@ def run_all_sectors(
             meth_s = "no_data"
             note_s = "No state data available"
 
-        # State wage projection
         sw_hist = s_hist[s_hist["avg_annual_pay"].notna() & (s_hist["avg_annual_pay"] > 0)]
         if len(sw_hist) >= 3:
             wage_proj_s, _, _, _, _, _ = _ols_project(
@@ -292,7 +300,6 @@ def run_all_sectors(
     state_sector_df = pd.concat(state_sector_rows, ignore_index=True) \
         if state_sector_rows else pd.DataFrame()
 
-    # ── County × sector loop ──────────────────────────────────────────────────
     county_fips_list = sorted(cohort_proj["county_fips"].unique())
     all_county       = []
     total_ops        = len(county_fips_list) * len(SECTORS)
@@ -305,8 +312,6 @@ def run_all_sectors(
         county_rows_df = cohort_proj[cohort_proj["county_fips"] == fips].sort_values("year")
         county_name    = county_rows_df["county_name"].iloc[0]
         c_cohort_p50   = county_rows_df["p50"].values.astype(float)
-        c_cohort_p10   = county_rows_df["p10"].values.astype(float)
-        c_cohort_p90   = county_rows_df["p90"].values.astype(float)
 
         for sector in SECTORS:
             proj_s, ci_lo_s, ci_hi_s, wage_s = state_projs[sector]
@@ -319,8 +324,8 @@ def run_all_sectors(
             ].sort_values("year"))
 
             result = _forecast_one(
-                sector         = sector,
-                county_hist    = c_hist,
+                sector              = sector,
+                county_hist         = c_hist,
                 state_sector_proj   = proj_s,
                 state_sector_ci_lo  = ci_lo_s,
                 state_sector_ci_hi  = ci_hi_s,
@@ -335,7 +340,6 @@ def run_all_sectors(
             result["sector"]      = sector
             result["state_fips"]  = state_fips
 
-            # Attach 2023 QCEW baseline
             emp_2023 = c_hist[c_hist["year"] == 2023]["employment"]
             result["emp_2023"] = float(emp_2023.iloc[0]) if len(emp_2023) else None
 

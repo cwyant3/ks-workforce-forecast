@@ -578,75 +578,348 @@ def main():
             sec_start = int(county_sector_df["year"].min())
             sec_end   = int(county_sector_df["year"].max())
 
-            # ── KPI cards per sector (state level) ───────────────────────
-            st.markdown("### State Sector Employment Outlook")
-            kpi_cols = st.columns(len(SECTORS))
-            for col, sector in zip(kpi_cols, SECTORS):
-                s_rows = state_sector_df[state_sector_df["sector"] == sector]
-                emp_base = s_rows["emp_2023"].iloc[0] if len(s_rows) else None
-                emp_end  = s_rows[s_rows["year"] == sec_end]["emp_proj"]
-                emp_end  = float(emp_end.iloc[0]) if len(emp_end) else None
-                if emp_base and emp_end:
-                    pct = (emp_end - emp_base) / emp_base * 100
-                    dlt = _delta_html(pct)
+            # ── Pre-compute sector stats ──────────────────────────────────
+            sector_stats: dict = {}
+            total_jobs_2023 = 0
+            total_jobs_end  = 0
+            for sector in SECTORS:
+                s_rows   = state_sector_df[state_sector_df["sector"] == sector]
+                base     = float(s_rows["emp_2023"].iloc[0]) if len(s_rows) and not pd.isna(s_rows["emp_2023"].iloc[0]) else None
+                end_rows = s_rows[s_rows["year"] == sec_end]
+                proj     = float(end_rows["emp_proj"].iloc[0])   if len(end_rows) else None
+                ci_lo    = float(end_rows["emp_ci_lo"].iloc[0])  if len(end_rows) else None
+                ci_hi    = float(end_rows["emp_ci_hi"].iloc[0])  if len(end_rows) else None
+                delta    = (proj - base) if (base and proj) else None
+                pct      = (delta / base * 100) if (base and delta is not None) else None
+                sector_stats[sector] = dict(base=base, proj=proj, ci_lo=ci_lo, ci_hi=ci_hi,
+                                            delta=delta, pct=pct)
+                if base:
+                    total_jobs_2023 += base
+                if proj:
+                    total_jobs_end  += proj
+
+            total_delta = total_jobs_end - total_jobs_2023
+            wf_supply_2023 = float(summary["workforce_base"].sum())
+            wf_supply_end  = float(summary["wf_end_p50"].sum())
+            wf_supply_pct  = (wf_supply_end - wf_supply_2023) / wf_supply_2023 * 100
+
+            # ── Section header ────────────────────────────────────────────
+            st.markdown(f"""
+<div style="background:linear-gradient(135deg,{C_BLUE} 0%,#005BB5 100%);
+            color:white;padding:1rem 1.5rem;border-radius:8px;margin-bottom:1rem;">
+  <strong style="font-size:1.05rem;">
+    {selected_state} — Sector Workforce: Need vs. Supply &nbsp;·&nbsp; 2023 → {sec_end}
+  </strong><br>
+  <span style="opacity:0.85;font-size:0.88rem;">
+    Demand = projected jobs by sector (BLS QCEW) &nbsp;·&nbsp;
+    Supply = working-age population 18–64 (ACS cohort model)
+  </span>
+</div>""", unsafe_allow_html=True)
+
+            # ── State-level summary KPI row ───────────────────────────────
+            kpi_cols = st.columns(4)
+            supply_arrow = "growing" if wf_supply_pct >= 0 else "declining"
+            demand_arrow = "growing" if total_delta >= 0 else "declining"
+            kpi_cols[0].markdown(metric_card(
+                "Total Workers Available (2023)",
+                _fmt(wf_supply_2023),
+                f'<span class="{supply_arrow}">{wf_supply_pct:+.1f}% by {sec_end}</span>',
+            ), unsafe_allow_html=True)
+            kpi_cols[1].markdown(metric_card(
+                f"Projected Workers Available ({sec_end})",
+                _fmt(wf_supply_end),
+                f'<span class="{supply_arrow}">{_fmt(wf_supply_end - wf_supply_2023)} net change</span>',
+            ), unsafe_allow_html=True)
+            kpi_cols[2].markdown(metric_card(
+                "Total Sector Jobs (2023)",
+                _fmt(total_jobs_2023),
+                "",
+            ), unsafe_allow_html=True)
+            kpi_cols[3].markdown(metric_card(
+                f"Total Sector Jobs Projected ({sec_end})",
+                _fmt(total_jobs_end),
+                f'<span class="{demand_arrow}">{total_delta:+,.0f} net new jobs</span>',
+            ), unsafe_allow_html=True)
+
+            st.markdown("<br>", unsafe_allow_html=True)
+
+            # ── Grouped gap bar chart: Jobs Today vs Jobs Needed ─────────
+            st.markdown("#### Jobs Today vs. Jobs Needed by Sector")
+            st.caption(
+                "Each sector shows 2023 actual employment alongside the projected "
+                f"{sec_end} need. The label on each projected bar shows the net change "
+                "in workers required."
+            )
+
+            gap_sectors  = []
+            gap_base     = []
+            gap_proj     = []
+            gap_delta    = []
+            gap_ci_lo    = []
+            gap_ci_hi    = []
+            gap_colors   = []
+
+            for sector in SECTORS:
+                st_s = sector_stats[sector]
+                if st_s["base"] is None or st_s["proj"] is None:
+                    continue
+                gap_sectors.append(sector)
+                gap_base.append(st_s["base"])
+                gap_proj.append(st_s["proj"])
+                gap_delta.append(st_s["delta"] or 0)
+                gap_ci_lo.append(st_s["ci_lo"] or st_s["proj"])
+                gap_ci_hi.append(st_s["ci_hi"] or st_s["proj"])
+                gap_colors.append(SECTOR_COLORS[sector])
+
+            fig_gap = go.Figure()
+
+            # 2023 baseline bars (solid)
+            fig_gap.add_trace(go.Bar(
+                name="2023 Actual Jobs",
+                x=gap_sectors,
+                y=gap_base,
+                marker_color=[c + "CC" for c in gap_colors],
+                marker_line_color=[c for c in gap_colors],
+                marker_line_width=1.5,
+                text=[_fmt(v) for v in gap_base],
+                textposition="outside",
+                hovertemplate="<b>%{x}</b><br>2023 Jobs: %{y:,.0f}<extra></extra>",
+            ))
+
+            # Projected bars (hatched via opacity + pattern)
+            fig_gap.add_trace(go.Bar(
+                name=f"Projected Jobs ({sec_end})",
+                x=gap_sectors,
+                y=gap_proj,
+                marker_color=["rgba(255,255,255,0)" for _ in gap_colors],
+                marker_line_color=gap_colors,
+                marker_line_width=2.5,
+                marker_pattern_shape="/",
+                marker_pattern_fgcolor=gap_colors,
+                marker_pattern_bgcolor=["rgba(255,255,255,0.6)" for _ in gap_colors],
+                text=[
+                    f"{_fmt(v)}<br><b>{d:+,.0f}</b>"
+                    for v, d in zip(gap_proj, gap_delta)
+                ],
+                textposition="outside",
+                hovertemplate=(
+                    "<b>%{x}</b><br>"
+                    f"Projected ({sec_end}): %{{y:,.0f}}<br>"
+                    "Net change: %{text}<extra></extra>"
+                ),
+                error_y=dict(
+                    type="data",
+                    symmetric=False,
+                    array=[hi - p for hi, p in zip(gap_ci_hi, gap_proj)],
+                    arrayminus=[p - lo for lo, p in zip(gap_ci_lo, gap_proj)],
+                    color=C_NEUTRAL,
+                    thickness=1.5,
+                    width=6,
+                ),
+            ))
+
+            # Horizontal line: working-age population as supply context
+            fig_gap.add_hline(
+                y=wf_supply_end,
+                line_dash="dot",
+                line_color=C_GOLD,
+                line_width=2,
+                annotation_text=f"Total workforce supply {sec_end}: {_fmt(wf_supply_end)}",
+                annotation_position="top left",
+                annotation_font_color=C_GOLD,
+                annotation_font_size=11,
+            )
+
+            fig_gap.update_layout(
+                barmode="group",
+                bargap=0.25,
+                bargroupgap=0.08,
+                title=dict(
+                    text=(f"{selected_state} — Sector Employment: 2023 Actual vs. "
+                          f"{sec_end} Projected Need"),
+                    font=dict(size=15, color=C_BLUE),
+                ),
+                xaxis=dict(title="Sector", title_font=dict(color="black"),
+                           tickfont=dict(color="black")),
+                yaxis=dict(title="Workers", tickformat=",",
+                           title_font=dict(color="black"), tickfont=dict(color="black")),
+                legend=dict(orientation="h", yanchor="bottom", y=1.02,
+                            xanchor="right", x=1, font=dict(color="black")),
+                plot_bgcolor=C_LIGHT, paper_bgcolor="white",
+                margin=dict(t=80, b=60, l=70, r=30),
+                uniformtext_minsize=9, uniformtext_mode="hide",
+            )
+            st.plotly_chart(fig_gap, use_container_width=True)
+
+            # ── Supply vs. Total Demand overlay (line chart) ──────────────
+            st.markdown("#### Workforce Supply vs. Total Sector Demand Over Time")
+            st.caption(
+                "Supply (left axis) = state working-age population 18–64. "
+                "Demand (right axis) = sum of projected employment across all five sectors. "
+                "Diverging trends signal growing competition for workers."
+            )
+
+            demand_by_year = (
+                state_sector_df.groupby("year")["emp_proj"].sum().reset_index()
+            )
+            demand_lo_by_year = (
+                state_sector_df.groupby("year")["emp_ci_lo"].sum().reset_index()
+            )
+            demand_hi_by_year = (
+                state_sector_df.groupby("year")["emp_ci_hi"].sum().reset_index()
+            )
+
+            fig_svd = go.Figure()
+
+            # Supply: CI band + median line
+            fig_svd.add_trace(go.Scatter(
+                x=pd.concat([state_proj["year"], state_proj["year"].iloc[::-1]]),
+                y=pd.concat([state_proj["p90"], state_proj["p10"].iloc[::-1]]),
+                fill="toself", fillcolor="rgba(0,63,135,0.10)",
+                line=dict(color="rgba(0,0,0,0)"),
+                name="Supply 80% CI", hoverinfo="skip", yaxis="y1",
+            ))
+            fig_svd.add_trace(go.Scatter(
+                x=state_proj["year"], y=state_proj["p50"],
+                mode="lines+markers", name="Workforce Supply (18–64)",
+                line=dict(color=C_BLUE, width=2.5),
+                marker=dict(size=5),
+                yaxis="y1",
+                hovertemplate="<b>%{x}</b><br>Supply: %{y:,.0f}<extra></extra>",
+            ))
+            # Supply 2023 anchor
+            fig_svd.add_trace(go.Scatter(
+                x=[2023], y=[wf_supply_2023],
+                mode="markers", name="2023 Supply (ACS)",
+                marker=dict(color=C_GOLD, size=10, symbol="diamond"),
+                yaxis="y1",
+                hovertemplate=f"<b>2023 Baseline</b><br>%{{y:,.0f}}<extra></extra>",
+            ))
+
+            # Demand: CI band + line
+            fig_svd.add_trace(go.Scatter(
+                x=pd.concat([demand_hi_by_year["year"],
+                             demand_lo_by_year["year"].iloc[::-1]]),
+                y=pd.concat([demand_hi_by_year["emp_ci_hi"],
+                             demand_lo_by_year["emp_ci_lo"].iloc[::-1]]),
+                fill="toself", fillcolor="rgba(245,166,35,0.12)",
+                line=dict(color="rgba(0,0,0,0)"),
+                name="Demand 80% CI", hoverinfo="skip", yaxis="y2",
+            ))
+            fig_svd.add_trace(go.Scatter(
+                x=demand_by_year["year"], y=demand_by_year["emp_proj"],
+                mode="lines+markers", name="Total Sector Demand",
+                line=dict(color=C_GOLD, width=2.5, dash="dash"),
+                marker=dict(size=5),
+                yaxis="y2",
+                hovertemplate="<b>%{x}</b><br>Demand: %{y:,.0f}<extra></extra>",
+            ))
+            # Demand 2023 anchor
+            fig_svd.add_trace(go.Scatter(
+                x=[2023], y=[total_jobs_2023],
+                mode="markers", name="2023 Demand (QCEW)",
+                marker=dict(color=C_GOLD, size=10, symbol="circle",
+                            line=dict(color=C_BLUE, width=2)),
+                yaxis="y2",
+                hovertemplate=f"<b>2023 Demand Baseline</b><br>%{{y:,.0f}}<extra></extra>",
+            ))
+
+            fig_svd.update_layout(
+                title=dict(
+                    text=(f"{selected_state} — Workforce Supply vs. Sector Demand "
+                          f"{sec_start}–{sec_end}"),
+                    font=dict(size=15, color=C_BLUE),
+                ),
+                xaxis=dict(title="Year", tickmode="linear", dtick=1,
+                           title_font=dict(color="black"), tickfont=dict(color="black")),
+                yaxis=dict(
+                    title="Working-Age Population (Supply)",
+                    tickformat=",", side="left",
+                    title_font=dict(color=C_BLUE), tickfont=dict(color=C_BLUE),
+                ),
+                yaxis2=dict(
+                    title="Total Sector Employment (Demand)",
+                    tickformat=",", side="right", overlaying="y",
+                    title_font=dict(color="#B8860B"), tickfont=dict(color="#B8860B"),
+                    showgrid=False,
+                ),
+                legend=dict(orientation="h", yanchor="bottom", y=1.02,
+                            xanchor="right", x=1, font=dict(color="black")),
+                plot_bgcolor=C_LIGHT, paper_bgcolor="white",
+                margin=dict(t=80, b=40, l=70, r=80), hovermode="x unified",
+            )
+            st.plotly_chart(fig_svd, use_container_width=True)
+
+            # ── Per-sector KPI cards (detailed numbers) ───────────────────
+            st.markdown("#### Sector Detail — State Level")
+            kpi_sec_cols = st.columns(len(SECTORS))
+            for col, sector in zip(kpi_sec_cols, SECTORS):
+                st_s = sector_stats[sector]
+                if st_s["base"] and st_s["proj"] and st_s["delta"] is not None:
+                    sign     = "+" if st_s["delta"] >= 0 else ""
+                    cls_name = "growing" if st_s["delta"] >= 0 else "declining"
+                    delta_lbl = (
+                        f'<span class="{cls_name}">{sign}{_fmt(st_s["delta"])} jobs</span><br>'
+                        f'<span style="font-size:0.8rem;color:{C_NEUTRAL};">'
+                        f'2023: {_fmt(st_s["base"])}</span>'
+                    )
                 else:
-                    dlt = ""
+                    delta_lbl = ""
                 col.markdown(
                     metric_card(
-                        sector,
-                        _fmt(emp_end) if emp_end else "—",
-                        dlt,
+                        f"{sector}",
+                        _fmt(st_s["proj"]) if st_s["proj"] else "—",
+                        delta_lbl,
                     ),
                     unsafe_allow_html=True,
                 )
 
             st.markdown("<br>", unsafe_allow_html=True)
 
-            # ── State sector trend chart ──────────────────────────────────
-            fig_state_sec = go.Figure()
-            for sector in SECTORS:
-                color = SECTOR_COLORS[sector]
-                s_rows = state_sector_df[state_sector_df["sector"] == sector].sort_values("year")
-                if s_rows.empty:
-                    continue
-                # CI band
-                fig_state_sec.add_trace(go.Scatter(
-                    x=pd.concat([s_rows["year"], s_rows["year"].iloc[::-1]]),
-                    y=pd.concat([s_rows["emp_ci_hi"], s_rows["emp_ci_lo"].iloc[::-1]]),
-                    fill="toself",
-                    fillcolor=f"rgba({int(color[1:3],16)},{int(color[3:5],16)},{int(color[5:7],16)},0.12)",
-                    line=dict(color="rgba(255,255,255,0)"),
-                    name=f"{sector} 80% CI", hoverinfo="skip", showlegend=False,
-                ))
-                # Projected line (dashed)
-                fig_state_sec.add_trace(go.Scatter(
-                    x=s_rows["year"], y=s_rows["emp_proj"],
-                    mode="lines+markers",
-                    name=sector,
-                    line=dict(color=color, width=2.5, dash="dash"),
-                    marker=dict(size=5),
-                    hovertemplate=f"<b>{sector}</b> %{{x}}<br>Projected: %{{y:,.0f}}<extra></extra>",
-                ))
-
-            fig_state_sec.update_layout(
-                title=dict(
-                    text=f"{selected_state} — Sector Employment Projections {sec_start}–{sec_end}",
-                    font=dict(size=15, color=C_BLUE),
-                ),
-                xaxis=dict(title="Year", tickmode="linear", dtick=1,
-                           title_font=dict(color="black"), tickfont=dict(color="black")),
-                yaxis=dict(title="Average Annual Employment", tickformat=",",
-                           title_font=dict(color="black"), tickfont=dict(color="black")),
-                legend=dict(orientation="h", yanchor="bottom", y=1.02,
-                            xanchor="right", x=1, font=dict(color="black")),
-                plot_bgcolor=C_LIGHT, paper_bgcolor="white",
-                margin=dict(t=80, b=40, l=60, r=30), hovermode="x unified",
-            )
-            st.plotly_chart(fig_state_sec, use_container_width=True)
+            # ── Sector trend chart (all sectors over time) ────────────────
+            with st.expander("Sector employment trends over time (line chart)", expanded=False):
+                fig_state_sec = go.Figure()
+                for sector in SECTORS:
+                    color  = SECTOR_COLORS[sector]
+                    s_rows = state_sector_df[state_sector_df["sector"] == sector].sort_values("year")
+                    if s_rows.empty:
+                        continue
+                    rgb = f"{int(color[1:3],16)},{int(color[3:5],16)},{int(color[5:7],16)}"
+                    fig_state_sec.add_trace(go.Scatter(
+                        x=pd.concat([s_rows["year"], s_rows["year"].iloc[::-1]]),
+                        y=pd.concat([s_rows["emp_ci_hi"], s_rows["emp_ci_lo"].iloc[::-1]]),
+                        fill="toself", fillcolor=f"rgba({rgb},0.12)",
+                        line=dict(color="rgba(255,255,255,0)"),
+                        name=f"{sector} 80% CI", hoverinfo="skip", showlegend=False,
+                    ))
+                    fig_state_sec.add_trace(go.Scatter(
+                        x=s_rows["year"], y=s_rows["emp_proj"],
+                        mode="lines+markers", name=sector,
+                        line=dict(color=color, width=2.5, dash="dash"),
+                        marker=dict(size=5),
+                        hovertemplate=f"<b>{sector}</b> %{{x}}<br>Projected: %{{y:,.0f}}<extra></extra>",
+                    ))
+                fig_state_sec.update_layout(
+                    title=dict(
+                        text=f"{selected_state} — Sector Employment Projections {sec_start}–{sec_end}",
+                        font=dict(size=15, color=C_BLUE),
+                    ),
+                    xaxis=dict(title="Year", tickmode="linear", dtick=1,
+                               title_font=dict(color="black"), tickfont=dict(color="black")),
+                    yaxis=dict(title="Average Annual Employment", tickformat=",",
+                               title_font=dict(color="black"), tickfont=dict(color="black")),
+                    legend=dict(orientation="h", yanchor="bottom", y=1.02,
+                                xanchor="right", x=1, font=dict(color="black")),
+                    plot_bgcolor=C_LIGHT, paper_bgcolor="white",
+                    margin=dict(t=80, b=40, l=60, r=30), hovermode="x unified",
+                )
+                st.plotly_chart(fig_state_sec, use_container_width=True)
 
             st.markdown("---")
 
-            # ── County sector detail ──────────────────────────────────────
+            # ═════════════════════════════════════════════════════════════
+            # COUNTY SECTION
+            # ═════════════════════════════════════════════════════════════
             st.markdown(f"### {selected_county} — Sector Detail")
 
             c_sec = county_sector_df[
@@ -656,14 +929,158 @@ def main():
             if c_sec.empty:
                 st.info("No sector data available for this county.")
             else:
-                # Sector selector for detailed CI chart
+                # ── County workforce supply stats ─────────────────────────
+                c_sum     = summary[summary["county_name"] == selected_county].iloc[0]
+                c_wf_2023 = float(c_sum["workforce_base"])
+                c_wf_end  = float(c_sum["wf_end_p50"])
+                c_wf_pct  = float(c_sum["pct_change_end"])
+
+                # ── County KPI row ────────────────────────────────────────
+                c_kpi_cols = st.columns(4)
+                c_supply_cls = "growing" if c_wf_pct >= 0 else "declining"
+
+                # Total sector jobs for this county
+                c_end_rows  = c_sec[c_sec["year"] == sec_end]
+                c_jobs_2023 = c_sec.drop_duplicates("sector")["emp_2023"].dropna().sum()
+                c_jobs_end  = float(c_end_rows["emp_proj"].sum()) if not c_end_rows.empty else 0
+                c_jobs_delta = c_jobs_end - c_jobs_2023
+                c_jobs_cls  = "growing" if c_jobs_delta >= 0 else "declining"
+
+                c_kpi_cols[0].markdown(metric_card(
+                    "County Workers Available (2023)",
+                    _fmt(c_wf_2023),
+                    f'<span class="{c_supply_cls}">{c_wf_pct:+.1f}% by {sec_end}</span>',
+                ), unsafe_allow_html=True)
+                c_kpi_cols[1].markdown(metric_card(
+                    f"Projected Workers Available ({sec_end})",
+                    _fmt(c_wf_end),
+                    f'<span class="{c_supply_cls}">{_fmt(c_wf_end - c_wf_2023)} net change</span>',
+                ), unsafe_allow_html=True)
+                c_kpi_cols[2].markdown(metric_card(
+                    "County Sector Jobs (2023)",
+                    _fmt(c_jobs_2023),
+                    "",
+                ), unsafe_allow_html=True)
+                c_kpi_cols[3].markdown(metric_card(
+                    f"County Sector Jobs Projected ({sec_end})",
+                    _fmt(c_jobs_end),
+                    f'<span class="{c_jobs_cls}">{c_jobs_delta:+,.0f} net new jobs</span>',
+                ), unsafe_allow_html=True)
+
+                st.markdown("<br>", unsafe_allow_html=True)
+
+                # ── County gap bar chart ──────────────────────────────────
+                st.markdown(f"#### {selected_county} — Jobs Today vs. Jobs Needed by Sector")
+
+                c_gap_sectors = []
+                c_gap_base    = []
+                c_gap_proj    = []
+                c_gap_delta   = []
+                c_gap_ci_lo   = []
+                c_gap_ci_hi   = []
+                c_gap_colors  = []
+
+                for sector in SECTORS:
+                    s_row   = c_sec[c_sec["sector"] == sector]
+                    end_row = s_row[s_row["year"] == sec_end]
+                    if s_row.empty or end_row.empty:
+                        continue
+                    b23 = s_row["emp_2023"].iloc[0]
+                    epr = float(end_row["emp_proj"].iloc[0])
+                    elo = float(end_row["emp_ci_lo"].iloc[0])
+                    ehi = float(end_row["emp_ci_hi"].iloc[0])
+                    c_gap_sectors.append(sector)
+                    c_gap_base.append(b23 if not pd.isna(b23) else 0)
+                    c_gap_proj.append(epr)
+                    c_gap_delta.append(epr - (b23 if not pd.isna(b23) else 0))
+                    c_gap_ci_lo.append(elo)
+                    c_gap_ci_hi.append(ehi)
+                    c_gap_colors.append(SECTOR_COLORS[sector])
+
+                fig_c_gap = go.Figure()
+                fig_c_gap.add_trace(go.Bar(
+                    name="2023 Actual Jobs",
+                    x=c_gap_sectors,
+                    y=c_gap_base,
+                    marker_color=[c + "CC" for c in c_gap_colors],
+                    marker_line_color=c_gap_colors,
+                    marker_line_width=1.5,
+                    text=[_fmt(v) for v in c_gap_base],
+                    textposition="outside",
+                    hovertemplate="<b>%{x}</b><br>2023 Jobs: %{y:,.0f}<extra></extra>",
+                ))
+                fig_c_gap.add_trace(go.Bar(
+                    name=f"Projected Jobs ({sec_end})",
+                    x=c_gap_sectors,
+                    y=c_gap_proj,
+                    marker_color=["rgba(255,255,255,0)" for _ in c_gap_colors],
+                    marker_line_color=c_gap_colors,
+                    marker_line_width=2.5,
+                    marker_pattern_shape="/",
+                    marker_pattern_fgcolor=c_gap_colors,
+                    marker_pattern_bgcolor=["rgba(255,255,255,0.6)" for _ in c_gap_colors],
+                    text=[
+                        f"{_fmt(v)}<br><b>{d:+,.0f}</b>"
+                        for v, d in zip(c_gap_proj, c_gap_delta)
+                    ],
+                    textposition="outside",
+                    hovertemplate=(
+                        "<b>%{x}</b><br>"
+                        f"Projected ({sec_end}): %{{y:,.0f}}<extra></extra>"
+                    ),
+                    error_y=dict(
+                        type="data",
+                        symmetric=False,
+                        array=[hi - p for hi, p in zip(c_gap_ci_hi, c_gap_proj)],
+                        arrayminus=[p - lo for lo, p in zip(c_gap_ci_lo, c_gap_proj)],
+                        color=C_NEUTRAL,
+                        thickness=1.5,
+                        width=6,
+                    ),
+                ))
+                # County supply reference line
+                fig_c_gap.add_hline(
+                    y=c_wf_end,
+                    line_dash="dot",
+                    line_color=C_GOLD,
+                    line_width=2,
+                    annotation_text=f"County workforce supply {sec_end}: {_fmt(c_wf_end)}",
+                    annotation_position="top left",
+                    annotation_font_color=C_GOLD,
+                    annotation_font_size=11,
+                )
+                fig_c_gap.update_layout(
+                    barmode="group",
+                    bargap=0.25,
+                    bargroupgap=0.08,
+                    title=dict(
+                        text=(f"{selected_county} — Sector Employment: 2023 Actual vs. "
+                              f"{sec_end} Projected Need"),
+                        font=dict(size=15, color=C_BLUE),
+                    ),
+                    xaxis=dict(title="Sector", title_font=dict(color="black"),
+                               tickfont=dict(color="black")),
+                    yaxis=dict(title="Workers", tickformat=",",
+                               title_font=dict(color="black"), tickfont=dict(color="black")),
+                    legend=dict(orientation="h", yanchor="bottom", y=1.02,
+                                xanchor="right", x=1, font=dict(color="black")),
+                    plot_bgcolor=C_LIGHT, paper_bgcolor="white",
+                    margin=dict(t=80, b=60, l=70, r=30),
+                    uniformtext_minsize=9, uniformtext_mode="hide",
+                )
+                st.plotly_chart(fig_c_gap, use_container_width=True)
+
+                st.markdown("---")
+
+                # ── Sector-detail CI chart ────────────────────────────────
+                st.markdown("#### Sector Deep-Dive")
                 sec_choice = st.radio(
-                    "Select sector for detailed view",
+                    "Select sector for detailed trend view",
                     SECTORS,
                     horizontal=True,
                 )
 
-                one = c_sec[c_sec["sector"] == sec_choice].sort_values("year")
+                one     = c_sec[c_sec["sector"] == sec_choice].sort_values("year")
                 color_c = SECTOR_COLORS[sec_choice]
 
                 if one.empty:
@@ -676,7 +1093,6 @@ def main():
                     emp_end_c  = float(one[one["year"] == sec_end]["emp_proj"].iloc[0]) \
                                  if len(one[one["year"] == sec_end]) else None
 
-                    # Method badge
                     method_labels = {
                         "option_b":          (
                             "✔ Option B — Independent County OLS Trend"
@@ -698,19 +1114,19 @@ def main():
                     )
 
                     fig_sec_c = go.Figure()
-                    # CI band
                     fig_sec_c.add_trace(go.Scatter(
                         x=pd.concat([one["year"], one["year"].iloc[::-1]]),
                         y=pd.concat([one["emp_ci_hi"], one["emp_ci_lo"].iloc[::-1]]),
                         fill="toself",
-                        fillcolor=f"rgba({int(color_c[1:3],16)},{int(color_c[3:5],16)},{int(color_c[5:7],16)},0.15)",
+                        fillcolor=(f"rgba({int(color_c[1:3],16)},"
+                                   f"{int(color_c[3:5],16)},"
+                                   f"{int(color_c[5:7],16)},0.15)"),
                         line=dict(color="rgba(255,255,255,0)"),
                         name="80% CI", hoverinfo="skip",
                     ))
                     fig_sec_c.add_trace(go.Scatter(
                         x=one["year"], y=one["emp_proj"],
-                        mode="lines+markers",
-                        name="Projected",
+                        mode="lines+markers", name="Projected",
                         line=dict(color=color_c, width=2.5, dash="dash"),
                         marker=dict(size=6),
                         hovertemplate="<b>%{x}</b><br>Projected: %{y:,.0f}<extra></extra>",
@@ -743,58 +1159,57 @@ def main():
                     )
                     st.plotly_chart(fig_sec_c, use_container_width=True)
 
-                # ── All-sector summary table for selected county ──────────
-                st.markdown("#### All Sectors — Summary")
+                # ── All-sector summary table ──────────────────────────────
+                st.markdown("#### All Sectors — Summary Table")
                 tbl_cols = st.columns(2)
 
-                # Employment table
                 with tbl_cols[0]:
-                    st.markdown("**Employment Projections**")
+                    st.markdown("**Employment: Need vs. Available Workers**")
                     emp_rows = []
                     for sector in SECTORS:
-                        s_row = c_sec[c_sec["sector"] == sector]
+                        s_row   = c_sec[c_sec["sector"] == sector]
+                        end_row = s_row[s_row["year"] == sec_end]
                         if s_row.empty:
                             continue
-                        emp_23 = s_row["emp_2023"].iloc[0]
-                        end_row = s_row[s_row["year"] == sec_end]
+                        emp_23  = s_row["emp_2023"].iloc[0]
                         emp_e   = float(end_row["emp_proj"].iloc[0])  if len(end_row) else None
                         ci_lo   = float(end_row["emp_ci_lo"].iloc[0]) if len(end_row) else None
                         ci_hi   = float(end_row["emp_ci_hi"].iloc[0]) if len(end_row) else None
                         meth    = s_row["method"].iloc[0]
-                        pct_chg = ((emp_e - emp_23) / emp_23 * 100
-                                   if emp_23 and emp_e and emp_23 > 0 else None)
+                        net_new = (emp_e - emp_23) if (emp_e and emp_23 and not pd.isna(emp_23)) else None
+                        pct_chg = (net_new / emp_23 * 100) if (net_new is not None and emp_23 > 0) else None
                         emp_rows.append({
-                            "Sector":          sector,
-                            "2023 Baseline":   _fmt(emp_23) if emp_23 else "—",
-                            f"Proj {sec_end}": _fmt(emp_e)  if emp_e  else "—",
-                            "80% CI":          (f"{_fmt(ci_lo)} – {_fmt(ci_hi)}"
-                                                if ci_lo and ci_hi else "—"),
-                            "% Change":        f"{pct_chg:+.1f}%" if pct_chg else "—",
-                            "Model":           "B" if meth == "option_b" else "A*",
+                            "Sector":             sector,
+                            "2023 Jobs":          _fmt(emp_23) if not pd.isna(emp_23) else "—",
+                            f"Jobs Needed {sec_end}": _fmt(emp_e) if emp_e else "—",
+                            "Net New Jobs":       f"{net_new:+,.0f}" if net_new is not None else "—",
+                            "80% CI":             (f"{_fmt(ci_lo)} – {_fmt(ci_hi)}"
+                                                   if ci_lo and ci_hi else "—"),
+                            "% Change":           f"{pct_chg:+.1f}%" if pct_chg is not None else "—",
+                            "Model":              "B" if meth == "option_b" else "A*",
                         })
                     st.dataframe(pd.DataFrame(emp_rows), hide_index=True,
                                  use_container_width=True)
                     st.caption("Model: B = independent OLS trend  |  A* = state share model")
 
-                # Wage table
                 with tbl_cols[1]:
                     st.markdown("**Projected Avg Annual Wages**")
                     wage_rows = []
                     for sector in SECTORS:
-                        s_row = c_sec[c_sec["sector"] == sector]
-                        if s_row.empty:
-                            continue
+                        s_row     = c_sec[c_sec["sector"] == sector]
                         end_row   = s_row[s_row["year"] == sec_end]
                         start_row = s_row[s_row["year"] == sec_start]
-                        wage_s    = float(start_row["wage_proj"].iloc[0]) if len(start_row) else None
-                        wage_e    = float(end_row["wage_proj"].iloc[0])   if len(end_row)   else None
-                        pct_w     = ((wage_e - wage_s) / wage_s * 100
-                                     if wage_s and wage_e and wage_s > 0 else None)
+                        if s_row.empty:
+                            continue
+                        wage_s = float(start_row["wage_proj"].iloc[0]) if len(start_row) else None
+                        wage_e = float(end_row["wage_proj"].iloc[0])   if len(end_row)   else None
+                        pct_w  = ((wage_e - wage_s) / wage_s * 100
+                                  if wage_s and wage_e and wage_s > 0 else None)
                         wage_rows.append({
-                            "Sector":          sector,
-                            f"{sec_start} Proj": f"${_fmt(wage_s)}" if wage_s else "—",
-                            f"{sec_end} Proj":   f"${_fmt(wage_e)}" if wage_e else "—",
-                            "% Change":          f"{pct_w:+.1f}%"  if pct_w  else "—",
+                            "Sector":              sector,
+                            f"{sec_start} Proj":   f"${_fmt(wage_s)}" if wage_s else "—",
+                            f"{sec_end} Proj":     f"${_fmt(wage_e)}" if wage_e else "—",
+                            "% Change":            f"{pct_w:+.1f}%"   if pct_w  else "—",
                         })
                     st.dataframe(pd.DataFrame(wage_rows), hide_index=True,
                                  use_container_width=True)

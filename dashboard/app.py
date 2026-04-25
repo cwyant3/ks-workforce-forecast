@@ -678,8 +678,11 @@ def main():
 
                     # Method badge
                     method_labels = {
-                        "option_b":          ("✔ Option B — Independent OLS Trend", C_GREEN),
-                        "option_a_fallback":  ("⚠ Option A — State Share (trend not significant)", C_GOLD),
+                        "option_b":          (
+                            "✔ Option B — Independent County OLS Trend"
+                            + (" (significant)" if sig_val else " (trend uncertain — see CI)"),
+                            C_GREEN if sig_val else C_GOLD),
+                        "option_a_fallback": ("⚠ Option A — State Share (legacy fallback)", C_GOLD),
                         "option_a":          ("ℹ Option A — State Share Model", C_NEUTRAL),
                         "no_data":           ("✗ No Data — Estimate Only", C_RED),
                     }
@@ -928,17 +931,41 @@ annual averages. NAICS code groupings:
 | IT/Computer Services | 51 + 54 — Information + Professional/Scientific/Technical Services |
 | Skilled Trades | 22 + 23 + 81 — Utilities + Construction/HVAC/Heavy Equipment + Auto/Diesel Repair |
 
-**Option B** (independent OLS trend) — used when 2023 county employment ≥ 2,000 AND the
-OLS slope is statistically significant (p < 0.05). Confidence intervals are 80%
-prediction intervals from the regression.
+**Option B** (independent county OLS trend) — used when 2023 county employment ≥ **500**
+AND at least 3 historical observations exist. Employment is fit with a **log-linear**
+OLS regression (fit on `log(employment)`, project, exponentiate back). Confidence
+intervals are 80% prediction intervals from the regression, back-transformed to the
+employment scale.
 
-**Option A** (state share model) — used when employment < 2,000, trend is not significant,
-or data is suppressed. Projects the county's historical share of state sector employment
-multiplied by the state-level OLS projection. Where no county history exists, the county's
-share of state working-age population serves as the denominator proxy.
+**Option A** (state share model) — used only when employment < 500, fewer than 3
+observations, or data is suppressed. Projects the county's historical share of state
+sector employment multiplied by the state-level OLS projection. Where no county history
+exists, the county's share of state working-age population serves as the denominator
+proxy.
 
-Wage projections use county-level OLS where ≥3 observations are available; fall back to
-state-level wage trend otherwise.
+Wage projections use county-level linear OLS where ≥3 observations are available; fall
+back to state-level wage trend otherwise.
+
+#### 2026-04-25 model revision — why these changes
+
+The previous model used Option B only when the OLS slope was statistically significant
+at p < 0.05 AND 2023 employment was ≥ 2,000. In practice this caused **100% of Kansas
+county-sector pairs to fall back to Option A**, including Johnson County Healthcare
+(~53,500 workers) and Sedgwick County Manufacturing (~46,100 workers) — the actual
+county-level trends were never being shown. Three changes were made:
+
+1. **Significance gate removed.** The 80% prediction interval already widens
+   appropriately when the trend is uncertain, so a hard p < 0.05 cutoff was the wrong
+   instrument. With only 9 years of data (2015–2023) and COVID disruption in 2020–2021,
+   real trends often fail the test at p < 0.05 but still convey useful direction. The
+   `significant` flag is preserved and shown in the badge as informational context.
+2. **MIN_OPT_B lowered from 2,000 → 500.** Kansas is dominated by small counties; the
+   higher threshold excluded ~740 county-sector pairs whose trends are well-defined.
+3. **Log-linear OLS** replaces straight linear OLS for employment fitting. Employment
+   evolves multiplicatively (% growth per year), so log-space fitting produces more
+   stable projections, prevents negative values, and yields long-run paths that match
+   historical compounding behavior. Linear OLS is used automatically if any historical
+   value is zero (log undefined), and remains the default for wage projections.
 
 ### Limitations
 - National survival rates used; state-specific mortality may differ

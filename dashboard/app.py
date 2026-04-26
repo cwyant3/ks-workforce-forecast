@@ -683,6 +683,7 @@ def main():
                 marker_line_width=1.5,
                 text=[_fmt(v) for v in gap_base],
                 textposition="outside",
+                textfont=dict(color="black"),
                 hovertemplate="<b>%{x}</b><br>2023 Jobs: %{y:,.0f}<extra></extra>",
             ))
 
@@ -702,6 +703,7 @@ def main():
                     for v, d in zip(gap_proj, gap_delta)
                 ],
                 textposition="outside",
+                textfont=dict(color="black"),
                 hovertemplate=(
                     "<b>%{x}</b><br>"
                     f"Projected ({sec_end}): %{{y:,.0f}}<br>"
@@ -1007,6 +1009,7 @@ def main():
                     marker_line_width=1.5,
                     text=[_fmt(v) for v in c_gap_base],
                     textposition="outside",
+                    textfont=dict(color="black"),
                     hovertemplate="<b>%{x}</b><br>2023 Jobs: %{y:,.0f}<extra></extra>",
                 ))
                 fig_c_gap.add_trace(go.Bar(
@@ -1024,6 +1027,7 @@ def main():
                         for v, d in zip(c_gap_proj, c_gap_delta)
                     ],
                     textposition="outside",
+                    textfont=dict(color="black"),
                     hovertemplate=(
                         "<b>%{x}</b><br>"
                         f"Projected ({sec_end}): %{{y:,.0f}}<extra></extra>"

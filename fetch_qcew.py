@@ -46,6 +46,14 @@ SECTOR_NAICS: dict[str, list[str]] = {
     "Skilled Trades":               ["22", "23", "81"],
 }
 
+SECTOR_DISPLAY_NAMES: dict[str, str] = {
+    "Healthcare": "Healthcare (NAICS 62)",
+    "Manufacturing": "Manufacturing (NAICS 31-33)",
+    "Hospitality & Entertainment": "Hospitality, Entertainment & Food Service (NAICS 71+72)",
+    "IT/Computer Services": "Information & Professional Services (NAICS 51+54)",
+    "Skilled Trades": "Utilities, Construction & Repair Services (NAICS 22+23+81)",
+}
+
 SECTOR_COLORS: dict[str, str] = {
     "Healthcare":                   "#E74C3C",
     "Manufacturing":                "#2980B9",
@@ -194,7 +202,13 @@ def _aggregate(rows: list[dict], is_county: bool) -> tuple[pd.DataFrame, pd.Data
         return _empty_sec, _empty_tot
 
     df = pd.DataFrame(rows)
-    df["county_fips"] = df["area_fips"].str[-3:] if is_county else df["area_fips"]
+    if is_county:
+        # County FIPS codes are exactly 5 digits (SS+CCC). Guard against any
+        # statewide (SS000) or non-standard rows that may have leaked through.
+        df = df[df["area_fips"].str.len() == 5]
+        df["county_fips"] = df["area_fips"].str[-3:]
+    else:
+        df["county_fips"] = df["area_fips"]
 
     # Total employment rows (naics="10")
     tot_rows = df[df["naics"] == "10"].copy()

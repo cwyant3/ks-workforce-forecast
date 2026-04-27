@@ -72,7 +72,8 @@ def fetch_year(year: int, state_fips: str = "20",
     cache_file = (cache_dir / f"acs5_{year}_s{state_fips}.parquet") if cache_dir else None
     if cache_file and cache_file.exists():
         print(f"  [cache] {year}")
-        return pd.read_parquet(cache_file)
+        cached = pd.read_parquet(cache_file)
+        return _add_acs_metadata(cached, year, state_fips)
 
     base = ACS_BASE.format(year=year)
     shared = {"for": f"county:*", "in": f"state:{state_fips}"}
@@ -87,7 +88,8 @@ def fetch_year(year: int, state_fips: str = "20",
     rows: dict[str, dict] = {}
     for row in raw1[1:]:
         fips = row[hdr1.index("county")]
-        rows[fips] = {"county_fips": fips,
+        rows[fips] = {"state_fips": state_fips.zfill(2),
+                      "county_fips": fips,
                       "county_name": row[hdr1.index("NAME")].split(",")[0].strip()}
         for v in batch1:
             rows[fips][v] = int(row[hdr1.index(v)] or 0)
@@ -113,7 +115,8 @@ def fetch_year(year: int, state_fips: str = "20",
     df["pop_youth"]        = df[[f"pop_{g}" for g in YOUTH_GROUPS]].sum(axis=1)
     df["pop_retirement"]   = df[[f"pop_{g}" for g in RETIREMENT_GROUPS]].sum(axis=1)
     df["pop_total"]        = df[TOTAL_POP]
-    df["year"]             = year
+    df["year"] = year
+    df = _add_acs_metadata(df, year, state_fips)
 
     # Drop raw census variable columns to keep output clean
     raw_cols = [TOTAL_POP] + MALE_VARS + FEMALE_VARS
@@ -124,6 +127,19 @@ def fetch_year(year: int, state_fips: str = "20",
         df.to_parquet(cache_file, index=False)
         print(f"  [saved] {cache_file.name}")
 
+    return df
+
+
+def _add_acs_metadata(df: pd.DataFrame, year: int, state_fips: str) -> pd.DataFrame:
+    """Attach period-estimate metadata, including for legacy cached files."""
+    df = df.copy()
+    df["state_fips"] = state_fips.zfill(2)
+    df["acs_vintage_year"] = year
+    df["acs_period_start_year"] = year - 4
+    df["acs_period_end_year"] = year
+    df["acs_period_midpoint_year"] = year - 2
+    df["estimate_type"] = "ACS 5-year"
+    df["overlapping_period_estimate"] = True
     return df
 
 

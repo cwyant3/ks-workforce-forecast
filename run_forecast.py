@@ -17,6 +17,7 @@ import os
 import sys
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
 # Load .env if present (never committed — see .gitignore)
@@ -62,7 +63,13 @@ def main(state_fips: str = "20", api_key: str | None = None,
 
     # ── 2. Run cohort model ────────────────────────────────────────────────
     print(f"\n=== STEP 2: Running cohort-component model ===")
-    proj_df = run_all_counties(acs_df, start_year=start_year, end_year=end_year, n_sim=n_sim)
+    proj_df, state_sims = run_all_counties(
+        acs_df,
+        start_year=start_year,
+        end_year=end_year,
+        n_sim=n_sim,
+        return_state_simulations=True,
+    )
 
     proj_out = OUTPUT_DIR / f"projections_s{state_fips}.parquet"
     proj_df.to_parquet(proj_out, index=False)
@@ -77,7 +84,7 @@ def main(state_fips: str = "20", api_key: str | None = None,
 
     # ── 4. Build state aggregate ───────────────────────────────────────────
     print("\n=== STEP 4: Building state aggregate ===")
-    state_proj = _build_state_aggregate(proj_df)
+    state_proj = _build_state_aggregate(proj_df, state_sims)
     state_out  = OUTPUT_DIR / f"state_projection_s{state_fips}.parquet"
     state_proj.to_parquet(state_out, index=False)
     print(f"  Saved: {state_out.name}")
@@ -123,7 +130,8 @@ def main(state_fips: str = "20", api_key: str | None = None,
 def _build_summary(proj_df: pd.DataFrame, start_year: int, end_year: int) -> pd.DataFrame:
     """One-row-per-county summary: baseline + mid + end-point metrics."""
     base = proj_df.groupby("county_fips").first()[
-        ["county_name", "workforce_base", "pop_total_base", "mig_mean_pct", "mig_std_pct"]
+        ["county_name", "workforce_base", "pop_total_base", "mig_mean_pct", "mig_std_pct",
+         "state_fips", "estimate_type", "acs_overlap_note"]
     ].reset_index()
 
     mid_year = (start_year + end_year) // 2
@@ -151,20 +159,39 @@ def _build_summary(proj_df: pd.DataFrame, start_year: int, end_year: int) -> pd.
 
     summary = base.merge(end_src, on="county_fips", how="left") \
                   .merge(mid_src, on="county_fips", how="left")
-    summary["state_fips"]          = proj_df["state_fips"].iloc[0]
     summary["forecast_end_year"]   = end_year
     summary["forecast_start_year"] = start_year
     return summary.sort_values("pct_change_end")
 
 
-def _build_state_aggregate(proj_df: pd.DataFrame) -> pd.DataFrame:
-    """Sum county projections to state level per year."""
-    cols = ["p5", "p10", "p25", "p50", "p75", "p90", "p95",
-            "mean", "retirements_p50", "entries_p50", "workforce_base"]
-    agg  = proj_df.groupby("year")[cols].sum().reset_index()
+def _build_state_aggregate(
+    proj_df: pd.DataFrame,
+    state_simulations: dict[str, object] | None = None,
+) -> pd.DataFrame:
+    """Build state-level projections from aggregate simulations when available."""
+    if state_simulations:
+        years = sorted(proj_df["year"].unique())
+        agg = pd.DataFrame({"year": years})
+        wf = state_simulations["wf"]
+        for p in [5, 10, 25, 50, 75, 90, 95]:
+            agg[f"p{p}"] = np.percentile(wf, p, axis=0)
+        agg["mean"] = wf.mean(axis=0)
+        agg["retirements_p50"] = np.percentile(state_simulations["retirements"], 50, axis=0)
+        agg["entries_p50"] = np.percentile(state_simulations["entries"], 50, axis=0)
+        # Use the minimum projection year as the baseline anchor so this is
+        # robust to unsorted input and future changes to start_year.
+        _base_yr = proj_df["year"].min()
+        agg["workforce_base"] = proj_df[proj_df["year"] == _base_yr]["workforce_base"].sum()
+        agg["aggregate_method"] = "percentile_of_aggregate_simulations"
+    else:
+        cols = ["p5", "p10", "p25", "p50", "p75", "p90", "p95",
+                "mean", "retirements_p50", "entries_p50", "workforce_base"]
+        agg  = proj_df.groupby("year")[cols].sum().reset_index()
+        agg["aggregate_method"] = "summed_county_percentiles_legacy"
     agg["pct_change_p50"] = (
         (agg["p50"] - agg["workforce_base"].iloc[0]) / agg["workforce_base"].iloc[0] * 100
     ).round(2)
+    agg["state_fips"] = str(proj_df["state_fips"].iloc[0]).zfill(2)
     return agg
 
 
@@ -178,7 +205,7 @@ def _print_summary(summary: pd.DataFrame, state_fips: str, sy: int, ey: int):
     declining = (summary["pct_change_end"] <= 0).sum()
 
     print(f"\n{'='*55}")
-    print(f"  Kansas Workforce Forecast  {sy}–{ey}")
+    print(f"  State {state_fips} Workforce Forecast  {sy}–{ey}")
     print(f"{'='*55}")
     print(f"  Base workforce (2023):   {total_base:>12,.0f}")
     print(f"  Projected {ey} (median): {total_end:>12,.0f}")

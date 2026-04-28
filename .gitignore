@@ -8,8 +8,18 @@ __pycache__/
 Thumbs.db
 .streamlit/secrets.toml
 
-# QCEW ZIP-derived cache (regenerable via Generate Industry Forecast)
+# API/download caches (regenerable; may contain large binaries)
 data/qcew_cache/
+data/laus_cache/
+data/ipeds_cache/
+data/lodes_cache/
+data/oes_cache/
+data/cbp_cache/
+data/jolts_cache/
+data/kdol_cache/
+data/ksde_cache/
+data/ssa_cache/
+data/bls_proj_cache/
 
 # Non-Kansas state data files (generated on demand per state)
 data/acs_cache/acs5_*_s08.parquet

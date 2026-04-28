@@ -513,7 +513,13 @@ if __name__ == "__main__":
                         help="Fetch SSA SSDI/SSI disability counts and build participation model Layer 2")
     parser.add_argument("--bls-proj", action="store_true", dest="bls_proj",
                         help="Fetch BLS national employment projections (display layer only)")
+    parser.add_argument("--all", action="store_true",
+                        help="Fetch all 10 datasets (equivalent to passing every dataset flag)")
     args = parser.parse_args()
+
+    if args.all:
+        args.laus = args.ipeds = args.lodes = args.oes = args.cbp = True
+        args.jolts = args.kdol = args.ksde = args.ssa = args.bls_proj = True
 
     api_key = args.key or os.environ.get("CENSUS_API_KEY")
     if api_key:

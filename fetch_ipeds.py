@@ -135,7 +135,7 @@ def _load_hd(
     time.sleep(1)
     raw = _read_csv_from_zip(zip_bytes, f"hd{year}.csv")
 
-    raw.columns = raw.columns.str.lower().str.strip()
+    raw.columns = raw.columns.str.lower().str.strip().str.replace('﻿', '', regex=False)
 
     needed = ["unitid", "instnm", "stabbr", "countycd"]
     missing = [c for c in needed if c not in raw.columns]
@@ -185,7 +185,11 @@ def _load_completions(
     )
     time.sleep(1)
     raw = _read_csv_from_zip(zip_bytes, f"c{year}_a.csv")
-    raw.columns = raw.columns.str.lower().str.strip()
+    raw.columns = raw.columns.str.lower().str.strip().str.replace('﻿', '', regex=False)
+
+    # IPEDS renamed awlevelc → awlevel in some release years; normalise to awlevelc
+    if "awlevelc" not in raw.columns and "awlevel" in raw.columns:
+        raw = raw.rename(columns={"awlevel": "awlevelc"})
 
     needed = ["unitid", "cipcode", "majornum", "awlevelc", "ctotalt"]
     missing = [c for c in needed if c not in raw.columns]

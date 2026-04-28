@@ -18,23 +18,24 @@ Data source: BLS public API v2 (same key as fetch_laus.py)
   https://api.bls.gov/publicAPI/v2/timeseries/data/
   BLS API keys: https://data.bls.gov/registrationEngine/
 
-JOLTS Series ID format: JT{U|S}{8-digit-industry}{data-element}{L|R}
+JOLTS Series ID format: JT{U|S}{15-digit-industry}{data-element}{L|R}
   U/S = seasonally unadjusted / seasonally adjusted
   data-element: JO=openings, HI=hires, QU=quits, LD=layoffs, TS=total separations
   L/R = level (thousands) / rate (percent)
+  Total series ID length: 21 characters.
 
-JOLTS supersector → 8-digit industry codes used in series IDs:
-  00000000 = Total nonfarm
-  20000000 = Construction               → Skilled Trades
-  30000000 = Manufacturing              → Manufacturing
-  55000000 = Financial activities       (not used)
-  60000000 = Professional/business svc  → IT/Computer Services
-  65000000 = Education & health svc     → Healthcare
-  70000000 = Leisure & hospitality      → Hospitality & Entertainment
+JOLTS 15-digit industry codes (NAICS-based, left-justified, zero-padded):
+  000000000000000 = Total nonfarm
+  230000000000000 = Construction (NAICS 23)    → Skilled Trades
+  300000000000000 = Manufacturing (NAICS 31-33) → Manufacturing
+  600000000000000 = Professional/business svc   → IT/Computer Services
+  620000000000000 = Health care & social asst   → Healthcare
+  700000000000000 = Leisure & hospitality        → Hospitality & Entertainment
 
 NOTE: Information (NAICS 51) is not published as a separate JOLTS supersector;
-it rolls into 60000000 (Professional/business services). This is a known
-JOLTS limitation — documented in output.
+it rolls into 600000000000000 (Professional/business services). This is a known
+JOLTS limitation — documented in output. Education services (NAICS 61) separates
+from Healthcare in JOLTS; only Healthcare & Social Assistance (620) is used.
 
 Output DataFrame columns from fetch_jolts():
   year (int), month (int), sector (str),
@@ -55,15 +56,20 @@ from pathlib import Path
 JOLTS_YEARS  = list(range(2015, 2024))   # 2015–2023
 BLS_API_URL  = "https://api.bls.gov/publicAPI/v2/timeseries/data/"
 
-# JOLTS supersector 8-digit codes → dashboard sector
-# Source: BLS JOLTS technical notes
+# JOLTS 15-digit industry codes → dashboard sector
+# BLS JOLTS series ID format: JT{S/U}{15-digit-industry}{2-char-element}{L/R}
+# Industry codes are NAICS-based, left-justified, zero-padded to 15 digits.
+# Verified against BLS API 2026-04-28.
 JOLTS_INDUSTRY: dict[str, str] = {
-    "20000000": "Skilled Trades",              # Construction
-    "30000000": "Manufacturing",               # Manufacturing (31-33)
-    "60000000": "IT/Computer Services",        # Professional & business services (54+55+56)
-    "65000000": "Healthcare",                  # Education & health services (61+62)
-    "70000000": "Hospitality & Entertainment", # Leisure & hospitality (71+72)
+    "230000000000000": "Skilled Trades",              # NAICS 23  Construction
+    "300000000000000": "Manufacturing",               # NAICS 31-33 Manufacturing
+    "600000000000000": "IT/Computer Services",        # Professional & business svcs (54+55+56)
+    "620000000000000": "Healthcare",                  # NAICS 62 Health care & social assistance
+    "700000000000000": "Hospitality & Entertainment", # NAICS 71+72 Leisure & hospitality
 }
+
+# Series ID length: JT(2) + seasonal(1) + industry(15) + element(2) + measure(1) = 21
+_SERIES_ID_LEN = 21
 
 # Data elements to fetch
 DATA_ELEMENTS: dict[str, str] = {
@@ -83,12 +89,10 @@ def _build_series_ids(seasonal: str = "U") -> list[str]:
     ids = []
     for ind_code in JOLTS_INDUSTRY:
         for elem_code in DATA_ELEMENTS:
-            # Level series (thousands)
             ids.append(f"JT{seasonal}{ind_code}{elem_code}L")
-            # Rate series (percent)
             ids.append(f"JT{seasonal}{ind_code}{elem_code}R")
-    # Also fetch total nonfarm openings level for scale reference
-    ids.append(f"JT{seasonal}00000000JOL")
+    # Total nonfarm openings level for scale reference
+    ids.append(f"JT{seasonal}000000000000000JOL")
     return ids
 
 
@@ -121,14 +125,14 @@ def _parse_jolts(series_list: list[dict]) -> list[dict]:
     rows = []
     for series in series_list:
         sid = series.get("seriesID", "")
-        # JT{S1}{industry8}{elem2}{rate1} → total len = 2+1+8+2+1 = 14
-        if len(sid) != 14 or not sid.startswith("JT"):
+        # JT{S1}{industry15}{elem2}{rate1} → total len = 2+1+15+2+1 = 21
+        if len(sid) != _SERIES_ID_LEN or not sid.startswith("JT"):
             continue
         seasonal    = sid[2]
-        ind_code    = sid[3:11]
-        elem_code   = sid[11:13]
-        rate_level  = sid[13]
-        sector      = JOLTS_INDUSTRY.get(ind_code, "Total" if ind_code == "00000000" else None)
+        ind_code    = sid[3:18]
+        elem_code   = sid[18:20]
+        rate_level  = sid[20]
+        sector      = JOLTS_INDUSTRY.get(ind_code, "Total" if ind_code == "0" * 15 else None)
         col_suffix  = DATA_ELEMENTS.get(elem_code, elem_code.lower())
         col_type    = "rate" if rate_level == "R" else "level"
 
@@ -255,6 +259,12 @@ def compute_vacancy_rates(jolts_df: pd.DataFrame) -> pd.DataFrame:
     Returns DataFrame: sector, year, openings_level, openings_rate,
     hires_rate, separations_rate, vacancy_rate_trend_slope
     """
+    if jolts_df.empty:
+        return pd.DataFrame(columns=[
+            "sector", "year", "openings_thousands", "vacancy_rate_pct",
+            "hires_rate_pct", "separations_rate_pct", "vacancy_rate_trend_slope",
+        ])
+
     annual = compute_annual_averages(jolts_df)
 
     def _pivot(elem: str, measure: str) -> pd.DataFrame:

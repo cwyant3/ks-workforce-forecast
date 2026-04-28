@@ -7,11 +7,13 @@ Designed to be state-agnostic; defaults to Kansas (FIPS 20).
 Data source: BLS public API v2
   https://api.bls.gov/publicAPI/v2/timeseries/data/
 
-Series ID format: LAUCN{SSFFF}0000000{MM}
+Series ID format: LAUCN{SSFFF}00000000{MM}
   SS  = state FIPS (2 digits)
   FFF = county FIPS (3 digits)
+  00000000 = 8 zero padding digits
   MM  = measure code: 03=unemployment rate, 04=unemployment count,
                        05=employment count, 06=labor force count
+  Total length: 20 characters (LAUCN=5 + SS=2 + FFF=3 + zeros=8 + MM=2)
 
 BLS API keys are free: https://data.bls.gov/registrationEngine/
 Without a key: 25 series/request, 10-year history.
@@ -49,7 +51,7 @@ def _build_series_ids(state_fips: str, county_fips3_list: list[str]) -> list[str
     for cf in county_fips3_list:
         fips5 = sf + cf.zfill(3)
         for code in MEASURES:
-            ids.append(f"LAUCN{fips5}0000000{code}")
+            ids.append(f"LAUCN{fips5}00000000{code}")
     return ids
 
 
@@ -92,12 +94,12 @@ def _parse_series(series_list: list[dict], state_fips: str) -> list[dict]:
 
     for series in series_list:
         sid = series.get("seriesID", "")
-        # Series ID: LAUCN{SF2}{CF3}0000000{MM2} — total 19 chars
-        # Positions: 0-4=LAUCN, 5-6=state, 7-9=county, 10-16=zeros, 17-18=measure
-        if len(sid) != 19 or not sid.startswith("LAUCN"):
+        # Series ID: LAUCN{SF2}{CF3}00000000{MM2} — total 20 chars
+        # Positions: 0-4=LAUCN, 5-6=state, 7-9=county, 10-17=zeros, 18-19=measure
+        if len(sid) != 20 or not sid.startswith("LAUCN"):
             continue
         county_fips3 = sid[7:10]
-        measure_code = sid[17:19]
+        measure_code = sid[18:20]
         col_name = MEASURES.get(measure_code)
         if col_name is None:
             continue
@@ -175,6 +177,7 @@ def fetch_laus(
         y = y_end + 1
 
     all_rows: list[dict] = []
+    _rate_limited = False
 
     for y_start, y_end in year_batches:
         for i in range(0, len(all_ids), batch_size):
@@ -184,12 +187,28 @@ def fetch_laus(
             try:
                 series_list = _post_bls(batch, y_start, y_end, api_key)
                 all_rows.extend(_parse_series(series_list, sf))
+            except RuntimeError as exc:
+                msg = str(exc)
+                if "daily threshold" in msg or "daily limit" in msg.lower() or "threshold" in msg:
+                    _rate_limited = True
+                    print(
+                        "\n  *** BLS daily request limit reached ***\n"
+                        "  LAUS fetch aborted. Options:\n"
+                        "  1. Register for a free BLS API key at https://data.bls.gov/registrationEngine/\n"
+                        "     then re-run with:  BLS_API_KEY=<key> python run_forecast.py --state 20 --laus\n"
+                        "  2. Wait until tomorrow (anonymous limit resets daily).\n"
+                    )
+                    break
+                print(f"    Warning: batch failed — {exc}")
             except Exception as exc:
                 print(f"    Warning: batch failed — {exc}")
             time.sleep(1.5)   # BLS rate limit courtesy
+        if _rate_limited:
+            break
 
     if not all_rows:
-        print("  Warning: no LAUS data returned")
+        if not _rate_limited:
+            print("  Warning: no LAUS data returned")
         return pd.DataFrame(columns=["state_fips", "county_fips", "year",
                                      "labor_force", "employed", "unemployed",
                                      "unemployment_rate"])

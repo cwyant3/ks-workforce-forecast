@@ -48,7 +48,7 @@ FIPS_STATE = {v: k for k, v in STATE_FIPS.items()}
 
 # ── Page config (static — must be first Streamlit call) ─────────────────────
 st.set_page_config(
-    page_title="US Workforce Forecast",
+    page_title="Workforce Funnel Dashboard",
     page_icon="📊",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -88,6 +88,53 @@ st.markdown(f"""
         background: #EAF2FF; border-left: 4px solid {C_BLUE};
         padding: 0.7rem 1rem; border-radius: 0 6px 6px 0;
         font-size: 0.88rem; color: #1a1a2e;
+    }}
+    .exec-grid {{
+        display: grid; grid-template-columns: repeat(5, minmax(0, 1fr));
+        gap: 0.75rem; margin: 0.7rem 0 1.2rem;
+    }}
+    .exec-card {{
+        background: white; border: 1px solid #DCE3EC; border-radius: 8px;
+        padding: 0.9rem 1rem; min-height: 128px;
+        box-shadow: 0 1px 4px rgba(0,0,0,0.04);
+    }}
+    .exec-card .eyebrow {{
+        color: {C_GOLD}; font-size: 0.74rem; font-weight: 800;
+        letter-spacing: 0; text-transform: uppercase;
+    }}
+    .exec-card .headline {{
+        color: {C_BLUE}; font-size: 1.05rem; font-weight: 800;
+        margin-top: 0.2rem;
+    }}
+    .exec-card .detail {{
+        color: #34495E; font-size: 0.82rem; line-height: 1.35;
+        margin-top: 0.35rem;
+    }}
+    .funnel-strip {{
+        display: grid; grid-template-columns: repeat(5, minmax(0, 1fr));
+        gap: 0.65rem; margin: 0.35rem 0 1.25rem;
+    }}
+    .funnel-stage {{
+        background: white; border: 1px solid #DCE3EC; border-radius: 8px;
+        padding: 0.75rem 0.85rem; min-height: 92px;
+        box-shadow: 0 1px 4px rgba(0,0,0,0.04);
+    }}
+    .funnel-stage .step {{
+        color: {C_GOLD}; font-size: 0.75rem; font-weight: 800;
+        letter-spacing: 0; text-transform: uppercase;
+    }}
+    .funnel-stage .title {{
+        color: {C_BLUE}; font-size: 0.98rem; font-weight: 800;
+        margin-top: 0.18rem;
+    }}
+    .funnel-stage .copy {{
+        color: #34495E; font-size: 0.78rem; line-height: 1.25;
+        margin-top: 0.25rem;
+    }}
+    @media (max-width: 900px) {{
+        .exec-grid {{ grid-template-columns: 1fr; }}
+        .funnel-strip {{ grid-template-columns: 1fr; }}
+        .funnel-stage {{ min-height: auto; }}
     }}
     .generate-box {{
         background: #FFF8E1; border: 2px dashed {C_GOLD};
@@ -257,6 +304,272 @@ def quality_badges(*labels: str) -> str:
     return f'<div style="margin:0.4rem 0 0.8rem;">{chips}</div>' if chips else ""
 
 
+def funnel_strip() -> str:
+    stages = [
+        ("01", "Population", "How many working-age Kansans are in the baseline and forecast?"),
+        ("02", "Available Workforce", "How much of that population is plausibly available to work?"),
+        ("03", "Demand Pressure", "Where do openings, claims, and projections suggest pressure?"),
+        ("04", "Sector Exposure", "Which broad sectors create the biggest planning exposure?"),
+        ("05", "Local Action", "Where can training, commuting, and completions change yield?"),
+    ]
+    cards = "".join(
+        f"""<div class="funnel-stage">
+            <div class="step">{step}</div>
+            <div class="title">{title}</div>
+            <div class="copy">{copy}</div>
+        </div>"""
+        for step, title, copy in stages
+    )
+    return f'<div class="funnel-strip">{cards}</div>'
+
+
+def executive_county_default(summary: pd.DataFrame, selected_state: str) -> str:
+    """Use WSU-Tech's home labor market as the Kansas narrative default."""
+    counties = set(summary["county_name"].astype(str))
+    if selected_state == "Kansas" and "Sedgwick County" in counties:
+        return "Sedgwick County"
+    return summary.loc[summary["workforce_base"].idxmax(), "county_name"]
+
+
+def executive_card(step: str, headline: str, detail: str) -> str:
+    return f"""<div class="exec-card">
+        <div class="eyebrow">{step}</div>
+        <div class="headline">{headline}</div>
+        <div class="detail">{detail}</div>
+    </div>"""
+
+
+def executive_grid(cards: list[tuple[str, str, str]]) -> str:
+    body = "".join(executive_card(step, headline, detail) for step, headline, detail in cards)
+    return f'<div class="exec-grid">{body}</div>'
+
+
+def _markdown_table(headers: list[str], rows: list[list[str]]) -> str:
+    header = "| " + " | ".join(headers) + " |"
+    divider = "| " + " | ".join("---" for _ in headers) + " |"
+    body = "\n".join("| " + " | ".join(str(cell) for cell in row) + " |" for row in rows)
+    return "\n".join([header, divider, body]) if rows else "\n".join([header, divider])
+
+
+def build_narrative_handoff(
+    selected_state: str,
+    spotlight_county: str,
+    base_year: int,
+    end_year: int,
+    summary: pd.DataFrame,
+    state_sector_df: pd.DataFrame | None,
+    part_df: pd.DataFrame | None,
+    jolts_df: pd.DataFrame | None,
+    bls_df: pd.DataFrame | None,
+    kdol_df: pd.DataFrame | None,
+    ipeds_df: pd.DataFrame | None,
+    commute_df: pd.DataFrame | None,
+) -> str:
+    """Create speaker-ready notes that mirror the executive funnel view."""
+    from fetch_qcew import SECTOR_DISPLAY_NAMES
+
+    total_base = float(summary["workforce_base"].sum())
+    total_end = float(summary["wf_end_p50"].sum())
+    net_chg = total_end - total_base
+    pct_chg = net_chg / total_base * 100 if total_base else 0
+    declining = int((summary["pct_change_end"] < 0).sum())
+    annual_flow = float(summary["annual_entries_end"].sum() - summary["annual_retirements_end"].sum())
+    spotlight = summary[summary["county_name"] == spotlight_county].iloc[0]
+
+    has_real_participation = (
+        part_df is not None and not part_df.empty
+        and "layers_used" in part_df.columns
+        and (part_df["layers_used"].astype(str) != "ACS_only").any()
+    )
+    availability_note = (
+        "LAUS/SSA participation layers are populated for at least part of the state."
+        if has_real_participation
+        else "Do not describe this as effective labor force yet; current participation output is ACS-only."
+    )
+
+    demand_sources = []
+    if jolts_df is not None and not jolts_df.empty:
+        demand_sources.append("JOLTS vacancy rates")
+    if bls_df is not None and not bls_df.empty:
+        demand_sources.append("BLS employment projections")
+    if kdol_df is not None and not kdol_df.empty:
+        demand_sources.append("KDOL UI claims")
+    demand_note = (
+        ", ".join(demand_sources) + " are loaded as directional demand context."
+        if demand_sources
+        else "Do not make vacancy/openings claims; JOLTS, BLS, and KDOL demand layers are not populated or validated."
+    )
+
+    sector_note = "Sector exposure layer is not available."
+    sector_rows: list[list[str]] = []
+    if state_sector_df is not None and not state_sector_df.empty:
+        sector_end_year = int(state_sector_df["year"].max())
+        sector_end = state_sector_df[state_sector_df["year"] == sector_end_year].copy()
+        sector_end["sector_label"] = sector_end["sector"].map(
+            lambda s: SECTOR_DISPLAY_NAMES.get(s, s)
+        )
+        sector_end["net_jobs"] = sector_end["emp_proj"] - sector_end["emp_2023"]
+        sector_end = sector_end.sort_values("net_jobs", key=lambda s: s.abs(), ascending=False)
+        top_sector = sector_end.iloc[0]
+        sector_note = (
+            f"Largest broad sector movement: {top_sector['sector_label']} "
+            f"({_fmt(top_sector['net_jobs'])} net jobs, 2023 to {sector_end_year}). "
+            "Frame this as exposure context, not a vacancies claim."
+        )
+        sector_rows = [
+            [
+                row["sector_label"],
+                _fmt(row["emp_2023"]),
+                _fmt(row["emp_proj"]),
+                f"{row['net_jobs']:+,.0f}",
+            ]
+            for _, row in sector_end.iterrows()
+        ]
+
+    local_rows = []
+    if ipeds_df is not None and not ipeds_df.empty:
+        latest_ipeds = int(ipeds_df["year"].max())
+        completions = float(ipeds_df[ipeds_df["year"] == latest_ipeds]["completions"].sum())
+        local_rows.append(["IPEDS completions", _fmt(completions), f"{latest_ipeds} statewide completions"])
+    else:
+        local_rows.append(["IPEDS completions", "not loaded", "No training-output claim"])
+    if commute_df is not None and not commute_df.empty:
+        latest_commute = int(commute_df["year"].max())
+        imported = float(commute_df["pct_workers_imported"].mean())
+        local_rows.append(["LODES commute flows", f"{imported:.1f}% avg imported workers", f"{latest_commute} snapshot"])
+    else:
+        local_rows.append(["LODES commute flows", "not loaded", "No labor-shed claim"])
+
+    funnel_rows = [
+        [
+            "Population",
+            f"{selected_state} moves from {_fmt(total_base)} working-age residents in {base_year} "
+            f"to {_fmt(total_end)} by {end_year} ({pct_chg:+.1f}%).",
+            "ACS cohort model.",
+        ],
+        ["Available Workforce", availability_note, "Participation is not the same as population."],
+        ["Demand Pressure", demand_note, "Demand claims require validated openings, claims, or projection layers."],
+        ["Sector Exposure", sector_note, "QCEW sectors are employment context."],
+        ["Local Action", "Use completions and commute flows to size training response.", "IPEDS/LODES are action signals."],
+    ]
+
+    sector_table = (
+        "\n\n## Sector Exposure Detail\n"
+        + _markdown_table(["Sector", "2023 jobs", f"{end_year} projected", "Net change"], sector_rows)
+        if sector_rows else ""
+    )
+
+    return f"""# {selected_state} Workforce Dashboard - Presentation Handoff
+
+Forecast window: {base_year}-{end_year}
+
+## Executive Takeaway
+- Working-age population changes by {pct_chg:+.1f}% statewide, from {_fmt(total_base)} to {_fmt(total_end)}.
+- Net statewide change: {_fmt(net_chg)} working-age residents.
+- {declining} of {len(summary)} counties decline in the median projection.
+- Annual net flow by {end_year}: {_fmt(annual_flow)} entries minus retirements.
+
+## Funnel Talking Points
+{_markdown_table(["Stage", "Speaker note", "Guardrail"], funnel_rows)}
+
+## Spotlight County - {spotlight_county}
+{_markdown_table(
+    ["Signal", "Value", "Read"],
+    [
+        ["Working-age population", _fmt(spotlight["workforce_base"]), f"{base_year} baseline"],
+        ["Median projection", _fmt(spotlight["wf_end_p50"]), f"{spotlight['pct_change_end']:+.1f}% by {end_year}"],
+        ["Annual retirements", _fmt(spotlight["annual_retirements_end"]), f"{end_year} exit pressure"],
+        ["Annual entries", _fmt(spotlight["annual_entries_end"]), f"{end_year} youth pipeline"],
+        ["Migration history", f"{spotlight['mig_mean_pct']:+.2f}%/yr", "ACS cohort residual"],
+    ],
+)}
+{sector_table}
+
+## Local Action Signals
+{_markdown_table(["Layer", "Current value", "How to use it"], local_rows)}
+
+## Claims To Avoid
+- Do not call working-age population "labor force" unless LAUS/SSA layers are populated.
+- Do not call sector employment change "job openings" or "vacancies."
+- Do not treat IPEDS completions as placements or local retention.
+- Do not compare residence-based population directly to worksite employment without commute context.
+"""
+
+
+def build_methodology_handoff(
+    selected_state: str,
+    base_year: int,
+    end_year: int,
+    part_df: pd.DataFrame | None,
+    jolts_df: pd.DataFrame | None,
+    bls_df: pd.DataFrame | None,
+    kdol_df: pd.DataFrame | None,
+    ipeds_df: pd.DataFrame | None,
+    commute_df: pd.DataFrame | None,
+) -> str:
+    layer_rows = [
+        ["ACS cohort model", "loaded", "Population baseline and forecast"],
+        ["QCEW sector model", "loaded when sector outputs exist", "Employment exposure, not openings"],
+        [
+            "LAUS/SSA participation",
+            "loaded" if part_df is not None and not part_df.empty else "not loaded",
+            "Effective labor force only when non-ACS layers are present",
+        ],
+        [
+            "JOLTS vacancy rates",
+            "loaded" if jolts_df is not None and not jolts_df.empty else "not loaded",
+            "National vacancy context",
+        ],
+        [
+            "BLS employment projections",
+            "loaded" if bls_df is not None and not bls_df.empty else "not loaded",
+            "National structural demand context",
+        ],
+        [
+            "KDOL UI claims",
+            "loaded" if kdol_df is not None and not kdol_df.empty else "not loaded",
+            "Kansas-only current labor market pulse",
+        ],
+        [
+            "IPEDS completions",
+            "loaded" if ipeds_df is not None and not ipeds_df.empty else "not loaded",
+            "Training-output proxy",
+        ],
+        [
+            "LODES commute flows",
+            "loaded" if commute_df is not None and not commute_df.empty else "not loaded",
+            "Labor-shed and in-commuter context",
+        ],
+    ]
+
+    return f"""# {selected_state} Workforce Dashboard - Methodology Handoff
+
+Forecast window: {base_year}-{end_year}
+
+## Core Model
+The dashboard uses an annual cohort-component model for working-age population (18-64)
+by county. It starts from ACS 5-year age-by-sex estimates, applies survival and aging,
+models entry from the 15-17 cohort into 18-24, models retirement exits from 60-64 into
+65+, and applies county migration residuals through Monte Carlo simulation.
+
+## Layer Status
+{_markdown_table(["Layer", "Status", "Use"], layer_rows)}
+
+## Presentation Guardrails
+- ACS is a residence-based population estimate, not a count of available workers.
+- LAUS/SSA participation layers are required before saying "effective labor force."
+- QCEW sector projections describe employment exposure; they do not measure vacancies.
+- JOLTS and BLS demand layers are national unless specifically regenerated at a state layer.
+- KDOL UI claims are Kansas-only and should be framed as a pulse, not a forecast.
+- LODES lags by 2-3 years and should be used for labor-shed scale, not real-time commuting.
+
+## Recommended Speaker Framing
+Use the dashboard as a funnel: population baseline first, availability second, demand
+pressure only where validated, sector exposure as context, and local action through
+training output plus commute-shed evidence.
+"""
+
+
 # ── Charts ────────────────────────────────────────────────────────────────────
 def ci_chart(df: pd.DataFrame, title: str,
              baseline: float | None = None,
@@ -362,16 +675,30 @@ def main():
             st.caption(f"Data ready: {', '.join(sorted(available))}")
 
         st.markdown("---")
+        st.markdown("### Mode")
+        view_mode = st.radio(
+            "Dashboard mode",
+            ["Executive Narrative", "Full Explorer"],
+            index=0,
+            label_visibility="collapsed",
+        )
+
+        if view_mode == "Executive Narrative":
+            show_90ci = True
+            show_50ci = False
+            min_pop = 0
+            st.caption("Curated state view with presentation defaults.")
 
         # County selector — only shown after data loads
         county_selector_placeholder = st.empty()
 
-        st.markdown("### Chart options")
-        show_90ci = st.checkbox("Show 90% prediction band", value=True)
-        show_50ci = st.checkbox("Show 50% prediction band (IQR)", value=True)
-        st.markdown("---")
-        st.markdown("### Map filter")
-        min_pop = st.slider("Min county pop (2023)", 0, 50000, 0, step=1000)
+        if view_mode == "Full Explorer":
+            st.markdown("### Chart options")
+            show_90ci = st.checkbox("Show 90% prediction band", value=True)
+            show_50ci = st.checkbox("Show 50% prediction band (IQR)", value=True)
+            st.markdown("---")
+            st.markdown("### Map filter")
+            min_pop = st.slider("Min county pop (2023)", 0, 50000, 0, step=1000)
         st.markdown("---")
         st.markdown(
             "**Data:** U.S. Census Bureau ACS 5-Year  \n"
@@ -389,7 +716,7 @@ def main():
     if not data_exists(state_fips):
         st.markdown(f"""
         <div class="main-header">
-            <h1>US Workforce Forecast — {selected_state}</h1>
+            <h1>{selected_state} Workforce Dashboard</h1>
             <p>Cohort-component model &nbsp;·&nbsp; ACS 5-Year Estimates &nbsp;·&nbsp;
                2,000 Monte Carlo simulations per county</p>
         </div>""", unsafe_allow_html=True)
@@ -429,34 +756,285 @@ def main():
     n_counties   = len(counties)
 
     # Default county = largest workforce
-    default_county = summary.loc[summary["workforce_base"].idxmax(), "county_name"]
+    default_county = (
+        executive_county_default(summary, selected_state)
+        if view_mode == "Executive Narrative"
+        else summary.loc[summary["workforce_base"].idxmax(), "county_name"]
+    )
     default_idx_c  = counties.index(default_county) if default_county in counties else 0
 
-    with county_selector_placeholder:
-        selected_county = st.selectbox("County Explorer", counties, index=default_idx_c)
+    if view_mode == "Full Explorer":
+        with county_selector_placeholder:
+            selected_county = st.selectbox("County", counties, index=default_idx_c)
+    else:
+        selected_county = counties[default_idx_c]
 
     # ── Header ────────────────────────────────────────────────────────────
     st.markdown(f"""
     <div class="main-header">
-        <h1>{selected_state} Workforce Forecast &nbsp; {start_year}–{end_year}</h1>
-        <p>Cohort-component model &nbsp;·&nbsp; ACS 5-Year Estimates (2015–2023) &nbsp;·&nbsp;
-           2,000 Monte Carlo simulations per county &nbsp;·&nbsp;
-           Working-age population 18–64 &nbsp;·&nbsp; {n_counties} counties</p>
+        <h1>{selected_state} Workforce Dashboard &nbsp; {start_year}–{end_year}</h1>
+        <p>Population &rarr; Available Workforce &rarr; Demand Pressure &rarr;
+           Sector Exposure &rarr; Local Action &nbsp;·&nbsp;
+           ACS 5-Year Estimates (2015–2023) &nbsp;·&nbsp; {n_counties} counties</p>
     </div>""", unsafe_allow_html=True)
+    st.markdown(funnel_strip(), unsafe_allow_html=True)
 
     # ── Tabs ──────────────────────────────────────────────────────────────
-    (tab_overview, tab_county, tab_sector,
-     tab_pipeline, tab_commute, tab_demand, tab_pulse,
-     tab_table, tab_method) = st.tabs([
-        "State Overview", "County Explorer", "Industry Forecast",
-        "Training Pipeline", "Commute Flows", "Demand Outlook", "Labor Market Pulse",
-        "Data Table", "Methodology",
+    (tab_exec, tab_population, tab_available, tab_demand, tab_sector,
+     tab_local, tab_explorer, tab_data, tab_method) = st.tabs([
+        "Executive Narrative", "Population", "Available Workforce", "Demand Pressure",
+        "Sector Exposure", "Local Action", "Explorer", "Data", "Methodology",
     ])
 
     # ═════════════════════════════════════════════════════════════════════
-    # TAB 1 — STATE OVERVIEW
+    # TAB 0 — EXECUTIVE NARRATIVE
     # ═════════════════════════════════════════════════════════════════════
-    with tab_overview:
+    with tab_exec:
+        from fetch_qcew import SECTOR_COLORS, SECTOR_DISPLAY_NAMES, SECTORS
+
+        total_base = summary["workforce_base"].sum()
+        total_end = summary["wf_end_p50"].sum()
+        net_chg = total_end - total_base
+        pct_chg = net_chg / total_base * 100 if total_base else 0
+        declining = int((summary["pct_change_end"] < 0).sum())
+        annual_entries = summary["annual_entries_end"].sum()
+        annual_retirements = summary["annual_retirements_end"].sum()
+        annual_flow = annual_entries - annual_retirements
+
+        spotlight_county = executive_county_default(summary, selected_state)
+        spotlight = summary[summary["county_name"] == spotlight_county].iloc[0]
+
+        part_df = load_participation(state_fips)
+        has_real_participation = (
+            part_df is not None and not part_df.empty
+            and "layers_used" in part_df.columns
+            and (part_df["layers_used"].astype(str) != "ACS_only").any()
+        )
+        availability_headline = (
+            "Participation layers loaded"
+            if has_real_participation
+            else "Availability still equals ACS population"
+        )
+        availability_detail = (
+            "LAUS/SSA adjustments are present for at least part of the state."
+            if has_real_participation
+            else "Current participation output is ACS-only, so this view avoids claiming effective labor force until LAUS/SSA are regenerated."
+        )
+
+        jolts_df = load_jolts()
+        bls_df = load_bls_outlook()
+        kdol_df = load_kdol()
+        demand_sources = []
+        if jolts_df is not None and not jolts_df.empty:
+            demand_sources.append("JOLTS vacancy rates")
+        if bls_df is not None and not bls_df.empty:
+            demand_sources.append("BLS projections")
+        if kdol_df is not None and not kdol_df.empty:
+            demand_sources.append("KDOL UI claims")
+        demand_headline = "Demand layer available" if demand_sources else "Demand pressure not yet validated"
+        demand_detail = (
+            ", ".join(demand_sources) + " loaded as directional context."
+            if demand_sources
+            else "Vacancy, claims, and BLS demand outputs are withheld here until populated and validated."
+        )
+
+        top_sector_label = "Sector layer unavailable"
+        top_sector_detail = "Run the sector forecast to populate broad employment exposure."
+        state_sector_df = None
+        if sector_data_exists(state_fips):
+            _county_sector_df, state_sector_df = load_sector_data(state_fips)
+            if state_sector_df is not None and not state_sector_df.empty:
+                sector_end_year = int(state_sector_df["year"].max())
+                sector_end = state_sector_df[state_sector_df["year"] == sector_end_year].copy()
+                sector_end["net_jobs"] = sector_end["emp_proj"] - sector_end["emp_2023"]
+                top_sector = sector_end.reindex(
+                    sector_end["net_jobs"].abs().sort_values(ascending=False).index
+                ).iloc[0]
+                top_sector_label = SECTOR_DISPLAY_NAMES.get(top_sector["sector"], top_sector["sector"])
+                top_sector_detail = (
+                    f"{top_sector_label} changes by {top_sector['net_jobs']:+,.0f} jobs "
+                    f"from 2023 to {sector_end_year}; this is exposure context, not a vacancies claim."
+                )
+
+        ipeds_df = load_ipeds(state_fips)
+        commute_df = load_commute(state_fips)
+        local_signals = []
+        if ipeds_df is not None and not ipeds_df.empty:
+            latest_ipeds = int(ipeds_df["year"].max())
+            completions = ipeds_df[ipeds_df["year"] == latest_ipeds]["completions"].sum()
+            local_signals.append(f"{_fmt(completions)} completions in {latest_ipeds}")
+        if commute_df is not None and not commute_df.empty:
+            latest_commute = int(commute_df["year"].max())
+            imported = commute_df["pct_workers_imported"].mean()
+            local_signals.append(f"{imported:.1f}% avg imported workers in {latest_commute}")
+
+        st.markdown(f"### Executive Narrative — {selected_state}")
+        st.markdown(
+            quality_badges(
+                "curated defaults",
+                f"spotlight: {spotlight_county}",
+                "full controls in Explorer mode",
+            ),
+            unsafe_allow_html=True,
+        )
+
+        exec_cols = st.columns(5)
+        exec_kpis = [
+            ("2023 Working-Age Pop", _fmt(total_base), ""),
+            (f"Projected {end_year}", _fmt(total_end), _delta_html(pct_chg)),
+            ("Net Change", _fmt(net_chg), _delta_html(pct_chg)),
+            ("Counties Declining", str(declining), f"of {n_counties} counties"),
+            (f"Annual Net Flow ({end_year})", _fmt(annual_flow), "entries minus retirements"),
+        ]
+        for col, (lbl, val, dlt) in zip(exec_cols, exec_kpis):
+            col.markdown(metric_card(lbl, val, dlt), unsafe_allow_html=True)
+
+        st.markdown(
+            executive_grid([
+                (
+                    "01 Population",
+                    f"{pct_chg:+.1f}% statewide change",
+                    f"{selected_state}'s working-age population moves from {_fmt(total_base)} in 2023 "
+                    f"to {_fmt(total_end)} by {end_year} in the median projection.",
+                ),
+                (
+                    "02 Available Workforce",
+                    availability_headline,
+                    availability_detail,
+                ),
+                (
+                    "03 Demand Pressure",
+                    demand_headline,
+                    demand_detail,
+                ),
+                (
+                    "04 Sector Exposure",
+                    top_sector_label,
+                    top_sector_detail,
+                ),
+                (
+                    "05 Local Action",
+                    "Training and commute context",
+                    "; ".join(local_signals) if local_signals else "IPEDS and LODES layers are not loaded for this state.",
+                ),
+            ]),
+            unsafe_allow_html=True,
+        )
+
+        st.plotly_chart(
+            ci_chart(
+                state_proj,
+                f"{selected_state} Working-Age Population Funnel Baseline",
+                baseline=total_base,
+                base_year=base_year,
+            ),
+            use_container_width=True,
+        )
+
+        left, right = st.columns([1.1, 0.9])
+        with left:
+            st.markdown(f"#### {spotlight_county} Spotlight")
+            spotlight_rows = pd.DataFrame([
+                {"Signal": "2023 working-age population", "Value": _fmt(spotlight["workforce_base"]), "Read": "baseline"},
+                {"Signal": f"{end_year} median projection", "Value": _fmt(spotlight["wf_end_p50"]), "Read": f"{spotlight['pct_change_end']:+.1f}% change"},
+                {"Signal": f"Annual retirements ({end_year})", "Value": _fmt(spotlight["annual_retirements_end"]), "Read": "exit pressure"},
+                {"Signal": f"Annual entries ({end_year})", "Value": _fmt(spotlight["annual_entries_end"]), "Read": "youth pipeline"},
+                {"Signal": "Migration history", "Value": f"{spotlight['mig_mean_pct']:+.2f}%/yr", "Read": "ACS cohort residual"},
+            ])
+            st.dataframe(spotlight_rows, hide_index=True, use_container_width=True)
+
+        with right:
+            st.markdown("#### Broad Sector Exposure")
+            if state_sector_df is None or state_sector_df.empty:
+                st.info("Sector projections are not available for this state.")
+            else:
+                sector_end_year = int(state_sector_df["year"].max())
+                sector_end = state_sector_df[state_sector_df["year"] == sector_end_year].copy()
+                sector_end["sector_label"] = sector_end["sector"].map(
+                    lambda s: SECTOR_DISPLAY_NAMES.get(s, s)
+                )
+                sector_end["net_jobs"] = sector_end["emp_proj"] - sector_end["emp_2023"]
+                sector_end = sector_end.sort_values("net_jobs", ascending=False)
+                fig_exec_sector = go.Figure()
+                fig_exec_sector.add_trace(go.Bar(
+                    x=sector_end["sector_label"],
+                    y=sector_end["net_jobs"],
+                    marker_color=[
+                        SECTOR_COLORS.get(sector, C_BLUE)
+                        for sector in sector_end["sector"]
+                    ],
+                    hovertemplate="<b>%{x}</b><br>Net jobs: %{y:+,.0f}<extra></extra>",
+                ))
+                fig_exec_sector.update_layout(
+                    title=dict(
+                        text=f"Projected Employment Change by Sector, 2023 → {sector_end_year}",
+                        font=dict(size=15, color=C_BLUE),
+                    ),
+                    xaxis=dict(tickangle=-25, title_font=dict(color="black"), tickfont=dict(color="black", size=10)),
+                    yaxis=dict(title="Net Jobs", tickformat="+,", title_font=dict(color="black"), tickfont=dict(color="black")),
+                    plot_bgcolor=C_LIGHT,
+                    paper_bgcolor="white",
+                    margin=dict(t=70, b=95, l=55, r=25),
+                )
+                st.plotly_chart(fig_exec_sector, use_container_width=True)
+
+        st.markdown(
+            '<div class="note-box">'
+            "Executive Narrative uses curated defaults and suppresses unvalidated demand claims. "
+            "Use Full Explorer mode in the sidebar for county selection, chart bands, map filters, and full drilldown."
+            "</div>",
+            unsafe_allow_html=True,
+        )
+
+        narrative_handoff = build_narrative_handoff(
+            selected_state=selected_state,
+            spotlight_county=spotlight_county,
+            base_year=base_year,
+            end_year=end_year,
+            summary=summary,
+            state_sector_df=state_sector_df,
+            part_df=part_df,
+            jolts_df=jolts_df,
+            bls_df=bls_df,
+            kdol_df=kdol_df,
+            ipeds_df=ipeds_df,
+            commute_df=commute_df,
+        )
+        methodology_handoff = build_methodology_handoff(
+            selected_state=selected_state,
+            base_year=base_year,
+            end_year=end_year,
+            part_df=part_df,
+            jolts_df=jolts_df,
+            bls_df=bls_df,
+            kdol_df=kdol_df,
+            ipeds_df=ipeds_df,
+            commute_df=commute_df,
+        )
+
+        st.markdown("#### Presentation Handoff")
+        export_cols = st.columns(2)
+        export_cols[0].download_button(
+            "Download Narrative Notes",
+            data=narrative_handoff.encode("utf-8"),
+            file_name=f"{selected_state.lower().replace(' ', '_')}_workforce_narrative_handoff.md",
+            mime="text/markdown",
+            use_container_width=True,
+            key="download_narrative_handoff",
+        )
+        export_cols[1].download_button(
+            "Download Methodology Notes",
+            data=methodology_handoff.encode("utf-8"),
+            file_name=f"{selected_state.lower().replace(' ', '_')}_workforce_methodology_handoff.md",
+            mime="text/markdown",
+            use_container_width=True,
+            key="download_methodology_handoff",
+        )
+
+    # ═════════════════════════════════════════════════════════════════════
+    # TAB 1 — POPULATION
+    # ═════════════════════════════════════════════════════════════════════
+    with tab_population:
         total_base = summary["workforce_base"].sum()
         total_end  = summary["wf_end_p50"].sum()
         net_chg    = total_end - total_base
@@ -519,9 +1097,9 @@ def main():
             st.dataframe(bot, hide_index=True, use_container_width=True)
 
     # ═════════════════════════════════════════════════════════════════════
-    # TAB 2 — COUNTY EXPLORER
+    # TAB 2 — AVAILABLE WORKFORCE
     # ═════════════════════════════════════════════════════════════════════
-    with tab_county:
+    with tab_available:
         county_proj = proj[proj["county_name"] == selected_county].sort_values("year")
         county_sum  = summary[summary["county_name"] == selected_county].iloc[0]
 
@@ -651,7 +1229,7 @@ def main():
         st.dataframe(tbl, hide_index=True, use_container_width=True)
 
     # ═════════════════════════════════════════════════════════════════════
-    # TAB 3 — INDUSTRY FORECAST
+    # TAB 4 — SECTOR EXPOSURE
     # ═════════════════════════════════════════════════════════════════════
     with tab_sector:
         from fetch_qcew import SECTOR_COLORS, SECTOR_DISPLAY_NAMES, SECTORS
@@ -696,17 +1274,17 @@ def main():
                 s_rows   = state_sector_df[state_sector_df["sector"] == sector]
                 base     = float(s_rows["emp_2023"].iloc[0]) if len(s_rows) and not pd.isna(s_rows["emp_2023"].iloc[0]) else None
                 end_rows = s_rows[s_rows["year"] == sec_end]
-                proj     = float(end_rows["emp_proj"].iloc[0])   if len(end_rows) else None
+                proj_val = float(end_rows["emp_proj"].iloc[0])   if len(end_rows) else None
                 ci_lo    = float(end_rows["emp_ci_lo"].iloc[0])  if len(end_rows) else None
                 ci_hi    = float(end_rows["emp_ci_hi"].iloc[0])  if len(end_rows) else None
-                delta    = (proj - base) if (base and proj) else None
+                delta    = (proj_val - base) if (base and proj_val) else None
                 pct      = (delta / base * 100) if (base and delta is not None) else None
-                sector_stats[sector] = dict(base=base, proj=proj, ci_lo=ci_lo, ci_hi=ci_hi,
+                sector_stats[sector] = dict(base=base, proj=proj_val, ci_lo=ci_lo, ci_hi=ci_hi,
                                             delta=delta, pct=pct)
                 if base:
                     total_jobs_2023 += base
-                if proj:
-                    total_jobs_end  += proj
+                if proj_val:
+                    total_jobs_end  += proj_val
 
             total_delta = total_jobs_end - total_jobs_2023
             wf_supply_2023 = float(summary["workforce_base"].sum())
@@ -1358,9 +1936,9 @@ def main():
                 )
 
     # ═════════════════════════════════════════════════════════════════════
-    # TAB 4 — TRAINING PIPELINE
+    # TAB 5 — LOCAL ACTION: TRAINING PIPELINE
     # ═════════════════════════════════════════════════════════════════════
-    with tab_pipeline:
+    with tab_local:
         ipeds_df = load_ipeds(state_fips)
         if ipeds_df is None:
             st.markdown(
@@ -1493,9 +2071,9 @@ def main():
             )
 
     # ═════════════════════════════════════════════════════════════════════
-    # TAB 5 — COMMUTE FLOWS
+    # TAB 5 — LOCAL ACTION: COMMUTE FLOWS
     # ═════════════════════════════════════════════════════════════════════
-    with tab_commute:
+    with tab_local:
         commute_df = load_commute(state_fips)
         if commute_df is None:
             st.markdown(
@@ -1637,7 +2215,7 @@ def main():
             )
 
     # ═════════════════════════════════════════════════════════════════════
-    # TAB 6 — DEMAND OUTLOOK
+    # TAB 3 — DEMAND PRESSURE: OUTLOOK
     # ═════════════════════════════════════════════════════════════════════
     with tab_demand:
         jolts_df  = load_jolts()
@@ -1766,15 +2344,15 @@ def main():
                         st.dataframe(pd.DataFrame(bls_rows), hide_index=True, use_container_width=True)
 
     # ═════════════════════════════════════════════════════════════════════
-    # TAB 7 — LABOR MARKET PULSE (KS-only KDOL UI claims)
+    # TAB 3 — DEMAND PRESSURE: LABOR MARKET PULSE (KS-only KDOL UI claims)
     # ═════════════════════════════════════════════════════════════════════
-    with tab_pulse:
+    with tab_demand:
         kdol_df = load_kdol()
 
         if kdol_df is None or kdol_df.empty:
             if state_fips != "20":
                 st.info(
-                    "The Labor Market Pulse tab uses KDOL UI claims data, "
+                    "The Demand Pressure tab uses KDOL UI claims data, "
                     "which is only available for Kansas."
                 )
             else:
@@ -1891,9 +2469,148 @@ def main():
             del kdol_df["_period"]
 
     # ═════════════════════════════════════════════════════════════════════
-    # TAB 8 — DATA TABLE
+    # TAB 6 — EXPLORER
     # ═════════════════════════════════════════════════════════════════════
-    with tab_table:
+    with tab_explorer:
+        county_proj = proj[proj["county_name"] == selected_county].sort_values("year")
+        county_sum = summary[summary["county_name"] == selected_county].iloc[0]
+        county_fips3 = str(county_sum["county_fips"]).zfill(3)
+
+        st.markdown(f"### {selected_county} County Drilldown")
+        st.markdown(
+            quality_badges(
+                "selected county",
+                "population, training, commute, and sector context",
+                "use source tabs for full charts",
+            ),
+            unsafe_allow_html=True,
+        )
+
+        explorer_cols = st.columns(4)
+        explorer_cols[0].markdown(metric_card(
+            "Working-Age Pop (2023)",
+            _fmt(county_sum["workforce_base"]),
+            "",
+        ), unsafe_allow_html=True)
+        explorer_cols[1].markdown(metric_card(
+            f"Projected Pop ({end_year})",
+            _fmt(county_sum["wf_end_p50"]),
+            _delta_html(county_sum["pct_change_end"]),
+        ), unsafe_allow_html=True)
+        explorer_cols[2].markdown(metric_card(
+            f"Annual Entries ({end_year})",
+            _fmt(county_sum["annual_entries_end"]),
+            "youth aging into 18-24",
+        ), unsafe_allow_html=True)
+        explorer_cols[3].markdown(metric_card(
+            f"Annual Retirements ({end_year})",
+            _fmt(county_sum["annual_retirements_end"]),
+            "60-64 aging into 65+",
+        ), unsafe_allow_html=True)
+
+        st.markdown("<br>", unsafe_allow_html=True)
+
+        left, right = st.columns(2)
+        with left:
+            st.markdown("#### Sector Exposure")
+            if sector_data_exists(state_fips):
+                from fetch_qcew import SECTOR_DISPLAY_NAMES, SECTORS
+
+                county_sector_df, _state_sector_df = load_sector_data(state_fips)
+                c_sec = county_sector_df[
+                    county_sector_df["county_name"] == selected_county
+                ].copy() if county_sector_df is not None else pd.DataFrame()
+                if c_sec.empty:
+                    st.info("No sector projection rows available for this county.")
+                else:
+                    sec_end = int(c_sec["year"].max())
+                    exposure_rows = []
+                    for sector in SECTORS:
+                        s_row = c_sec[c_sec["sector"] == sector]
+                        end_row = s_row[s_row["year"] == sec_end]
+                        if s_row.empty or end_row.empty:
+                            continue
+                        emp_23 = s_row["emp_2023"].iloc[0]
+                        emp_e = float(end_row["emp_proj"].iloc[0])
+                        net_new = emp_e - emp_23 if not pd.isna(emp_23) else None
+                        exposure_rows.append({
+                            "Sector": SECTOR_DISPLAY_NAMES.get(sector, sector),
+                            "2023 Jobs": _fmt(emp_23) if not pd.isna(emp_23) else "—",
+                            f"{sec_end} Jobs": _fmt(emp_e),
+                            "Net": f"{net_new:+,.0f}" if net_new is not None else "—",
+                        })
+                    st.dataframe(pd.DataFrame(exposure_rows), hide_index=True, use_container_width=True)
+            else:
+                st.info("Sector projections are not available for this state.")
+
+        with right:
+            st.markdown("#### Local Action Signals")
+            action_rows = []
+
+            ipeds_df = load_ipeds(state_fips)
+            if ipeds_df is not None and not ipeds_df.empty:
+                county_ipeds = ipeds_df[
+                    ipeds_df["county_fips"].astype(str).str.zfill(3) == county_fips3
+                ]
+                latest_ipeds = int(ipeds_df["year"].max())
+                completions = (
+                    county_ipeds[county_ipeds["year"] == latest_ipeds]["completions"].sum()
+                    if not county_ipeds.empty else 0
+                )
+                action_rows.append({
+                    "Signal": f"IPEDS completions ({latest_ipeds})",
+                    "Value": _fmt(completions),
+                    "Read": "local credential output",
+                })
+            else:
+                action_rows.append({
+                    "Signal": "IPEDS completions",
+                    "Value": "—",
+                    "Read": "not loaded",
+                })
+
+            commute_df = load_commute(state_fips)
+            if commute_df is not None and not commute_df.empty:
+                c_commute = commute_df[
+                    commute_df["county_fips"].astype(str).str.zfill(3) == county_fips3
+                ]
+                if not c_commute.empty:
+                    row = c_commute.iloc[0]
+                    action_rows.append({
+                        "Signal": "In-commuter share",
+                        "Value": f"{row['pct_workers_imported']:.1f}%",
+                        "Read": "labor shed dependency",
+                    })
+                    action_rows.append({
+                        "Signal": "Top feeder counties",
+                        "Value": row.get("top_feeder_counties", "—") or "—",
+                        "Read": "home counties of in-commuters",
+                    })
+            else:
+                action_rows.append({
+                    "Signal": "Commute flows",
+                    "Value": "—",
+                    "Read": "not loaded",
+                })
+
+            st.dataframe(pd.DataFrame(action_rows), hide_index=True, use_container_width=True)
+
+        st.markdown("#### Annual Population Projection")
+        explorer_tbl = county_proj[[
+            "year", "p10", "p50", "p90", "retirements_p50", "entries_p50", "pct_change_p50"
+        ]].copy()
+        explorer_tbl.columns = [
+            "Year", "P10", "Median", "P90", "Annual Retirements", "Annual Entries", "% vs 2023"
+        ]
+        for c in ["P10", "Median", "P90", "Annual Retirements", "Annual Entries"]:
+            explorer_tbl[c] = explorer_tbl[c].map(_fmt)
+        explorer_tbl["% vs 2023"] = explorer_tbl["% vs 2023"].map(lambda x: f"{x:+.1f}%")
+        st.dataframe(explorer_tbl, hide_index=True, use_container_width=True)
+
+    # ═════════════════════════════════════════════════════════════════════
+    # TAB 7 — DATA TABLE
+    # ═════════════════════════════════════════════════════════════════════
+    with tab_data:
         st.markdown(f"#### County Summary — All {n_counties} {selected_state} Counties")
 
         fc1, fc2 = st.columns(2)
@@ -1971,23 +2688,23 @@ county of **{selected_state}** from a 2023 ACS baseline through {end_year}.
 ### Core Data Sources
 | Source | Tab | CLI Flag | Description |
 |--------|-----|----------|-------------|
-| U.S. Census Bureau ACS 5-Year Estimates | All | (required) | Age-by-sex population (Table B01001) for 2015–2023; each vintage is a 5-year period estimate |
+| U.S. Census Bureau ACS 5-Year Estimates | Population / Available Workforce | (required) | Age-by-sex population (Table B01001) for 2015–2023; each vintage is a 5-year period estimate |
 | CDC 2021 National Life Tables | All | (built-in) | Age-specific annual survival probabilities |
-| BLS Quarterly Census of Employment & Wages (QCEW) | Industry Forecast | (auto) | County annual employment and wages by NAICS sector, 2015–2023 |
+| BLS Quarterly Census of Employment & Wages (QCEW) | Sector Exposure | (auto) | County annual employment and wages by NAICS sector, 2015–2023 |
 
 ### Extended Data Sources (10-Dataset Integration)
 | # | Source | Tab | CLI Flag | Description |
 |---|--------|-----|----------|-------------|
-| 1 | BLS LAUS | County Explorer | `--laus` | County labor force participation rates; feeds participation model |
-| 2 | NCES IPEDS | Training Pipeline | `--ipeds` | Postsecondary completions by CIP program and county |
-| 3 | Census LODES | Commute Flows | `--lodes` | Origin-destination commute flows; local vs. imported worker share |
+| 1 | BLS LAUS | Available Workforce | `--laus` | County labor force participation rates; feeds participation model |
+| 2 | NCES IPEDS | Local Action | `--ipeds` | Postsecondary completions by CIP program and county |
+| 3 | Census LODES | Local Action | `--lodes` | Origin-destination commute flows; local vs. imported worker share |
 | 4 | BLS OES | (internal) | `--oes` | Occupational employment and wage estimates by sector |
 | 5 | Census CBP | (internal) | `--cbp` | County business patterns; establishment counts and trends |
-| 6 | BLS JOLTS | Demand Outlook | `--jolts` | National job openings and vacancy rates by sector |
-| 7 | KDOL UI | Labor Market Pulse | `--kdol` | Kansas county UI claims by industry (KS-only) |
+| 6 | BLS JOLTS | Demand Pressure | `--jolts` | National job openings and vacancy rates by sector |
+| 7 | KDOL UI | Demand Pressure | `--kdol` | Kansas county UI claims by industry (KS-only) |
 | 8 | KSDE/NCES CCD | (cohort model) | `--ksde` | K-12 enrollment by grade; patches ACS youth cohorts (KS-only) |
-| 9 | SSA Disability | County Explorer | `--ssa` | SSDI + SSI beneficiary counts; adjusts effective workforce |
-| 10 | BLS Employment Projections | Demand Outlook | `--bls-proj` | 10-year national occupational employment projections |
+| 9 | SSA Disability | Available Workforce | `--ssa` | SSDI + SSI beneficiary counts; adjusts effective workforce |
+| 10 | BLS Employment Projections | Demand Pressure | `--bls-proj` | 10-year national occupational employment projections |
 
 ### Components Modeled Each Year
 1. **Survival** — Age-specific mortality applied to each 5-year cohort (CDC 2021 life tables)
@@ -2062,7 +2779,7 @@ county-level trends were never being shown. Three changes were made:
    value is zero (log undefined), and remains the default for wage projections.
 
 ### Effective Labor Force (Participation Model)
-When `--laus` or `--ssa` flags are used, the County Explorer shows a three-layer
+When `--laus` or `--ssa` flags are used, the Available Workforce tab shows a three-layer
 effective labor force estimate:
 
 1. **ACS working-age population (18–64)** — raw cohort-model output

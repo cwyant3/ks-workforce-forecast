@@ -217,6 +217,11 @@ def compute_estab_trends(cbp_df: pd.DataFrame) -> pd.DataFrame:
             "n_years":     len(sub),
         })
 
+    if not results:
+        return pd.DataFrame(columns=[
+            "county_fips", "naics2", "sector", "estab_slope",
+            "estab_pct_chg", "estab_latest", "year_range", "n_years",
+        ])
     return pd.DataFrame(results).sort_values(
         ["county_fips", "sector"]
     ).reset_index(drop=True)

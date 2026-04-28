@@ -363,10 +363,8 @@ def main(state_fips: str = "20", api_key: str | None = None,
         if state_fips.zfill(2) == "20":
             ks_proj_df = fetch_ks_state_projections(cache_dir=BLS_PROJ_CACHE)
 
-        all_proj = pd.concat(
-            [df for df in [natl_proj_df, ks_proj_df] if not df.empty],
-            ignore_index=True,
-        )
+        _proj_frames = [df for df in [natl_proj_df, ks_proj_df] if not df.empty]
+        all_proj = pd.concat(_proj_frames, ignore_index=True) if _proj_frames else pd.DataFrame()
         if not all_proj.empty:
             outlook_df  = sector_demand_outlook(all_proj)
             proj_raw_out = OUTPUT_DIR / "bls_proj_occupations.parquet"

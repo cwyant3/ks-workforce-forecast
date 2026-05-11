@@ -1,7 +1,8 @@
 """
 participation_model.py
-Combines ACS working-age population, SSA disability counts, and LAUS labor
-force participation rates into a three-layer effective labor force estimate.
+Combines ACS working-age population, ACS labor-force-status rates, SSA
+disability counts, and optional LAUS context into an effective labor force
+estimate.
 
 This addresses model limitation #1: the cohort model tracks working-age
 population headcounts but does not model who is actually available to work.
@@ -15,15 +16,16 @@ Three-layer stack (per county, per year):
   │   Removes individuals with federal disability determinations │
   │   → disability_adjusted_pop                                 │
   ├─────────────────────────────────────────────────────────────┤
-  │ Layer 3: × LAUS labor force participation rate              │
-  │   Accounts for choice/structural non-participation          │
+  │ Layer 3: × ACS civilian labor force participation rate      │
+  │   Keeps numerator and denominator inside the ACS universe   │
   │   → effective_labor_force                                   │
   └─────────────────────────────────────────────────────────────┘
 
 Layer 2 is optional: if SSA data is unavailable, the model skips
 directly from Layer 1 to Layer 3 (reverts to Phase 1 behaviour).
 
-Layer 3 is optional: if LAUS data is unavailable, Layer 2 result is returned.
+Layer 3 is optional: if ACS B23001 data is unavailable, Layer 2 result is
+returned. LAUS remains optional context for current labor force counts.
 
 Output DataFrame columns (one row per county-year):
   state_fips, county_fips, year,
@@ -34,7 +36,7 @@ Output DataFrame columns (one row per county-year):
   disability_rate_pct     — Layer 2 rate (None if unavailable)
   disability_adjusted_pop — Layer 2 result (falls back to working_age_pop)
   labor_force             — LAUS labor force count (None if unavailable)
-  lfpr_pct                — LAUS LFPR (None if unavailable)
+  lfpr_pct                — ACS B23001 LFPR, or legacy LAUS proxy if unavailable
   effective_labor_force   — Layer 3 result
   layers_used             — e.g. "ACS+SSA+LAUS", "ACS+LAUS", "ACS_only"
 """
@@ -50,7 +52,7 @@ def build_participation_table(
     baseline_year_only: bool = False,
 ) -> pd.DataFrame:
     """
-    Combine ACS, SSA, and LAUS into the three-layer effective labor force table.
+    Combine ACS, SSA, and optional LAUS context into the effective labor force table.
 
     Parameters
     ----------
@@ -59,9 +61,8 @@ def build_participation_table(
     ssa_df            : output of fetch_ssa_disability.fetch_ssa_disability()
                         with disability_adjusted_pop and disability_rate_pct
                         (or None to skip Layer 2)
-    laus_df           : output of fetch_laus.fetch_laus() (or compute_lfpr output)
-                        with labor_force and lfpr_pct columns
-                        (or None to skip Layer 3)
+    laus_df           : optional output of fetch_laus.compute_lfpr() with
+                        labor_force context columns
     baseline_year_only: if True, return only the most recent ACS year
 
     Returns
@@ -70,6 +71,14 @@ def build_participation_table(
     """
     # ── Layer 1: ACS working-age population ──────────────────────────────────
     acs_cols = ["state_fips", "county_fips", "year", "pop_working_age"]
+    for col in [
+        "acs_lf_status_pop_18_64",
+        "acs_civilian_labor_force_18_64",
+        "acs_armed_forces_18_64",
+        "acs_lfpr_pct",
+    ]:
+        if col in acs_df.columns:
+            acs_cols.append(col)
     if "acs_period_midpoint_year" in acs_df.columns:
         acs_cols.append("acs_period_midpoint_year")
 
@@ -106,14 +115,19 @@ def build_participation_table(
             base[col] = None
 
     # disability_adjusted_pop: use SSA-derived value, else fall back to Layer 1
-    if "disability_adjusted_pop" not in base.columns or base["disability_adjusted_pop"].isna().all():
+    if "disability_adjusted_pop" not in base.columns:
         base["disability_adjusted_pop"] = base["working_age_pop"]
+    else:
+        base["disability_adjusted_pop"] = base["disability_adjusted_pop"].where(
+            base["disability_adjusted_pop"].notna(),
+            base["working_age_pop"],
+        )
 
-    # ── Layer 3: LAUS LFPR ───────────────────────────────────────────────────
+    # ── Optional LAUS context ─────────────────────────────────────────────────
     has_laus = laus_df is not None and not laus_df.empty
 
     if has_laus:
-        laus_cols = ["county_fips", "year", "labor_force", "lfpr_pct"]
+        laus_cols = ["county_fips", "year", "labor_force", "lfpr_pct", "lfpr_source"]
         laus_use  = laus_df[[c for c in laus_cols if c in laus_df.columns]].copy()
 
         # LAUS year → nearest ACS year
@@ -128,10 +142,18 @@ def build_participation_table(
         base = base.merge(laus_agg, on=["county_fips", "year"], how="left")
     else:
         base["labor_force"] = None
-        base["lfpr_pct"]    = None
+
+    if "acs_lfpr_pct" in base.columns and base["acs_lfpr_pct"].notna().any():
+        base["lfpr_pct"] = base["acs_lfpr_pct"]
+        base["lfpr_source"] = "ACS_B23001_civilian_18_64"
+    elif "lfpr_pct" not in base.columns:
+        base["lfpr_pct"] = None
+        base["lfpr_source"] = None
+    elif "lfpr_source" not in base.columns:
+        base["lfpr_source"] = "LAUS_labor_force_over_ACS_18_64_proxy"
 
     # Compute effective labor force
-    if has_laus and "lfpr_pct" in base.columns:
+    if "lfpr_pct" in base.columns and base["lfpr_pct"].notna().any():
         base["effective_labor_force"] = (
             base["disability_adjusted_pop"] * base["lfpr_pct"] / 100
         ).round(0).astype("Int64")
@@ -143,8 +165,12 @@ def build_participation_table(
         parts = ["ACS"]
         if has_ssa and pd.notna(row.get("disability_rate_pct")):
             parts.append("SSA")
-        if has_laus and pd.notna(row.get("lfpr_pct")):
+        if pd.notna(row.get("acs_lfpr_pct")):
+            parts.append("ACS_LFPR")
+        elif has_laus and pd.notna(row.get("lfpr_pct")):
             parts.append("LAUS")
+        if has_laus and pd.notna(row.get("labor_force")):
+            parts.append("LAUS_CONTEXT")
         return "+".join(parts) if len(parts) > 1 else "ACS_only"
 
     base["layers_used"] = base.apply(_layers, axis=1)
@@ -152,9 +178,11 @@ def build_participation_table(
     col_order = [
         "state_fips", "county_fips", "year",
         "working_age_pop",
+        "acs_lf_status_pop_18_64", "acs_civilian_labor_force_18_64",
+        "acs_armed_forces_18_64", "acs_lfpr_pct",
         "ssdi_18_64", "ssi_18_64", "total_disabled_18_64",
         "disability_rate_pct", "disability_adjusted_pop",
-        "labor_force", "lfpr_pct",
+        "labor_force", "lfpr_pct", "lfpr_source",
         "effective_labor_force", "layers_used",
     ]
     return base[[c for c in col_order if c in base.columns]].sort_values(

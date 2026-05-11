@@ -11,7 +11,7 @@ Data sources:
   National (BLS Employment Projections program, free):
     https://www.bls.gov/emp/ind-occ-matrix/occ_xls.zip
     or specific table: https://www.bls.gov/emp/ep_table_102.xlsx
-    Published every 2 years. Current cycle: 2022–2032 (released Sep 2023).
+    Published every 2 years. Current cycle: 2024–2034.
 
   Kansas state projections (KDOL LMIS, free):
     https://www.dol.ks.gov/lmis/employment-projections
@@ -144,10 +144,16 @@ def _read_from_zip(content: bytes) -> pd.DataFrame | None:
 
 # ── Column detection ──────────────────────────────────────────────────────────
 
-_OCC_CODE_HINTS  = ["occ_code", "soc_code", "soc", "occupation code", "2022 soc code"]
+_OCC_CODE_HINTS  = ["occ_code", "soc_code", "soc", "occupation code", "2024 soc code", "2022 soc code"]
 _OCC_TITLE_HINTS = ["occ_title", "occupation title", "occupation", "title"]
-_BASE_EMP_HINTS  = ["2022", "employment 2022", "base year employment", "employed 2022"]
-_PROJ_EMP_HINTS  = ["2032", "employment 2032", "projected employment", "employed 2032"]
+_BASE_EMP_HINTS  = [
+    "2024", "employment 2024", "employed 2024",
+    "2022", "employment 2022", "base year employment", "employed 2022",
+]
+_PROJ_EMP_HINTS  = [
+    "2034", "employment 2034", "employed 2034",
+    "2032", "employment 2032", "projected employment", "employed 2032",
+]
 _PCT_CHG_HINTS   = ["percent", "% change", "pct_change", "change (%)"]
 _OPENINGS_HINTS  = ["openings", "annual openings", "total openings"]
 _WAGE_HINTS      = ["median annual wage", "median wage", "annual median"]
@@ -216,17 +222,17 @@ def _parse_proj_df(raw: pd.DataFrame) -> pd.DataFrame:
 
 def fetch_national_projections(
     cache_dir: Path | None = None,
-    base_year: int = 2022,
-    proj_year: int = 2032,
+    base_year: int = 2024,
+    proj_year: int = 2034,
 ) -> pd.DataFrame:
     """
-    Fetch BLS National Employment Projections (2022–2032 cycle by default).
+    Fetch BLS National Employment Projections (2024–2034 cycle by default).
 
     Parameters
     ----------
     cache_dir : parquet cache directory
-    base_year : projection base year (default 2022)
-    proj_year : projection target year (default 2032)
+    base_year : projection base year (default 2024)
+    proj_year : projection target year (default 2034)
 
     Returns
     -------

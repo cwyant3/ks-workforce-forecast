@@ -58,6 +58,7 @@ YOUTH_PIPELINE_GROUPS = ["under_5", "5_9", "10_14", "15_17"]
 WORKFORCE_GROUPS = ["18_24", "25_29", "30_34", "35_39", "40_44",
                     "45_49", "50_54", "55_59", "60_64"]
 MODEL_COHORTS = YOUTH_PIPELINE_GROUPS + WORKFORCE_GROUPS
+DEFAULT_RANDOM_SEED = 20260424
 
 
 class CountyCohortModel:
@@ -93,9 +94,12 @@ class CountyCohortModel:
         Estimate annual net migration rate (as fraction of working-age pop)
         from observed historical working-age population change.
 
-        Method: cohort-survival residual.
-        Annual change rate minus natural attrition (~−0.3 %/yr mortality net
-        of no direct births into working-age range) = migration rate.
+        Method: age-structured cohort-survival residual.
+
+        For each usable ACS vintage pair, age the earlier county age structure
+        forward without migration, compare the expected working-age population
+        to the later observed working-age population, and annualize the gap as
+        the estimated net migration residual.
         """
         if len(history) < 2:
             return 0.0, 0.005
@@ -105,28 +109,16 @@ class CountyCohortModel:
         for i in range(1, len(history_sorted)):
             if self._acs_overlap_share(history_sorted[i - 1], history_sorted[i]) > 0.20:
                 continue
-            p0 = history_sorted[i - 1]["pop_working_age"]
-            p1 = history_sorted[i]["pop_working_age"]
-            n  = history_sorted[i]["year"] - history_sorted[i - 1]["year"]
-            if p0 <= 0 or n <= 0:
-                continue
-            annual_growth = (p1 / p0) ** (1.0 / n) - 1.0
-            # Natural annual change for working-age pop (mortality only, ~−0.3 %)
-            # Births don't enter the working-age range within a 4-year interval
-            natural_change = -0.003
-            rates.append(annual_growth - natural_change)
+            rate = self._migration_residual_rate(history_sorted[i - 1], history_sorted[i])
+            if rate is not None:
+                rates.append(rate)
 
         used_non_overlap = bool(rates)
         if not rates:
             for i in range(1, len(history_sorted)):
-                p0 = history_sorted[i - 1]["pop_working_age"]
-                p1 = history_sorted[i]["pop_working_age"]
-                n  = history_sorted[i]["year"] - history_sorted[i - 1]["year"]
-                if p0 <= 0 or n <= 0:
-                    continue
-                annual_growth = (p1 / p0) ** (1.0 / n) - 1.0
-                natural_change = -0.003
-                rates.append(annual_growth - natural_change)
+                rate = self._migration_residual_rate(history_sorted[i - 1], history_sorted[i])
+                if rate is not None:
+                    rates.append(rate)
 
         if not rates:
             return 0.0, 0.01
@@ -136,6 +128,39 @@ class CountyCohortModel:
         min_std = 0.005 if used_non_overlap else 0.01
         std  = float(max(np.std(rates, ddof=1) if len(rates) > 1 else 0, min_std))
         return mean, std
+
+    def _migration_residual_rate(self, prev: dict, curr: dict) -> float | None:
+        """Estimate annual migration rate from a pair of ACS cohort snapshots."""
+        n_years = int(curr["year"]) - int(prev["year"])
+        if n_years <= 0:
+            return None
+
+        observed = float(curr.get("pop_working_age", 0) or 0)
+        cohorts = {}
+        for group in MODEL_COHORTS:
+            value = prev.get(f"pop_{group}")
+            if value is None:
+                return self._aggregate_migration_residual_rate(prev, curr, n_years)
+            cohorts[group] = float(value or 0)
+
+        for _ in range(n_years):
+            cohorts = self._step(cohorts, 0.0)
+
+        expected = sum(cohorts.get(g, 0) for g in WORKFORCE_GROUPS)
+        if expected <= 0 or observed <= 0:
+            return None
+
+        return float((observed / expected) ** (1.0 / n_years) - 1.0)
+
+    @staticmethod
+    def _aggregate_migration_residual_rate(prev: dict, curr: dict, n_years: int) -> float | None:
+        """Legacy fallback for history rows without age cohorts."""
+        p0 = float(prev.get("pop_working_age", 0) or 0)
+        p1 = float(curr.get("pop_working_age", 0) or 0)
+        if p0 <= 0 or p1 <= 0 or n_years <= 0:
+            return None
+        annual_growth = (p1 / p0) ** (1.0 / n_years) - 1.0
+        return float(annual_growth - (-0.003))
 
     @staticmethod
     def _acs_overlap_share(prev: dict, curr: dict) -> float:
@@ -221,7 +246,8 @@ class CountyCohortModel:
     # ── Projection ─────────────────────────────────────────────────────────
 
     def project(self, start_year: int = 2026, end_year: int = 2035,
-                include_simulations: bool = False):
+                include_simulations: bool = False,
+                random_seed: int | None = None):
         """
         Run Monte Carlo projection from base_year to end_year.
 
@@ -231,11 +257,15 @@ class CountyCohortModel:
         """
         years          = list(range(start_year, end_year + 1))
         n_years        = len(years)
-        warm_up_steps  = start_year - self.base_year  # steps before reporting
+        # Reported years are end-of-year conditions. A start_year of 2024 is
+        # one annual step after a 2023 baseline, so warm up only through the
+        # year before the first reported year.
+        warm_up_steps  = max(start_year - self.base_year - 1, 0)
 
         sims_wf    = np.zeros((self.n_sim, n_years))
         sims_ret   = np.zeros((self.n_sim, n_years))
         sims_entry = np.zeros((self.n_sim, n_years))
+        rng = np.random.default_rng(random_seed)
 
         for s in range(self.n_sim):
             # Draw a migration rate sequence for this simulation
@@ -243,7 +273,7 @@ class CountyCohortModel:
             # migration conditions tend to persist year-over-year
             phi = 0.3
             total_steps = warm_up_steps + n_years
-            mig_shocks  = np.random.normal(0, self.mig_std, total_steps)
+            mig_shocks  = rng.normal(0, self.mig_std, total_steps)
             mig_rates   = np.zeros(total_steps)
             mig_rates[0] = self.mig_mean + mig_shocks[0]
             for t in range(1, total_steps):
@@ -296,7 +326,8 @@ def run_all_counties(acs_df: pd.DataFrame,
                      start_year: int = 2026,
                      end_year: int   = 2035,
                      n_sim: int      = 2000,
-                     return_state_simulations: bool = False):
+                     return_state_simulations: bool = False,
+                     random_seed: int | None = DEFAULT_RANDOM_SEED):
     """
     Run CountyCohortModel for every county in the ACS DataFrame.
 
@@ -316,8 +347,14 @@ def run_all_counties(acs_df: pd.DataFrame,
     counties = baseline_df["county_fips"].unique()
     print(f"Running projections for {len(counties)} counties "
           f"({start_year}–{end_year}, {n_sim} simulations each)…")
+    if random_seed is not None:
+        print(f"  Random seed: {random_seed}")
 
     all_results = []
+    county_seed_seq = (
+        np.random.SeedSequence(random_seed).spawn(len(counties))
+        if random_seed is not None else [None] * len(counties)
+    )
     for i, fips in enumerate(sorted(counties)):
         county_rows = acs_df[acs_df["county_fips"] == fips].sort_values("year")
         county_base = baseline_df[baseline_df["county_fips"] == fips].iloc[0]
@@ -331,10 +368,18 @@ def run_all_counties(acs_df: pd.DataFrame,
         baseline_dict = county_base.to_dict()
 
         model   = CountyCohortModel(baseline_dict, history, n_sim=n_sim, base_year=base_year)
+        county_seed = (
+            int(county_seed_seq[i].generate_state(1)[0])
+            if random_seed is not None else None
+        )
         if return_state_simulations:
-            proj, sims = model.project(start_year, end_year, include_simulations=True)
+            proj, sims = model.project(
+                start_year, end_year,
+                include_simulations=True,
+                random_seed=county_seed,
+            )
         else:
-            proj = model.project(start_year, end_year)
+            proj = model.project(start_year, end_year, random_seed=county_seed)
 
         proj["county_fips"]       = fips
         proj["county_name"]       = county_base["county_name"]
@@ -344,6 +389,7 @@ def run_all_counties(acs_df: pd.DataFrame,
         proj["estimate_type"]     = county_base.get("estimate_type", "ACS 5-year")
         proj["acs_overlap_note"]  = "ACS 5-year vintage rows are overlapping period estimates"
         proj["base_year"]         = base_year
+        proj["random_seed"]       = random_seed
 
         all_results.append(proj)
         if return_state_simulations:

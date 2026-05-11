@@ -12,13 +12,61 @@ import time
 import pandas as pd
 from pathlib import Path
 
-ACS_YEARS = [2015, 2019, 2021, 2023]
+ACS_YEARS = [2015, 2019, 2021, 2024]
 ACS_BASE = "https://api.census.gov/data/{year}/acs/acs5"
 
 # B01001 — Sex by Age variable codes
 MALE_VARS = [f"B01001_{str(i).zfill(3)}E" for i in range(3, 26)]   # _003–_025
 FEMALE_VARS = [f"B01001_{str(i).zfill(3)}E" for i in range(27, 50)] # _027–_049
 TOTAL_POP = "B01001_001E"
+
+# B23001 — Sex by Age by Employment Status for the Population 16 Years and Over.
+# For the 18-64 workforce denominator, the 16-19 band is weighted at 0.5 to
+# approximate ages 18-19, then all ACS age bands from 20-64 are included.
+B23001_18_64_WEIGHTS: dict[float, dict[str, list[str]]] = {
+    0.5: {
+        "total": ["B23001_003E", "B23001_089E"],
+        "civilian_lf": ["B23001_005E", "B23001_091E"],
+        "armed_forces": ["B23001_008E", "B23001_094E"],
+    },
+    1.0: {
+        "total": [
+            "B23001_010E", "B23001_017E", "B23001_024E", "B23001_031E",
+            "B23001_038E", "B23001_045E", "B23001_052E", "B23001_059E",
+            "B23001_066E", "B23001_096E", "B23001_103E", "B23001_110E",
+            "B23001_117E", "B23001_124E", "B23001_131E", "B23001_138E",
+            "B23001_145E", "B23001_152E",
+        ],
+        "civilian_lf": [
+            "B23001_012E", "B23001_019E", "B23001_026E", "B23001_033E",
+            "B23001_040E", "B23001_047E", "B23001_054E", "B23001_061E",
+            "B23001_068E", "B23001_098E", "B23001_105E", "B23001_112E",
+            "B23001_119E", "B23001_126E", "B23001_133E", "B23001_140E",
+            "B23001_147E", "B23001_154E",
+        ],
+        "armed_forces": [
+            "B23001_015E", "B23001_022E", "B23001_029E", "B23001_036E",
+            "B23001_043E", "B23001_050E", "B23001_057E", "B23001_064E",
+            "B23001_071E", "B23001_101E", "B23001_108E", "B23001_115E",
+            "B23001_122E", "B23001_129E", "B23001_136E", "B23001_143E",
+            "B23001_150E", "B23001_157E",
+        ],
+    },
+}
+
+B23001_VARS = sorted({
+    var
+    for groups in B23001_18_64_WEIGHTS.values()
+    for vars_ in groups.values()
+    for var in vars_
+})
+
+ACS_LF_STATUS_COLS = [
+    "acs_lf_status_pop_18_64",
+    "acs_civilian_labor_force_18_64",
+    "acs_armed_forces_18_64",
+    "acs_lfpr_pct",
+]
 
 # Maps logical age-group names → raw ACS variable lists (male + female combined)
 AGE_GROUPS: dict[str, list[str]] = {
@@ -64,6 +112,10 @@ def _get(url: str, params: dict, retries: int = 3) -> list:
             time.sleep(3 * (attempt + 1))
 
 
+def _chunks(items: list[str], size: int) -> list[list[str]]:
+    return [items[i : i + size] for i in range(0, len(items), size)]
+
+
 def fetch_year(year: int, state_fips: str = "20",
                api_key: str | None = None,
                cache_dir: Path | None = None) -> pd.DataFrame:
@@ -73,7 +125,10 @@ def fetch_year(year: int, state_fips: str = "20",
     if cache_file and cache_file.exists():
         print(f"  [cache] {year}")
         cached = pd.read_parquet(cache_file)
-        return _add_acs_metadata(cached, year, state_fips)
+        cached = _add_acs_metadata(cached, year, state_fips)
+        if all(c in cached.columns for c in ACS_LF_STATUS_COLS):
+            return cached
+        print(f"  [cache stale] {year} missing ACS labor-force status fields; refetching")
 
     base = ACS_BASE.format(year=year)
     shared = {"for": f"county:*", "in": f"state:{state_fips}"}
@@ -104,6 +159,18 @@ def fetch_year(year: int, state_fips: str = "20",
         for v in FEMALE_VARS:
             rows[fips][v] = int(row[hdr2.index(v)] or 0)
 
+    # Batch 3+: ACS labor-force-status variables from B23001.
+    for batch in _chunks(B23001_VARS, 45):
+        time.sleep(1.5)
+        raw_lf = _get(base, {"get": ",".join(batch), **shared})
+        hdr_lf = raw_lf[0]
+        for row in raw_lf[1:]:
+            fips = row[hdr_lf.index("county")]
+            if fips not in rows:
+                continue
+            for v in batch:
+                rows[fips][v] = int(row[hdr_lf.index(v)] or 0)
+
     df = pd.DataFrame(list(rows.values()))
 
     # Aggregate to logical age groups
@@ -115,11 +182,12 @@ def fetch_year(year: int, state_fips: str = "20",
     df["pop_youth"]        = df[[f"pop_{g}" for g in YOUTH_GROUPS]].sum(axis=1)
     df["pop_retirement"]   = df[[f"pop_{g}" for g in RETIREMENT_GROUPS]].sum(axis=1)
     df["pop_total"]        = df[TOTAL_POP]
+    df = _add_labor_force_status(df)
     df["year"] = year
     df = _add_acs_metadata(df, year, state_fips)
 
     # Drop raw census variable columns to keep output clean
-    raw_cols = [TOTAL_POP] + MALE_VARS + FEMALE_VARS
+    raw_cols = [TOTAL_POP] + MALE_VARS + FEMALE_VARS + B23001_VARS
     df = df.drop(columns=[c for c in raw_cols if c in df.columns])
 
     if cache_file:
@@ -127,6 +195,35 @@ def fetch_year(year: int, state_fips: str = "20",
         df.to_parquet(cache_file, index=False)
         print(f"  [saved] {cache_file.name}")
 
+    return df
+
+
+def _weighted_sum(df: pd.DataFrame, field: str) -> pd.Series:
+    total = pd.Series(0.0, index=df.index)
+    for weight, groups in B23001_18_64_WEIGHTS.items():
+        present = [v for v in groups[field] if v in df.columns]
+        if present:
+            total = total + df[present].sum(axis=1) * weight
+    return total
+
+
+def _add_labor_force_status(df: pd.DataFrame) -> pd.DataFrame:
+    """Add ACS B23001 18-64 civilian LFPR fields to the county-year table."""
+    if not any(v in df.columns for v in B23001_VARS):
+        return df
+
+    df = df.copy()
+    lf_status_pop = _weighted_sum(df, "total")
+    civilian_lf = _weighted_sum(df, "civilian_lf")
+    armed_forces = _weighted_sum(df, "armed_forces")
+    civilian_denominator = (lf_status_pop - armed_forces).clip(lower=0)
+
+    df["acs_lf_status_pop_18_64"] = lf_status_pop.round(0).astype("Int64")
+    df["acs_civilian_labor_force_18_64"] = civilian_lf.round(0).astype("Int64")
+    df["acs_armed_forces_18_64"] = armed_forces.round(0).astype("Int64")
+    df["acs_lfpr_pct"] = (
+        civilian_lf / civilian_denominator.replace(0, pd.NA) * 100
+    ).round(2).clip(0, 100)
     return df
 
 

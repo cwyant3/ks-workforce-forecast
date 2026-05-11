@@ -48,7 +48,7 @@ OUTPUT_DIR   = BASE_DIR / "data" / "outputs"
 # Ensure the project root is importable
 sys.path.insert(0, str(BASE_DIR))
 from fetch_acs      import fetch_all
-from cohort_model   import run_all_counties
+from cohort_model   import DEFAULT_RANDOM_SEED, run_all_counties
 from fetch_qcew     import fetch_state_qcew
 from sector_model   import run_all_sectors
 from fetch_laus     import fetch_laus, compute_lfpr
@@ -78,7 +78,8 @@ def main(state_fips: str = "20", api_key: str | None = None,
          run_kdol: bool = False,
          run_ksde: bool = False,
          run_ssa: bool = False,
-         run_bls_proj: bool = False):
+         run_bls_proj: bool = False,
+         random_seed: int | None = DEFAULT_RANDOM_SEED):
 
     OUTPUT_DIR.mkdir(parents=True,  exist_ok=True)
     CACHE_DIR.mkdir(parents=True,   exist_ok=True)
@@ -126,6 +127,7 @@ def main(state_fips: str = "20", api_key: str | None = None,
         end_year=end_year,
         n_sim=n_sim,
         return_state_simulations=True,
+        random_seed=random_seed,
     )
 
     proj_out = OUTPUT_DIR / f"projections_s{state_fips}.parquet"
@@ -338,9 +340,10 @@ def main(state_fips: str = "20", api_key: str | None = None,
         if laus_path.exists():
             _laus_for_participation = pd.read_parquet(laus_path)
 
-    # Build three-layer participation table when any layer is available
-    if run_ssa or run_laus:
-        print("\n=== Building participation model (three-layer workforce estimate) ===")
+    # Build participation table when ACS labor-force status or optional layers exist
+    has_acs_lf_status = "acs_lfpr_pct" in acs_df.columns and acs_df["acs_lfpr_pct"].notna().any()
+    if has_acs_lf_status or run_ssa or run_laus:
+        print("\n=== Building participation model (ACS LFPR effective workforce estimate) ===")
         part_df = build_participation_table(
             acs_df  = acs_df,
             ssa_df  = _ssa_for_participation,
@@ -487,6 +490,8 @@ if __name__ == "__main__":
     parser.add_argument("--state",  default="20",  help="State FIPS code (default: 20 = Kansas)")
     parser.add_argument("--key",    default=None,  help="Census API key (overrides .env)")
     parser.add_argument("--sims",   default=2000,  type=int, help="Monte Carlo simulations per county")
+    parser.add_argument("--seed",   default=DEFAULT_RANDOM_SEED, type=int,
+                        help=f"Random seed for reproducible Monte Carlo runs (default: {DEFAULT_RANDOM_SEED})")
     parser.add_argument("--start",       default=2026,  type=int, help="Forecast start year")
     parser.add_argument("--end",         default=2035,  type=int, help="Forecast end year")
     parser.add_argument("--no-sectors",  action="store_true",
@@ -537,4 +542,5 @@ if __name__ == "__main__":
          run_kdol=args.kdol,
          run_ksde=args.ksde,
          run_ssa=args.ssa,
-         run_bls_proj=args.bls_proj)
+         run_bls_proj=args.bls_proj,
+         random_seed=args.seed)

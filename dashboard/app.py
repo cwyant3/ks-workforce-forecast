@@ -27,6 +27,7 @@ sys.path.insert(0, str(ROOT))
 
 OUTPUT_DIR = ROOT / "data" / "outputs"
 QCEW_CACHE = ROOT / "data" / "qcew_cache"
+LOGO_PATH  = Path(__file__).parent / "wsu-tech-logo.png"
 
 # ── All US states + DC: name → 2-digit FIPS ─────────────────────────────────
 STATE_FIPS: dict[str, str] = {
@@ -304,9 +305,9 @@ def quality_badges(*labels: str) -> str:
     return f'<div style="margin:0.4rem 0 0.8rem;">{chips}</div>' if chips else ""
 
 
-def funnel_strip() -> str:
+def funnel_strip(selected_state: str) -> str:
     stages = [
-        ("01", "Population", "How many working-age Kansans are in the baseline and forecast?"),
+        ("01", "Population", f"How many working-age residents of {selected_state} are in the baseline and forecast?"),
         ("02", "Available Workforce", "How much of that population is plausibly available to work?"),
         ("03", "Demand Pressure", "Where do openings, claims, and projections suggest pressure?"),
         ("04", "Sector Exposure", "Which broad sectors create the biggest planning exposure?"),
@@ -382,9 +383,9 @@ def build_narrative_handoff(
         and (part_df["layers_used"].astype(str) != "ACS_only").any()
     )
     availability_note = (
-        "LAUS/SSA participation layers are populated for at least part of the state."
+        "ACS labor-force-status participation is populated for at least part of the state."
         if has_real_participation
-        else "Do not describe this as effective labor force yet; current participation output is ACS-only."
+        else "Do not describe this as effective labor force yet; current participation output has no LFPR layer."
     )
 
     demand_sources = []
@@ -489,7 +490,7 @@ Forecast window: {base_year}-{end_year}
 {_markdown_table(["Layer", "Current value", "How to use it"], local_rows)}
 
 ## Claims To Avoid
-- Do not call working-age population "labor force" unless LAUS/SSA layers are populated.
+- Do not call working-age population "labor force" unless ACS B23001 LFPR is populated.
 - Do not call sector employment change "job openings" or "vacancies."
 - Do not treat IPEDS completions as placements or local retention.
 - Do not compare residence-based population directly to worksite employment without commute context.
@@ -511,9 +512,9 @@ def build_methodology_handoff(
         ["ACS cohort model", "loaded", "Population baseline and forecast"],
         ["QCEW sector model", "loaded when sector outputs exist", "Employment exposure, not openings"],
         [
-            "LAUS/SSA participation",
+            "ACS/SSA participation",
             "loaded" if part_df is not None and not part_df.empty else "not loaded",
-            "Effective labor force only when non-ACS layers are present",
+            "Effective labor force from ACS B23001 LFPR, with optional SSA adjustment",
         ],
         [
             "JOLTS vacancy rates",
@@ -557,7 +558,7 @@ models entry from the 15-17 cohort into 18-24, models retirement exits from 60-6
 
 ## Presentation Guardrails
 - ACS is a residence-based population estimate, not a count of available workers.
-- LAUS/SSA participation layers are required before saying "effective labor force."
+- ACS B23001 labor-force-status fields are required before saying "effective labor force."
 - QCEW sector projections describe employment exposure; they do not measure vacancies.
 - JOLTS and BLS demand layers are national unless specifically regenerated at a state layer.
 - KDOL UI claims are Kansas-only and should be framed as a pulse, not a forecast.
@@ -658,8 +659,7 @@ def main():
 
     # ── Sidebar — state selector at the very top ──────────────────────────
     with st.sidebar:
-        st.image("https://www.wsutech.edu/images/logo-wsutech.png",
-                 use_container_width=True)
+        st.image(str(LOGO_PATH), use_container_width=True)
         st.markdown("---")
         st.markdown("### State")
         state_names = sorted(STATE_FIPS.keys())
@@ -775,9 +775,9 @@ def main():
         <h1>{selected_state} Workforce Dashboard &nbsp; {start_year}–{end_year}</h1>
         <p>Population &rarr; Available Workforce &rarr; Demand Pressure &rarr;
            Sector Exposure &rarr; Local Action &nbsp;·&nbsp;
-           ACS 5-Year Estimates (2015–2023) &nbsp;·&nbsp; {n_counties} counties</p>
+           ACS 5-Year Estimates (2015–2024) &nbsp;·&nbsp; {n_counties} counties</p>
     </div>""", unsafe_allow_html=True)
-    st.markdown(funnel_strip(), unsafe_allow_html=True)
+    st.markdown(funnel_strip(selected_state), unsafe_allow_html=True)
 
     # ── Tabs ──────────────────────────────────────────────────────────────
     (tab_exec, tab_population, tab_available, tab_demand, tab_sector,
@@ -811,14 +811,14 @@ def main():
             and (part_df["layers_used"].astype(str) != "ACS_only").any()
         )
         availability_headline = (
-            "Participation layers loaded"
+            "ACS participation layer loaded"
             if has_real_participation
             else "Availability still equals ACS population"
         )
         availability_detail = (
-            "LAUS/SSA adjustments are present for at least part of the state."
+            "ACS labor-force-status adjustment is present for at least part of the state."
             if has_real_participation
-            else "Current participation output is ACS-only, so this view avoids claiming effective labor force until LAUS/SSA are regenerated."
+            else "Current participation output has no LFPR layer, so this view avoids claiming effective labor force until ACS labor-force status is regenerated."
         )
 
         jolts_df = load_jolts()
@@ -1157,9 +1157,9 @@ def main():
                     "SSDI + SSI, 18–64",
                 ), unsafe_allow_html=True)
                 pkpi[2].markdown(metric_card(
-                    "Labor Force Part. Rate (LAUS)",
+                    "Labor Force Part. Rate (ACS)",
                     f"{lfpr:.1f}%" if lfpr and not pd.isna(lfpr) else "—",
-                    "BLS LAUS county estimate",
+                    "ACS B23001 civilian 18–64",
                 ), unsafe_allow_html=True)
                 pkpi[3].markdown(metric_card(
                     "Effective Labor Force",
@@ -2688,14 +2688,14 @@ county of **{selected_state}** from a 2023 ACS baseline through {end_year}.
 ### Core Data Sources
 | Source | Tab | CLI Flag | Description |
 |--------|-----|----------|-------------|
-| U.S. Census Bureau ACS 5-Year Estimates | Population / Available Workforce | (required) | Age-by-sex population (Table B01001) for 2015–2023; each vintage is a 5-year period estimate |
+| U.S. Census Bureau ACS 5-Year Estimates | Population / Available Workforce | (required) | Age-by-sex population (B01001) and labor-force status (B23001) for 2015–2024; each vintage is a 5-year period estimate |
 | CDC 2021 National Life Tables | All | (built-in) | Age-specific annual survival probabilities |
 | BLS Quarterly Census of Employment & Wages (QCEW) | Sector Exposure | (auto) | County annual employment and wages by NAICS sector, 2015–2023 |
 
 ### Extended Data Sources (10-Dataset Integration)
 | # | Source | Tab | CLI Flag | Description |
 |---|--------|-----|----------|-------------|
-| 1 | BLS LAUS | Available Workforce | `--laus` | County labor force participation rates; feeds participation model |
+| 1 | BLS LAUS | Available Workforce | `--laus` | County labor force counts and unemployment context |
 | 2 | NCES IPEDS | Local Action | `--ipeds` | Postsecondary completions by CIP program and county |
 | 3 | Census LODES | Local Action | `--lodes` | Origin-destination commute flows; local vs. imported worker share |
 | 4 | BLS OES | (internal) | `--oes` | Occupational employment and wage estimates by sector |
@@ -2785,7 +2785,7 @@ effective labor force estimate:
 1. **ACS working-age population (18–64)** — raw cohort-model output
 2. **Minus SSA disability** (SSDI + SSI, 18–64) — removes individuals with federal
    disability determinations (`disability_adjusted_pop`)
-3. **× LAUS labor force participation rate** — accounts for structural non-participation
+3. **× ACS B23001 civilian labor force participation rate** — accounts for structural non-participation
    (`effective_labor_force`)
 
 The `layers_used` badge indicates which layers were populated for each county-year.

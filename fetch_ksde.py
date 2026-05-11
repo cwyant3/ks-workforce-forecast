@@ -8,16 +8,18 @@ KS-ONLY MODULE.
 
 Primary data source: NCES Common Core of Data (CCD) via Urban Institute
   Education Data Portal API (free, no key required)
-  https://educationdata.urban.org/api/v1/school-districts/ccd/enrollment/
+  Enrollment: https://educationdata.urban.org/api/v1/school-districts/ccd/enrollment/{year}/grade-{N}/
+  Directory:  https://educationdata.urban.org/api/v1/school-districts/ccd/directory/{year}/
+
+  API notes (corrected from original):
+    - Enrollment endpoint uses path segment `grade-{N}` (e.g. grade-9), NOT grade-eoy.
+    - State filter for enrollment endpoint uses `fips=20`, NOT state_fips_code.
+    - Enrollment endpoint returns leaid + fips only; county_code comes from the directory.
+    - Race/sex totals: filter race=99&sex=99 for all-race, both-sex aggregate.
 
 Fallback: manually placed file at {cache_dir}/ksde_manual.csv
   Required columns: year, county_fips (3-digit or 5-digit), grade_group
                     (one of: 'k_5', '6_8', '9_12', 'total'), enrollment
-
-Why NCES CCD instead of KSDE directly:
-  KSDE's web portal does not expose stable download URLs. CCD aggregates
-  KSDE-reported data and publishes it through a documented REST API that
-  returns the same enrollment figures with reliable schema.
 
 Grade → ACS cohort mapping:
   9-12 (ages 14-17) → pop_15_17    — enters workforce in 1–3 years
@@ -29,14 +31,8 @@ Output DataFrame columns:
   grade_group (str), enrollment (int),
   enrollment_trend_slope (float), pct_change_5yr (float | None),
   pipeline_alert (bool)  — True if >10% decline in 5 years
-
-ACS override function apply_ksde_override():
-  Patches ACS DataFrame youth cohort columns (pop_15_17, pop_10_14, pop_5_9)
-  with KSDE enrollment values for the baseline year, before passing to
-  cohort_model.run_all_counties().
 """
 
-import io
 import time
 import warnings
 import requests
@@ -45,40 +41,54 @@ import numpy as np
 from pathlib import Path
 
 _KS_FIPS   = "20"
-_API_BASE   = "https://educationdata.urban.org/api/v1/school-districts/ccd/enrollment"
-_PAGE_SIZE  = 1000
+_ENROLL_BASE = "https://educationdata.urban.org/api/v1/school-districts/ccd/enrollment"
+_DIR_BASE    = "https://educationdata.urban.org/api/v1/school-districts/ccd/directory"
+_PAGE_SIZE   = 1000
 
-# CCD grade codes — 99=total, 0=Pre-K, 1-12=standard grades
+# CCD grade numbers: 0=Kindergarten, 1-12=grades 1-12
 _GRADE_GROUPS: dict[str, list[int]] = {
-    "k_5":   [0, 1, 2, 3, 4, 5],       # K (0 in CCD) and grades 1–5
-    "6_8":   [6, 7, 8],
-    "9_12":  [9, 10, 11, 12],
-    "total": [99],                       # CCD total-enrollment shortcut
+    "k_5":  [0, 1, 2, 3, 4, 5],
+    "6_8":  [6, 7, 8],
+    "9_12": [9, 10, 11, 12],
 }
 
 _HTTP_HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; workforce-forecast/1.0)"}
 
-# Years available in NCES CCD enrollment API (1987–present; we use 2010+)
 KSDE_YEARS = list(range(2010, 2024))
 
+_MAX_RETRIES = 3
+_RETRY_DELAY = 2.0
 
-# ── CCD API fetch ─────────────────────────────────────────────────────────────
 
-def _fetch_ccd_year(year: int, grade: int) -> list[dict]:
-    """Fetch one year × grade from NCES CCD API; handles pagination."""
-    url     = f"{_API_BASE}/{year}/grade-eoy/"
-    params  = {
-        "state_fips_code": int(_KS_FIPS),
-        "grade":           grade,
-        "per_page":        _PAGE_SIZE,
-        "page":            1,
-    }
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
+def _get_with_retry(url: str, params: dict, timeout: int = 60) -> requests.Response | None:
+    """GET with simple retry on timeout or 5xx."""
+    for attempt in range(_MAX_RETRIES):
+        try:
+            resp = requests.get(url, params=params, headers=_HTTP_HEADERS, timeout=timeout)
+            if resp.status_code in (200, 404):
+                return resp
+            if resp.status_code >= 500:
+                print(f"    {resp.status_code} on attempt {attempt+1}, retrying…")
+                time.sleep(_RETRY_DELAY * (attempt + 1))
+        except requests.exceptions.Timeout:
+            print(f"    Timeout on attempt {attempt+1}, retrying…")
+            time.sleep(_RETRY_DELAY * (attempt + 1))
+        except Exception as exc:
+            print(f"    Error: {exc}")
+            return None
+    return None
+
+
+def _paginate(url: str, base_params: dict) -> list[dict]:
+    """Fetch all pages from a paginated Urban Institute API endpoint."""
     rows = []
+    params = {**base_params, "per_page": _PAGE_SIZE, "page": 1}
     while True:
-        resp = requests.get(url, params=params, headers=_HTTP_HEADERS, timeout=60)
-        if resp.status_code == 404:
-            return []    # year/grade combo not available
-        resp.raise_for_status()
+        resp = _get_with_retry(url, params)
+        if resp is None or resp.status_code == 404:
+            break
         data = resp.json()
         batch = data.get("results", [])
         rows.extend(batch)
@@ -89,60 +99,76 @@ def _fetch_ccd_year(year: int, grade: int) -> list[dict]:
     return rows
 
 
-def _ccd_rows_to_df(rows: list[dict], year: int, grade_group: str) -> pd.DataFrame:
-    """Parse CCD API rows; aggregate to county_fips level."""
-    if not rows:
-        return pd.DataFrame()
+# ── Directory: leaid → county_fips lookup ────────────────────────────────────
 
-    df = pd.DataFrame(rows)
-    if "county_code" not in df.columns or "enrollment" not in df.columns:
-        return pd.DataFrame()
-
-    df["county_code"] = df["county_code"].astype(str).str.strip()
-    # county_code is 5-digit FIPS; extract state prefix and 3-digit county
-    ks_mask = df["county_code"].str[:2] == _KS_FIPS
-    df = df[ks_mask].copy()
-    if df.empty:
-        return df
-
-    df["county_fips"] = df["county_code"].str[-3:].str.zfill(3)
-    df["enrollment"]  = pd.to_numeric(df["enrollment"], errors="coerce").fillna(0)
-
-    agg = (
-        df.groupby("county_fips", as_index=False)["enrollment"]
-        .sum()
-    )
-    agg["year"]        = year
-    agg["grade_group"] = grade_group
-    agg["state_fips"]  = _KS_FIPS
-    agg["enrollment"]  = agg["enrollment"].astype(int)
-    return agg
+def _fetch_leaid_county_map(year: int) -> dict[str, str]:
+    """
+    Fetch district directory for one year; return {leaid: county_fips_3digit}.
+    Uses state_fips_code=20 filter (directory uses this param; enrollment uses fips).
+    """
+    url = f"{_DIR_BASE}/{year}/"
+    rows = _paginate(url, {"state_fips_code": int(_KS_FIPS)})
+    mapping: dict[str, str] = {}
+    for row in rows:
+        leaid = str(row.get("leaid", "")).strip()
+        county = str(row.get("county_code", "")).strip()
+        if leaid and county and len(county) >= 3:
+            mapping[leaid] = county[-3:].zfill(3)
+    return mapping
 
 
-def _fetch_year_all_groups(year: int) -> pd.DataFrame:
-    """Fetch K-5, 6-8, 9-12, and total enrollment for one year from CCD."""
+# ── Grade-level enrollment fetch ──────────────────────────────────────────────
+
+def _fetch_grade(year: int, grade: int) -> list[dict]:
+    """
+    Fetch district-level enrollment for one year and grade (all races, both sexes).
+    Returns [{leaid, year, grade, enrollment}].
+    Enrollment endpoint filter: fips=20 (not state_fips_code).
+    """
+    url = f"{_ENROLL_BASE}/{year}/grade-{grade}/"
+    rows = _paginate(url, {"fips": int(_KS_FIPS), "race": 99, "sex": 99})
+    return rows
+
+
+def _fetch_year_all_groups(
+    year: int, leaid_county: dict[str, str]
+) -> pd.DataFrame:
+    """Fetch all grade groups for one year; aggregate to county level."""
     frames = []
 
-    # Total enrollment via grade=99 (fastest path)
-    rows = _fetch_ccd_year(year, 99)
-    df_total = _ccd_rows_to_df(rows, year, "total")
-    if not df_total.empty:
-        frames.append(df_total)
-    time.sleep(0.5)
-
-    # Grade-group sums
     for group, grades in _GRADE_GROUPS.items():
-        if group == "total":
-            continue
-        group_rows = []
+        group_enrollment: dict[str, int] = {}  # county_fips → total
         for grade in grades:
-            group_rows.extend(_fetch_ccd_year(year, grade))
+            rows = _fetch_grade(year, grade)
+            for row in rows:
+                leaid  = str(row.get("leaid", ""))
+                county = leaid_county.get(leaid)
+                if county is None:
+                    continue
+                enroll = row.get("enrollment") or 0
+                group_enrollment[county] = group_enrollment.get(county, 0) + int(enroll)
             time.sleep(0.2)
-        df_grp = _ccd_rows_to_df(group_rows, year, group)
-        if not df_grp.empty:
+
+        if group_enrollment:
+            df_grp = pd.DataFrame([
+                {"county_fips": c, "year": year, "grade_group": group,
+                 "enrollment": v, "state_fips": _KS_FIPS}
+                for c, v in group_enrollment.items()
+            ])
             frames.append(df_grp)
 
-    return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
+    if not frames:
+        return pd.DataFrame()
+
+    df = pd.concat(frames, ignore_index=True)
+
+    # Append derived "total" row per county
+    totals = (
+        df.groupby("county_fips", as_index=False)["enrollment"]
+        .sum()
+        .assign(year=year, grade_group="total", state_fips=_KS_FIPS)
+    )
+    return pd.concat([df, totals], ignore_index=True)
 
 
 # ── Manual file fallback ──────────────────────────────────────────────────────
@@ -177,7 +203,6 @@ def _compute_trends(df: pd.DataFrame) -> pd.DataFrame:
 
         slope = float(np.polyfit(x - x.mean(), y, 1)[0]) if len(grp) >= 2 else 0.0
 
-        # 5-year change
         if len(grp) >= 5:
             start_val = float(grp.iloc[-5]["enrollment"])
             end_val   = float(grp.iloc[-1]["enrollment"])
@@ -238,31 +263,21 @@ def fetch_ksde(
         print(f"  [cache] KSDE enrollment")
         return pd.read_parquet(cache_file)
 
-    # Try CCD API
-    frames = []
-    api_ok  = False
-    for year in years:
-        print(f"  KSDE/CCD {year}…")
-        try:
-            yr_df = _fetch_year_all_groups(year)
-            if not yr_df.empty:
-                frames.append(yr_df)
-                api_ok = True
-            time.sleep(1.0)
-        except Exception as exc:
-            print(f"    Warning: CCD {year} failed — {exc}")
-
-    if not api_ok:
-        print("  [KSDE] CCD API unavailable — checking for manual file…")
+    # Build leaid → county_fips map from the most recent available year
+    print(f"  KSDE/CCD: fetching district-to-county map for {max(years)}...")
+    leaid_county = _fetch_leaid_county_map(max(years))
+    if not leaid_county:
+        print("  [KSDE] Directory fetch failed — checking for manual file…")
         manual = _load_manual(cache_dir)
         if manual is None:
             warnings.warn(
-                "\n\nKSDE enrollment data not available.\n"
-                "Options:\n"
-                f"  1. Verify internet access to {_API_BASE}\n"
+                f"\n\nKSDE enrollment data not available.\n"
+                f"CCD API unreachable at {_ENROLL_BASE}\n"
+                f"Options:\n"
+                f"  1. Verify internet access to educationdata.urban.org\n"
                 f"  2. Place a manual file at: {cache_dir / 'ksde_manual.csv'}\n"
-                "     Required columns: year, county_fips, grade_group, enrollment\n"
-                "     grade_group values: k_5, 6_8, 9_12, total\n"
+                f"     Required columns: year, county_fips, grade_group, enrollment\n"
+                f"     grade_group values: k_5, 6_8, 9_12, total\n"
                 "Then re-run with --ksde flag.\n",
                 UserWarning,
                 stacklevel=2,
@@ -272,10 +287,41 @@ def fetch_ksde(
                 "enrollment_trend_slope", "pct_change_5yr", "pipeline_alert",
             ])
         frames = [manual]
+    else:
+        print(f"  KSDE/CCD: {len(leaid_county)} districts mapped to counties")
+        frames = []
+        api_ok = False
+        for year in years:
+            print(f"  KSDE/CCD {year}…")
+            try:
+                yr_df = _fetch_year_all_groups(year, leaid_county)
+                if not yr_df.empty:
+                    frames.append(yr_df)
+                    api_ok = True
+                time.sleep(1.0)
+            except Exception as exc:
+                print(f"    Warning: CCD {year} failed — {exc}")
+
+        if not api_ok:
+            print("  [KSDE] CCD API unavailable — checking for manual file…")
+            manual = _load_manual(cache_dir)
+            if manual is None:
+                warnings.warn(
+                    f"\n\nKSDE enrollment data not available.\n"
+                    f"CCD API returned no data for years {years}.\n"
+                    f"Place a manual file at: {cache_dir / 'ksde_manual.csv'}\n",
+                    UserWarning,
+                    stacklevel=2,
+                )
+                return pd.DataFrame(columns=[
+                    "state_fips", "county_fips", "year", "grade_group", "enrollment",
+                    "enrollment_trend_slope", "pct_change_5yr", "pipeline_alert",
+                ])
+            frames = [manual]
 
     df = pd.concat(frames, ignore_index=True)
-    df["enrollment"] = pd.to_numeric(df["enrollment"], errors="coerce").fillna(0).astype(int)
-    df["year"]       = pd.to_numeric(df["year"],       errors="coerce").astype(int)
+    df["enrollment"]  = pd.to_numeric(df["enrollment"],  errors="coerce").fillna(0).astype(int)
+    df["year"]        = pd.to_numeric(df["year"],        errors="coerce").astype(int)
     df["county_fips"] = df["county_fips"].astype(str).str[-3:].str.zfill(3)
 
     df = _compute_trends(df)
@@ -298,17 +344,12 @@ def apply_ksde_override(
     """
     Patch ACS youth cohort columns with KSDE enrollment values for the
     baseline (most recent) ACS year. Only affects the baseline row per county;
-    historical ACS rows are left unchanged (migration estimation uses them as-is).
+    historical ACS rows are left unchanged.
 
     Mapping:
-      KSDE 9-12 enrollment  → pop_15_17  (ages 14–17; most proximate to 18-24 entry)
-      KSDE 6-8  enrollment  → pop_10_14  (ages 11–13; pipeline horizon 5–8 yrs)
-      KSDE K-5  enrollment  → pop_5_9    (ages 5–10;  pipeline horizon 9–13 yrs)
-
-    Note: KSDE counts include ages slightly outside the ACS cohort boundaries
-    (e.g. 9th graders may be 14 or 15). The enrollment count is used as a
-    direct replacement, not a scaled adjustment. For counties where KSDE data
-    is missing, the original ACS value is retained.
+      KSDE 9-12 enrollment  → pop_15_17
+      KSDE 6-8  enrollment  → pop_10_14
+      KSDE K-5  enrollment  → pop_5_9
 
     Parameters
     ----------
@@ -328,7 +369,6 @@ def apply_ksde_override(
     if baseline_year is None:
         baseline_year = int(acs_df["year"].max())
 
-    # Use the most recent KSDE year ≤ baseline_year
     ksde_years = sorted(ksde_df["year"].unique())
     ksde_use_year = max((y for y in ksde_years if y <= baseline_year),
                         default=max(ksde_years))
@@ -343,6 +383,7 @@ def apply_ksde_override(
 
     acs = acs_df.copy()
     acs["ksde_override"] = False
+    patched_cells = 0
 
     for group, col in group_to_col.items():
         if col not in acs.columns:
@@ -355,10 +396,18 @@ def apply_ksde_override(
         for county_fips, enroll_val in grp_df.items():
             county_mask = bl_mask & (acs["county_fips"] == county_fips)
             if county_mask.any():
-                acs.loc[county_mask, col]            = float(enroll_val)
+                acs.loc[county_mask, col]             = float(enroll_val)
                 acs.loc[county_mask, "ksde_override"] = True
+                patched_cells += int(county_mask.sum())
 
-    n_patched = acs["ksde_override"].sum()
-    print(f"  KSDE override applied: {n_patched} county-cohort cells patched "
-          f"(ACS year {baseline_year} ← KSDE year {ksde_use_year})")
+    bl_mask = acs["year"] == baseline_year
+    youth_cols = ["pop_under_5", "pop_5_9", "pop_10_14", "pop_15_17"]
+    if all(c in acs.columns for c in youth_cols):
+        acs.loc[bl_mask, "pop_youth"] = acs.loc[bl_mask, youth_cols].sum(axis=1)
+    total_parts = ["pop_youth", "pop_working_age", "pop_retirement"]
+    if all(c in acs.columns for c in total_parts):
+        acs.loc[bl_mask, "pop_total"] = acs.loc[bl_mask, total_parts].sum(axis=1)
+
+    print(f"  KSDE override applied: {patched_cells} county-cohort cells patched "
+          f"(ACS year {baseline_year} <- KSDE year {ksde_use_year})")
     return acs

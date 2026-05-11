@@ -239,19 +239,30 @@ def compute_lfpr(
     acs_df: pd.DataFrame,
 ) -> pd.DataFrame:
     """
-    Join LAUS labor force counts with ACS working-age population to compute
-    county-level labor force participation rate (LFPR).
+    Join LAUS labor force counts with ACS labor-force-status data.
 
-    LFPR = labor_force / pop_working_age × 100
+    Preferred LFPR = ACS civilian labor force 18-64 / ACS civilian labor-force
+    status population 18-64. This keeps numerator and denominator in the same
+    ACS universe. If legacy ACS files do not have B23001 fields, the function
+    falls back to the older LAUS labor_force / ACS working-age population proxy.
 
     ACS years are mapped to the nearest LAUS year using forward-fill so the
     5-year estimate midpoint is used as the population denominator.
 
-    Returns laus_df with added columns: pop_working_age, lfpr_pct,
-    effective_workforce_lfpr.
+    Returns laus_df with added ACS denominator columns, lfpr_pct, lfpr_source,
+    and effective_workforce_lfpr.
     """
     # Use ACS midpoint year as the denominator anchor
-    acs_pop = acs_df[["county_fips", "acs_period_midpoint_year", "pop_working_age"]].copy()
+    acs_cols = ["county_fips", "acs_period_midpoint_year", "pop_working_age"]
+    for col in [
+        "acs_lf_status_pop_18_64",
+        "acs_civilian_labor_force_18_64",
+        "acs_armed_forces_18_64",
+        "acs_lfpr_pct",
+    ]:
+        if col in acs_df.columns:
+            acs_cols.append(col)
+    acs_pop = acs_df[acs_cols].copy()
     acs_pop = acs_pop.rename(columns={"acs_period_midpoint_year": "year"})
 
     # For each LAUS year, find the nearest ACS vintage (forward/backward fill)
@@ -269,9 +280,14 @@ def compute_lfpr(
         how="left",
     ).drop(columns=["_acs_year"])
 
-    merged["lfpr_pct"] = (
-        merged["labor_force"] / merged["pop_working_age"] * 100
-    ).round(2)
+    if "acs_lfpr_pct" in merged.columns and merged["acs_lfpr_pct"].notna().any():
+        merged["lfpr_pct"] = merged["acs_lfpr_pct"]
+        merged["lfpr_source"] = "ACS_B23001_civilian_18_64"
+    else:
+        merged["lfpr_pct"] = (
+            merged["labor_force"] / merged["pop_working_age"] * 100
+        ).round(2)
+        merged["lfpr_source"] = "LAUS_labor_force_over_ACS_18_64_proxy"
 
     # Clamp LFPR to [0, 100] — rounding or suppression artifacts can produce outliers
     merged["lfpr_pct"] = merged["lfpr_pct"].clip(0, 100)

@@ -274,6 +274,36 @@ def load_bls_outlook():
     return pd.read_parquet(f) if f.exists() else None
 
 
+@st.cache_data(show_spinner="Loading KS occupational projections…")
+def load_ks_occ_in_demand(state_fips: str):
+    f = OUTPUT_DIR / f"ks_occ_in_demand_top_s{state_fips}.parquet"
+    return pd.read_parquet(f) if f.exists() else None
+
+
+@st.cache_data(show_spinner="Loading KS sector outlook…")
+def load_ks_occ_by_sector(state_fips: str):
+    f = OUTPUT_DIR / f"ks_occ_by_sector_s{state_fips}.parquet"
+    return pd.read_parquet(f) if f.exists() else None
+
+
+@st.cache_data(show_spinner="Loading KDOL labor force state…")
+def load_kdol_labforce_state(state_fips: str):
+    f = OUTPUT_DIR / f"kdol_labforce_state_s{state_fips}.parquet"
+    return pd.read_parquet(f) if f.exists() else None
+
+
+@st.cache_data(show_spinner="Loading KDOL labor force county-recent…")
+def load_kdol_labforce_county_recent(state_fips: str):
+    f = OUTPUT_DIR / f"kdol_labforce_county_recent_s{state_fips}.parquet"
+    return pd.read_parquet(f) if f.exists() else None
+
+
+@st.cache_data(show_spinner="Loading CBP establishment trends…")
+def load_cbp_estab_trends(state_fips: str):
+    f = OUTPUT_DIR / f"cbp_estab_trends_s{state_fips}.parquet"
+    return pd.read_parquet(f) if f.exists() else None
+
+
 # ── Helpers ───────────────────────────────────────────────────────────────────
 def _fmt(n: float, decimals: int = 0) -> str:
     if pd.isna(n):
@@ -1161,9 +1191,22 @@ def main():
                     f"{lfpr:.1f}%" if lfpr and not pd.isna(lfpr) else "—",
                     "ACS B23001 civilian 18–64",
                 ), unsafe_allow_html=True)
+                wap = row.get("working_age_pop")
+                gap_label = ""
+                if (eff_lf is not None and not pd.isna(eff_lf)
+                        and wap is not None and not pd.isna(wap) and wap > 0):
+                    gap_pct = (1 - eff_lf / wap) * 100
+                    gap_abs = wap - eff_lf
+                    gap_label = (
+                        f'<span class="declining">'
+                        f'{gap_pct:.0f}% structural gap '
+                        f'({_fmt(gap_abs)} fewer than working-age pop)'
+                        f'</span><br>'
+                    )
                 pkpi[3].markdown(metric_card(
                     "Effective Labor Force",
                     _fmt(eff_lf) if eff_lf and not pd.isna(eff_lf) else "—",
+                    gap_label +
                     f'<span style="font-size:0.78rem;color:{C_NEUTRAL};">{layers}</span>',
                 ), unsafe_allow_html=True)
                 st.markdown("<br>", unsafe_allow_html=True)
@@ -1923,6 +1966,62 @@ def main():
                     st.dataframe(pd.DataFrame(wage_rows), hide_index=True,
                                  use_container_width=True)
 
+            # ── CBP Establishment Trends — leading indicator overlay ──────
+            cbp_trends = load_cbp_estab_trends(state_fips)
+            if cbp_trends is not None and not cbp_trends.empty:
+                st.markdown("#### Establishment Count Trend by Sector (CBP)")
+                st.caption(
+                    "Census County Business Patterns establishment counts trended 2015–2022. "
+                    "Firm formation precedes hiring by 12–18 months — a sector with declining "
+                    "establishments is consolidating; a sector with growing establishments is expanding. "
+                    "Use as a leading indicator alongside the QCEW employment trends above."
+                )
+                cbp_state = cbp_trends[cbp_trends["state_fips"] == state_fips].copy()
+                if not cbp_state.empty:
+                    cbp_summary = (
+                        cbp_state.groupby("sector", as_index=False)
+                        .agg(
+                            counties_covered=("county_fips", "nunique"),
+                            median_pct_chg=("estab_pct_chg", "median"),
+                            total_estab_latest=("estab_latest", "sum"),
+                            avg_annual_slope=("estab_slope", "mean"),
+                        )
+                    )
+                    cbp_summary = cbp_summary[cbp_summary["sector"].isin(SECTORS)]
+
+                    cbp_kpis = st.columns(len(SECTORS))
+                    for col, sector in zip(cbp_kpis, SECTORS):
+                        s_row = cbp_summary[cbp_summary["sector"] == sector]
+                        if s_row.empty:
+                            col.markdown(metric_card(
+                                sector_label(sector), "—",
+                                "no establishment data",
+                            ), unsafe_allow_html=True)
+                            continue
+                        latest_count = int(s_row["total_estab_latest"].iloc[0])
+                        pct_chg      = float(s_row["median_pct_chg"].iloc[0])
+                        annual       = float(s_row["avg_annual_slope"].iloc[0])
+                        n_counties   = int(s_row["counties_covered"].iloc[0])
+                        chg_cls = "growing" if pct_chg >= 0 else "declining"
+                        col.markdown(metric_card(
+                            sector_label(sector),
+                            _fmt(latest_count),
+                            (
+                                f'<span class="{chg_cls}">{pct_chg:+.1f}% (2015–2022)</span><br>'
+                                f'<span style="font-size:0.78rem;color:{C_NEUTRAL};">'
+                                f'{annual:+.1f}/yr · {n_counties} of 105 counties</span>'
+                            ),
+                        ), unsafe_allow_html=True)
+
+                    st.markdown(
+                        '<div class="note-box" style="margin-top:0.6rem;">'
+                        "Per-sector median % change across counties (not a state-level establishment count). "
+                        "Manufacturing under-coverage reflects NAICS 31–33 returning no rows for rural KS counties "
+                        "with zero manufacturing establishments — a real data limitation in CBP."
+                        "</div>",
+                        unsafe_allow_html=True,
+                    )
+
             # ── Download ──────────────────────────────────────────────────
             csv_sec = c_sec.to_csv(index=False).encode("utf-8") \
                       if not c_sec.empty else b""
@@ -2343,130 +2442,251 @@ def main():
                     if bls_rows:
                         st.dataframe(pd.DataFrame(bls_rows), hide_index=True, use_container_width=True)
 
+            # ── KS State vs BLS National — sector outlook comparison ──────
+            ks_sector_df = load_ks_occ_by_sector(state_fips)
+            if has_bls and ks_sector_df is not None and not ks_sector_df.empty:
+                st.markdown("#### KS State (KDOL) vs. BLS National — Sector Outlook Comparison")
+                st.caption(
+                    "Side-by-side projected % change in sector employment, comparing the KS-specific "
+                    "KDOL occupational projection (2022–2032) against the BLS national projection "
+                    "(2024–2034). Divergence highlights where KS demand differs from national trends."
+                )
+                bls_sector_map = dict(zip(bls_df["sector"], bls_df["emp_change_pct"]))
+                ks_sector_map  = dict(zip(ks_sector_df["sector"], ks_sector_df["emp_change_pct"]))
+                comp_sectors = [s for s in SECTORS if s in bls_sector_map or s in ks_sector_map]
+                fig_comp = go.Figure()
+                fig_comp.add_trace(go.Bar(
+                    name="BLS National (2024–2034)",
+                    x=[sector_label(s) for s in comp_sectors],
+                    y=[bls_sector_map.get(s) for s in comp_sectors],
+                    marker_color=C_BLUE,
+                    text=[f"{bls_sector_map.get(s):+.1f}%" if bls_sector_map.get(s) is not None else ""
+                          for s in comp_sectors],
+                    textposition="outside",
+                    textfont=dict(color="black"),
+                    hovertemplate="<b>%{x}</b><br>BLS National: %{y:+.1f}%<extra></extra>",
+                ))
+                fig_comp.add_trace(go.Bar(
+                    name="KS State KDOL (2022–2032)",
+                    x=[sector_label(s) for s in comp_sectors],
+                    y=[ks_sector_map.get(s) for s in comp_sectors],
+                    marker_color=C_GOLD,
+                    text=[f"{ks_sector_map.get(s):+.1f}%" if ks_sector_map.get(s) is not None else ""
+                          for s in comp_sectors],
+                    textposition="outside",
+                    textfont=dict(color="black"),
+                    hovertemplate="<b>%{x}</b><br>KS State: %{y:+.1f}%<extra></extra>",
+                ))
+                fig_comp.update_layout(
+                    barmode="group", bargap=0.25,
+                    title=dict(text="Projected Employment Change % by Sector",
+                               font=dict(size=15, color=C_BLUE)),
+                    xaxis=dict(title="Sector", title_font=dict(color="black"),
+                               tickfont=dict(color="black")),
+                    yaxis=dict(title="Projected % Change", tickformat=".1f",
+                               title_font=dict(color="black"), tickfont=dict(color="black"),
+                               zeroline=True, zerolinecolor=C_NEUTRAL),
+                    legend=dict(orientation="h", yanchor="bottom", y=1.02,
+                                xanchor="right", x=1, font=dict(color="black")),
+                    plot_bgcolor=C_LIGHT, paper_bgcolor="white",
+                    margin=dict(t=80, b=40, l=60, r=30),
+                )
+                st.plotly_chart(fig_comp, use_container_width=True)
+
+            # ── KS In-Demand Occupations (KDOL Workforce Innovation Board) ─
+            in_demand_df = load_ks_occ_in_demand(state_fips)
+            if in_demand_df is not None and not in_demand_df.empty:
+                st.markdown("#### Kansas In-Demand Occupations — Top by Annual Openings")
+                st.caption(
+                    "Occupations flagged in-demand by the Kansas Workforce Innovation Board, "
+                    "ranked by projected annual openings (2022–2032). Directly relevant for "
+                    "WSU Tech program design priorities."
+                )
+                top_n = 25
+                top_df = in_demand_df.head(top_n).copy()
+                top_df["Sector"] = top_df["sector"].fillna("(other)").map(
+                    lambda s: SECTOR_DISPLAY_NAMES.get(s, s) if s in SECTORS else s
+                )
+                display = pd.DataFrame({
+                    "Occupation":          top_df["occ_title"],
+                    "Sector":              top_df["Sector"],
+                    "Annual Openings":     top_df["annual_openings"].map(_fmt),
+                    "Current Employment":  top_df["base_emp"].map(_fmt),
+                    "% Change 2022–2032":  top_df["pct_change"].map(lambda v: f"{v:+.1f}%"),
+                })
+                st.dataframe(display, hide_index=True, use_container_width=True)
+                st.caption(
+                    f"Showing top {top_n} of {len(in_demand_df)} in-demand occupations. "
+                    "Source: KDOL LMIS occupational projections."
+                )
+
     # ═════════════════════════════════════════════════════════════════════
-    # TAB 3 — DEMAND PRESSURE: LABOR MARKET PULSE (KS-only KDOL UI claims)
+    # TAB 3 — DEMAND PRESSURE: KS CURRENT LABOR MARKET PULSE (KDOL labor force)
     # ═════════════════════════════════════════════════════════════════════
     with tab_demand:
-        kdol_df = load_kdol()
+        kdol_lf_state = load_kdol_labforce_state(state_fips)
+        kdol_lf_recent = load_kdol_labforce_county_recent(state_fips)
 
-        if kdol_df is None or kdol_df.empty:
-            if state_fips != "20":
-                st.info(
-                    "The Demand Pressure tab uses KDOL UI claims data, "
-                    "which is only available for Kansas."
-                )
-            else:
-                st.markdown(
-                    '<div class="note-box">'
-                    "No KDOL UI claims data available.<br>"
-                    "Run the forecast with <code>--kdol</code> to fetch Kansas labor market pulse data.<br>"
-                    "Note: KDOL does not expose a stable download API; manual file placement may be required. "
-                    "See the warning message from <code>fetch_kdol_ui.py</code> for instructions."
-                    "</div>",
-                    unsafe_allow_html=True,
-                )
+        if state_fips != "20":
+            st.info(
+                "The KS Current Labor Market Pulse uses KDOL LMIS data, "
+                "which is only available for Kansas."
+            )
+        elif kdol_lf_state is None or kdol_lf_state.empty:
+            st.markdown(
+                '<div class="note-box">'
+                "No KDOL labor force data available.<br>"
+                "Place the KDOL LMIS labor force export at "
+                "<code>data/kdol_cache/labforce__99999999.xls</code> "
+                "and run <code>python scripts/parse_manual_kdol_labforce.py</code>."
+                "</div>",
+                unsafe_allow_html=True,
+            )
         else:
-            from fetch_qcew import SECTOR_COLORS, SECTOR_DISPLAY_NAMES, SECTORS
+            # Latest monthly state-level snapshot
+            state_mo = kdol_lf_state[kdol_lf_state["month"].notna()].copy()
+            state_mo["_period"] = state_mo["Periodyear"].astype("Int64") * 100 + state_mo["month"].astype("Int64")
+            state_mo = state_mo.sort_values("_period")
 
-            def sector_label(s: str) -> str:
-                return SECTOR_DISPLAY_NAMES.get(s, s)
+            latest = state_mo.iloc[-1]
+            latest_yr = int(latest["Periodyear"])
+            latest_mo = int(latest["month"])
+            month_name = pd.Timestamp(year=latest_yr, month=latest_mo, day=1).strftime("%B %Y")
 
-            # Most recent trend per sector
-            kdol_df["_period"] = kdol_df["year"] * 100 + kdol_df["month"]
-            latest_period = kdol_df.groupby("sector")["_period"].max().reset_index()
-            latest_period.columns = ["sector", "_max_period"]
-            pulse_latest = kdol_df.merge(latest_period, on="sector").query("_period == _max_period")
+            # Year-ago comparison for delta
+            yr_ago_period = (latest_yr - 1) * 100 + latest_mo
+            yr_ago = state_mo[state_mo["_period"] == yr_ago_period]
+            yr_ago_unemprate = float(yr_ago["Unemprate"].iloc[0]) if not yr_ago.empty else None
+            yr_ago_lfpr      = float(yr_ago["Clfprate"].iloc[0])   if not yr_ago.empty else None
 
-            yr_mo = int(kdol_df["_period"].max())
-            yr_display = yr_mo // 100
-            mo_display = yr_mo % 100
+            cur_unemprate = float(latest["Unemprate"])
+            cur_lfpr      = float(latest["Clfprate"])
+            cur_lf        = float(latest["Laborforce"])
+            cur_emp       = float(latest["Emplab"])
 
             st.markdown(f"""
 <div style="background:linear-gradient(135deg,{C_BLUE} 0%,#005BB5 100%);
             color:white;padding:1rem 1.5rem;border-radius:8px;margin-bottom:1rem;">
   <strong style="font-size:1.05rem;">
-    Kansas Labor Market Pulse (KDOL UI Claims) — {yr_display}-{mo_display:02d}
+    Kansas Current Labor Market Pulse — {month_name}
   </strong><br>
   <span style="opacity:0.85;font-size:0.88rem;">
-    Statewide UI claims by sector · 6-month OLS trend · Rising = increasing claims (stress signal)
+    Live state-level labor force statistics from KDOL LMIS · monthly through latest available period ·
+    more current than BLS LAUS (annual, ~6 wk lag).
   </span>
 </div>""", unsafe_allow_html=True)
 
-            # Traffic-light KPI row
-            TREND_ICONS = {"rising": "🔴", "stable": "🟡", "falling": "🟢"}
-            TREND_CLS   = {"rising": C_RED, "stable": C_GOLD, "falling": C_GREEN}
+            pulse_cols = st.columns(4)
 
-            kpi_cols = st.columns(len(SECTORS))
-            for col, sector in zip(kpi_cols, SECTORS):
-                row_p = pulse_latest[pulse_latest["sector"] == sector]
-                if row_p.empty:
-                    col.markdown(metric_card(sector_label(sector), "—", "no data"), unsafe_allow_html=True)
-                    continue
-                claims = float(row_p["ui_claims"].iloc[0]) if "ui_claims" in row_p.columns else None
-                rolling = float(row_p["rolling_3mo"].iloc[0]) if "rolling_3mo" in row_p.columns else None
-                trend   = str(row_p["trend_direction"].iloc[0]) if "trend_direction" in row_p.columns else "stable"
-                icon    = TREND_ICONS.get(trend, "🟡")
-                tcolor  = TREND_CLS.get(trend, C_GOLD)
-                col.markdown(metric_card(
-                    sector_label(sector),
-                    f"{icon} {claims:,.0f}" if claims is not None else "—",
-                    f'<span style="color:{tcolor};">{trend.capitalize()} claims</span>'
-                    + (f"<br><span style='font-size:0.78rem;color:{C_NEUTRAL};'>3-mo avg: {rolling:,.0f}</span>"
-                       if rolling else ""),
-                ), unsafe_allow_html=True)
+            def _delta_pct_pts(cur: float, prior: float | None, *, lower_is_better: bool) -> str:
+                if prior is None or pd.isna(prior):
+                    return "vs 1yr ago: no data"
+                delta = cur - prior
+                if abs(delta) < 0.05:
+                    return f"vs 1yr ago: ±0.0 pp"
+                cls = (
+                    "growing" if (delta < 0 and lower_is_better) or (delta > 0 and not lower_is_better)
+                    else "declining"
+                )
+                return f'<span class="{cls}">vs 1yr ago: {delta:+.1f} pp</span>'
 
-            st.markdown(
-                '<div class="note-box" style="margin:1rem 0;">'
-                "<strong>Reading the traffic light:</strong> "
-                "🟢 Falling = UI claims decreasing (labor market tightening). "
-                "🟡 Stable = no significant trend (±5% threshold). "
-                "🔴 Rising = UI claims increasing (potential layoff stress). "
-                "Trend is based on 6-month OLS slope relative to mean claims level.</div>",
-                unsafe_allow_html=True,
+            pulse_cols[0].markdown(metric_card(
+                "Labor Force",
+                _fmt(cur_lf),
+                f"Employed: {_fmt(cur_emp)}",
+            ), unsafe_allow_html=True)
+            pulse_cols[1].markdown(metric_card(
+                "Unemployment Rate",
+                f"{cur_unemprate:.1f}%",
+                _delta_pct_pts(cur_unemprate, yr_ago_unemprate, lower_is_better=True),
+            ), unsafe_allow_html=True)
+            pulse_cols[2].markdown(metric_card(
+                "Labor Force Participation",
+                f"{cur_lfpr:.1f}%",
+                _delta_pct_pts(cur_lfpr, yr_ago_lfpr, lower_is_better=False),
+            ), unsafe_allow_html=True)
+            pulse_cols[3].markdown(metric_card(
+                "Employment / Population",
+                f"{float(latest['Emppopratio']):.1f}%",
+                f"{int(latest['Unemp']):,} unemployed",
+            ), unsafe_allow_html=True)
+
+            st.markdown("<br>", unsafe_allow_html=True)
+
+            # 24-month trend chart: unemployment rate + LFPR
+            recent = state_mo.tail(24).copy()
+            recent["period_label"] = (
+                recent["Periodyear"].astype(int).astype(str) + "-" +
+                recent["month"].astype(int).astype(str).str.zfill(2)
             )
 
-            # Time series: claims by sector
-            st.markdown("#### UI Claims by Sector Over Time")
-            fig_pulse = go.Figure()
-            for sector in SECTORS:
-                color = SECTOR_COLORS[sector]
-                sub = kdol_df[kdol_df["sector"] == sector].sort_values("_period")
-                if sub.empty:
-                    continue
-                sub["period_label"] = sub["year"].astype(str) + "-" + sub["month"].astype(str).str.zfill(2)
-                fig_pulse.add_trace(go.Scatter(
-                    x=sub["period_label"], y=sub["ui_claims"],
-                    mode="lines", name=sector_label(sector),
-                    line=dict(color=color, width=2),
-                    hovertemplate=(
-                        f"<b>{sector_label(sector)}</b> %{{x}}<br>"
-                        "UI Claims: %{y:,.0f}<extra></extra>"
-                    ),
-                ))
+            from plotly.subplots import make_subplots
+            fig_pulse = make_subplots(specs=[[{"secondary_y": True}]])
+            fig_pulse.add_trace(go.Scatter(
+                x=recent["period_label"], y=recent["Unemprate"],
+                mode="lines+markers", name="Unemployment Rate (%)",
+                line=dict(color=C_RED, width=2.5), marker=dict(size=5),
+                hovertemplate="<b>%{x}</b><br>Unemp Rate: %{y:.1f}%<extra></extra>",
+            ), secondary_y=False)
+            fig_pulse.add_trace(go.Scatter(
+                x=recent["period_label"], y=recent["Clfprate"],
+                mode="lines+markers", name="LFPR (%)",
+                line=dict(color=C_BLUE, width=2.5, dash="dot"), marker=dict(size=5),
+                hovertemplate="<b>%{x}</b><br>LFPR: %{y:.1f}%<extra></extra>",
+            ), secondary_y=True)
             fig_pulse.update_layout(
-                title=dict(
-                    text="Kansas Statewide UI Claims by Sector (Monthly)",
-                    font=dict(size=15, color=C_BLUE),
-                ),
+                title=dict(text="Kansas Unemployment Rate &amp; LFPR — Last 24 Months",
+                           font=dict(size=15, color=C_BLUE)),
                 xaxis=dict(title="Month", tickangle=-45,
-                           title_font=dict(color="black"), tickfont=dict(color="black", size=9)),
-                yaxis=dict(title="UI Claims", tickformat=",",
-                           title_font=dict(color="black"), tickfont=dict(color="black")),
+                           title_font=dict(color="black"),
+                           tickfont=dict(color="black", size=9)),
                 legend=dict(orientation="h", yanchor="bottom", y=1.02,
                             xanchor="right", x=1, font=dict(color="black")),
                 plot_bgcolor=C_LIGHT, paper_bgcolor="white",
-                margin=dict(t=80, b=80, l=60, r=30), hovermode="x unified",
+                margin=dict(t=80, b=80, l=60, r=60), hovermode="x unified",
+            )
+            fig_pulse.update_yaxes(
+                title_text="Unemployment Rate (%)", tickformat=".1f",
+                color="black", secondary_y=False,
+            )
+            fig_pulse.update_yaxes(
+                title_text="LFPR (%)", tickformat=".1f",
+                color="black", secondary_y=True,
             )
             st.plotly_chart(fig_pulse, use_container_width=True)
 
+            # County-level latest snapshot table
+            if kdol_lf_recent is not None and not kdol_lf_recent.empty:
+                latest_county_period = kdol_lf_recent.assign(
+                    _p=lambda d: d["Periodyear"].astype("Int64") * 100 + d["month"].astype("Int64")
+                ).query("_p == _p.max()")
+                if not latest_county_period.empty:
+                    st.markdown(f"#### County Snapshot — {month_name}")
+                    st.caption(
+                        "Latest available month per county. Sorted by unemployment rate (highest first). "
+                        "County data sometimes lags state by 1 month due to BLS LAUS embargo windows."
+                    )
+                    county_view = latest_county_period[[
+                        "Areaname", "Laborforce", "Emplab", "Unemp", "Unemprate", "Clfprate",
+                    ]].copy()
+                    county_view = county_view.sort_values("Unemprate", ascending=False)
+                    county_view.columns = ["County", "Labor Force", "Employed",
+                                            "Unemployed", "Unemp Rate (%)", "LFPR (%)"]
+                    for c in ["Labor Force", "Employed", "Unemployed"]:
+                        county_view[c] = county_view[c].map(_fmt)
+                    for c in ["Unemp Rate (%)", "LFPR (%)"]:
+                        county_view[c] = county_view[c].map(lambda v: f"{v:.1f}")
+                    st.dataframe(county_view, hide_index=True, use_container_width=True,
+                                 height=420)
+
             st.markdown(
                 '<div class="note-box">'
-                "KDOL UI claims data is Kansas-specific. Claims reflect initial unemployment "
-                "insurance filings, not total unemployment. Seasonal variation is not removed. "
-                "Statewide totals are aggregated from county-level NAICS data.</div>",
+                "Source: KDOL LMIS labor force statistics (Local Area Unemployment Statistics "
+                "equivalent). Reported monthly, not seasonally adjusted. Replaces the prior KDOL UI-claims "
+                "panel — UI claims by NAICS are not publicly available."
+                "</div>",
                 unsafe_allow_html=True,
             )
-            del kdol_df["_period"]
 
     # ═════════════════════════════════════════════════════════════════════
     # TAB 6 — EXPLORER

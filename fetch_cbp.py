@@ -78,46 +78,58 @@ def _fetch_year(
     state_fips: str,
     api_key: str | None,
 ) -> pd.DataFrame:
-    """Fetch one year of CBP county data for a state via Census API."""
+    """Fetch one year of CBP county data for a state via Census API.
+
+    NOTE: Census /cbp returns 204 No Content when a comma-separated NAICS
+    filter list exceeds a (small, undocumented) length. Iterating one
+    NAICS code per request is the only reliable pattern.
+    """
     sf       = state_fips.zfill(2)
     naics_v  = _NAICS_VAR[year]
     url      = CBP_BASE.format(year=year)
     target_naics = list(NAICS2_TO_SECTOR.keys())
-
-    params = {
-        "get":  f"NAME,{naics_v},ESTAB,EMP,PAYANN",
-        "for":  "county:*",
-        "in":   f"state:{sf}",
-        naics_v: ",".join(target_naics),
-    }
-    if api_key:
-        params["key"] = api_key
-
-    resp = requests.get(url, params=params, timeout=60)
-    resp.raise_for_status()
-    raw = resp.json()
-    if not raw or len(raw) < 2:
-        return pd.DataFrame()
-
-    header = [h.lower() for h in raw[0]]
     naics_col = naics_v.lower()
 
-    rows = []
-    for record in raw[1:]:
-        d = dict(zip(header, record))
-        naics2 = str(d.get(naics_col, "")).zfill(2)
-        rows.append({
-            "state_fips":  sf,
-            "county_fips": str(d.get("county", "")).zfill(3),
-            "year":        year,
-            "naics2":      naics2,
-            "sector":      NAICS2_TO_SECTOR.get(naics2),
-            "estab":       _to_int(d.get("estab")),
-            "emp":         _to_int(d.get("emp")),
-            "payann":      _to_int(d.get("payann")),
-        })
+    frames: list[pd.DataFrame] = []
+    for naics2 in target_naics:
+        params = {
+            "get":  f"NAME,{naics_v},ESTAB,EMP,PAYANN",
+            "for":  "county:*",
+            "in":   f"state:{sf}",
+            naics_v: naics2,
+        }
+        if api_key:
+            params["key"] = api_key
 
-    return pd.DataFrame(rows)
+        resp = requests.get(url, params=params, timeout=60)
+        if resp.status_code == 204:
+            continue
+        resp.raise_for_status()
+        raw = resp.json()
+        if not raw or len(raw) < 2:
+            continue
+
+        header = [h.lower() for h in raw[0]]
+        rows = []
+        for record in raw[1:]:
+            d = dict(zip(header, record))
+            naics2_resp = str(d.get(naics_col, "")).zfill(2)
+            rows.append({
+                "state_fips":  sf,
+                "county_fips": str(d.get("county", "")).zfill(3),
+                "year":        year,
+                "naics2":      naics2_resp,
+                "sector":      NAICS2_TO_SECTOR.get(naics2_resp),
+                "estab":       _to_int(d.get("estab")),
+                "emp":         _to_int(d.get("emp")),
+                "payann":      _to_int(d.get("payann")),
+            })
+        frames.append(pd.DataFrame(rows))
+        time.sleep(0.15)
+
+    if not frames:
+        return pd.DataFrame()
+    return pd.concat(frames, ignore_index=True)
 
 
 def fetch_cbp(

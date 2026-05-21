@@ -103,21 +103,38 @@ def _try_download(candidates: list[str]) -> tuple[bytes, str] | tuple[None, None
 # ── Excel / ZIP parsing ───────────────────────────────────────────────────────
 
 def _read_excel_bytes(content: bytes) -> pd.DataFrame | None:
-    """Parse an Excel binary blob; try all sheets."""
+    """Parse an Excel binary blob; try all sheets.
+
+    BLS Employment Projections workbooks (e.g. occupation.xlsx) have:
+      - An "Index" sheet listing other sheets (skip)
+      - Per-table sheets named "Table 1.1", "Table 1.2", etc., where
+        row 0 is the title, row 1 is the column header, data starts row 2.
+    Prefer Table 1.2 (occupational projections) when present; fall back
+    to scanning all non-Index sheets for one with SOC/occupation columns.
+    """
     try:
         xls = pd.ExcelFile(io.BytesIO(content))
     except Exception:
         return None
 
-    for sheet in xls.sheet_names:
-        try:
-            df = xls.parse(sheet, dtype=str)
-            # Look for SOC code column
-            cols_lower = [c.lower() for c in df.columns]
-            if any("occ" in c or "soc" in c for c in cols_lower):
+    preferred = [s for s in xls.sheet_names if s.lower().replace(" ", "") == "table1.2"]
+    other     = [s for s in xls.sheet_names
+                 if s.lower() != "index" and s not in preferred]
+    candidates = preferred + other
+
+    for sheet in candidates:
+        for header_row in (1, 2, 0, 3):
+            try:
+                df = xls.parse(sheet, dtype=str, header=header_row)
+            except Exception:
+                continue
+            cols_lower = [str(c).lower() for c in df.columns]
+            if any(
+                ("matrix code" in c) or ("soc" in c) or ("occ_code" in c)
+                or ("occupation code" in c) or ("occupation title" in c)
+                for c in cols_lower
+            ):
                 return df
-        except Exception:
-            continue
     return None
 
 
@@ -144,18 +161,26 @@ def _read_from_zip(content: bytes) -> pd.DataFrame | None:
 
 # ── Column detection ──────────────────────────────────────────────────────────
 
-_OCC_CODE_HINTS  = ["occ_code", "soc_code", "soc", "occupation code", "2024 soc code", "2022 soc code"]
-_OCC_TITLE_HINTS = ["occ_title", "occupation title", "occupation", "title"]
+_OCC_CODE_HINTS  = ["matrix code", "occ_code", "soc_code", "soc",
+                    "occupation code", "2024 soc code", "2022 soc code"]
+_OCC_TITLE_HINTS = ["matrix title", "occ_title", "occupation title",
+                    "occupation", "title"]
 _BASE_EMP_HINTS  = [
-    "2024", "employment 2024", "employed 2024",
-    "2022", "employment 2022", "base year employment", "employed 2022",
+    "employment, 2024", "employment 2024", "employed 2024",
+    "employment, 2022", "employment 2022", "base year employment", "employed 2022",
 ]
 _PROJ_EMP_HINTS  = [
-    "2034", "employment 2034", "employed 2034",
-    "2032", "employment 2032", "projected employment", "employed 2032",
+    "employment, 2034", "employment 2034", "employed 2034",
+    "employment, 2032", "employment 2032", "projected employment", "employed 2032",
 ]
-_PCT_CHG_HINTS   = ["percent", "% change", "pct_change", "change (%)"]
-_OPENINGS_HINTS  = ["openings", "annual openings", "total openings"]
+# Order matters: most specific first so "employment change, percent" wins
+# over generic "percent" columns like "Employment distribution, percent, 2024".
+_PCT_CHG_HINTS   = [
+    "employment change, percent", "employment change, percent, 2024",
+    "pct_change", "% change", "change (%)", "percent change",
+]
+_OPENINGS_HINTS  = ["occupational openings", "openings", "annual openings",
+                    "total openings"]
 _WAGE_HINTS      = ["median annual wage", "median wage", "annual median"]
 
 
@@ -263,7 +288,11 @@ def fetch_national_projections(
         )
         manual = cache_dir / "bls_proj_national_manual.xlsx"
         if manual.exists():
-            raw = pd.read_excel(manual, dtype=str)
+            print(f"    Loading manual BLS national projections file")
+            raw = _read_excel_bytes(manual.read_bytes())
+            if raw is None or raw.empty:
+                print("  Warning: manual BLS file could not be parsed")
+                return pd.DataFrame()
         else:
             return pd.DataFrame(columns=[
                 "projection_source", "base_year", "proj_year", "occ_code",

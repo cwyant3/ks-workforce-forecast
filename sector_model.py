@@ -4,13 +4,13 @@ Industry sector workforce forecasting using BLS QCEW historical employment data.
 
 Modeling rules (per county × sector) — REVISED 2026-04-25:
   Option B — independent county OLS trend, used when:
-      • 2023 employment >= MIN_OPT_B (500)  AND
+      • baseline-year employment >= MIN_OPT_B (500)  AND
       • Sufficient historical observations (n_obs >= 3)
       Significance is no longer a gating criterion — the 80% prediction
       interval already widens appropriately when the trend is uncertain,
       so the p < 0.05 gate was eliminating real (but noisy) county trends.
   Option A — state-share model, used only when:
-      • 2023 employment < MIN_OPT_B, OR
+      • baseline-year employment < MIN_OPT_B, OR
       • n_obs < 3, OR
       • County data is suppressed / unavailable
 
@@ -234,6 +234,15 @@ def run_all_sectors(
     """
     proj_years = np.array(sorted(cohort_proj["year"].unique()), dtype=float)
 
+    # Baseline (anchor) year = latest QCEW annual with data. Stored on every
+    # output row so the dashboard labels it dynamically instead of hardcoding
+    # a literal year (which silently rots when QCEW_YEARS is extended).
+    _qcew_years = pd.concat([
+        state_qcew["year"]  if "year" in state_qcew.columns  else pd.Series(dtype=float),
+        county_qcew["year"] if "year" in county_qcew.columns else pd.Series(dtype=float),
+    ]).dropna()
+    base_year = int(_qcew_years.max()) if len(_qcew_years) else int(proj_years.min()) - 2
+
     state_cohort_agg = (cohort_proj.groupby("year")["p50"]
                         .sum().reset_index()
                         .sort_values("year"))
@@ -283,7 +292,7 @@ def run_all_sectors(
 
         state_projs[sector] = (proj_s, ci_lo_s, ci_hi_s, wage_proj_s)
 
-        emp_2023_s = s_hist[s_hist["year"] == 2023]["employment"]
+        emp_base_s = s_hist[s_hist["year"] == base_year]["employment"]
         state_sector_rows.append(pd.DataFrame({
             "sector":      sector,
             "year":        proj_years.astype(int),
@@ -291,7 +300,8 @@ def run_all_sectors(
             "emp_ci_lo":   np.round(ci_lo_s, 1),
             "emp_ci_hi":   np.round(ci_hi_s, 1),
             "wage_proj":   np.round(wage_proj_s, 0),
-            "emp_2023":    float(emp_2023_s.iloc[0]) if len(emp_2023_s) else None,
+            "emp_base":    float(emp_base_s.iloc[0]) if len(emp_base_s) else None,
+            "base_year":   base_year,
             "method":      meth_s,
             "significant": sig_s,
             "note":        note_s,
@@ -340,8 +350,9 @@ def run_all_sectors(
             result["sector"]      = sector
             result["state_fips"]  = state_fips
 
-            emp_2023 = c_hist[c_hist["year"] == 2023]["employment"]
-            result["emp_2023"] = float(emp_2023.iloc[0]) if len(emp_2023) else None
+            emp_base = c_hist[c_hist["year"] == base_year]["employment"]
+            result["emp_base"]  = float(emp_base.iloc[0]) if len(emp_base) else None
+            result["base_year"] = base_year
 
             all_county.append(result)
             done += 1

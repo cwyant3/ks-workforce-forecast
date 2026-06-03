@@ -29,7 +29,7 @@ import requests
 ROOT          = Path(__file__).parent
 QCEW_CACHE    = ROOT / "data" / "qcew_cache"
 QCEW_BASE_URL = "https://data.bls.gov/cew/data/files"
-QCEW_YEARS    = list(range(2015, 2024))   # 2015–2023 annual averages
+QCEW_YEARS    = list(range(2015, 2025))   # 2015–2024 annual averages
 
 # ── Sector → QCEW 2-digit NAICS codes ────────────────────────────────────────
 # Notes:

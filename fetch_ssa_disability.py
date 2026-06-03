@@ -36,18 +36,33 @@ import requests
 import pandas as pd
 from pathlib import Path
 
-SSA_YEARS     = list(range(2015, 2023))   # 2015–2022 (lag ~18 months)
-_SSA_BASE     = "https://www.ssa.gov/policy/docs/statcomps/oasdi_county"
+SSA_YEARS     = list(range(2015, 2024))   # 2015–2023 (lag ~18 months)
+# SSA renamed the publication: legacy "OASDI Beneficiaries by County" at
+# /oasdi_county/ is now "OASDI Beneficiaries by State and County" at
+# /oasdi_sc/. Publication-year folder lags data year by 1 (e.g. 2023 data
+# lives at /oasdi_sc/2024/). The combined per-state file is named pr.xlsx
+# in the publication year folder.
+_SSA_BASE_NEW = "https://www.ssa.gov/policy/docs/statcomps/oasdi_sc"
+_SSA_BASE_OLD = "https://www.ssa.gov/policy/docs/statcomps/oasdi_county"
 _HTTP_HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; workforce-forecast/1.0)"}
 
 
 def _ssa_url(year: int) -> list[str]:
-    """Return candidate SSA Excel URLs for a given year (format varies by year)."""
+    """Return candidate SSA Excel URLs for a given data year.
+
+    Note: SSA publishes year N data in the year N+1 folder.
+    """
     yy = str(year)[-2:]
+    pub_year = year + 1
+    pub_yy   = str(pub_year)[-2:]
     return [
-        f"{_SSA_BASE}/{year}/oc{yy}.xlsx",
-        f"{_SSA_BASE}/{year}/oc{yy}.xls",
-        f"{_SSA_BASE}/{year}/oasdi_county_{year}.xlsx",
+        # New "OASDI Beneficiaries by State and County" location
+        f"{_SSA_BASE_NEW}/{pub_year}/pr.xlsx",
+        f"{_SSA_BASE_NEW}/{pub_year}/oasdi_sc{pub_yy}.xlsx",
+        # Legacy locations (kept as fallback for historical years)
+        f"{_SSA_BASE_OLD}/{year}/oc{yy}.xlsx",
+        f"{_SSA_BASE_OLD}/{year}/oc{yy}.xls",
+        f"{_SSA_BASE_OLD}/{year}/oasdi_county_{year}.xlsx",
     ]
 
 

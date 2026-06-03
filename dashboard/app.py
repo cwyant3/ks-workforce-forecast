@@ -2427,10 +2427,10 @@ def main():
                                title_font=dict(color="black"), tickfont=dict(color="black")),
                     yaxis=dict(title="Vacancy Rate (%)", tickformat=".1f",
                                title_font=dict(color="black"), tickfont=dict(color="black")),
-                    legend=dict(orientation="h", yanchor="bottom", y=1.02,
-                                xanchor="right", x=1, font=dict(color="black")),
+                    legend=dict(orientation="v", yanchor="top", y=1,
+                                xanchor="left", x=1.02, font=dict(color="black")),
                     plot_bgcolor=C_LIGHT, paper_bgcolor="white",
-                    margin=dict(t=80, b=40, l=60, r=30), hovermode="x unified",
+                    margin=dict(t=50, b=40, l=60, r=170), hovermode="x unified",
                 )
                 st.plotly_chart(fig_jolts, use_container_width=True)
 

@@ -191,10 +191,19 @@ def data_exists(state_fips: str) -> bool:
 
 def run_forecast_for_state(state_fips: str):
     """Import and run the forecast pipeline for a new state."""
+    api_key = _census_api_key()
+    if not api_key:
+        raise RuntimeError(
+            "No Census API key found. Live forecast generation needs one. "
+            "Set CENSUS_API_KEY in ks_workforce_forecast/.env (local) or in the "
+            "Streamlit app's Secrets (cloud). If you launched from a git worktree, "
+            "relaunch from the main project directory where .env lives. "
+            "Free key: https://api.census.gov/data/key_signup.html"
+        )
     from run_forecast import main as forecast_main
     forecast_main(
         state_fips=state_fips,
-        api_key=_census_api_key(),
+        api_key=api_key,
         n_sim=2000,
         start_year=2026,
         end_year=2035,

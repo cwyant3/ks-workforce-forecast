@@ -52,6 +52,18 @@ data/outputs/state_projection_s27.parquet
 data/outputs/state_projection_s29.parquet
 data/outputs/state_projection_s31.parquet
 data/outputs/state_projection_s40.parquet
+data/outputs/participation_s08.parquet
+data/outputs/participation_s15.parquet
+data/outputs/participation_s27.parquet
+data/outputs/participation_s29.parquet
+data/outputs/participation_s31.parquet
+data/outputs/participation_s40.parquet
+data/outputs/projections_effective_s08.parquet
+data/outputs/projections_effective_s15.parquet
+data/outputs/projections_effective_s27.parquet
+data/outputs/projections_effective_s29.parquet
+data/outputs/projections_effective_s31.parquet
+data/outputs/projections_effective_s40.parquet
 
 # User-dropped raw data files at data/ root (KDOL Telerik exports etc.)
 # These are large HTML-as-.xls reports; parsed outputs live in data/outputs/

@@ -99,17 +99,44 @@ YOUTH_GROUPS     = ["under_5", "5_9", "10_14", "15_17"]
 RETIREMENT_GROUPS = ["65_69", "70_74", "75_79", "80_84", "85_plus"]
 
 
+class CensusKeyError(RuntimeError):
+    """Raised when the Census API rejects a request for a missing/invalid key."""
+
+
 def _get(url: str, params: dict, retries: int = 3) -> list:
+    last_exc = None
     for attempt in range(retries):
         try:
             r = requests.get(url, params=params, timeout=30)
             r.raise_for_status()
-            return r.json()
         except Exception as exc:
+            last_exc = exc
             if attempt == retries - 1:
                 raise
             print(f"  [retry {attempt+1}] {exc}")
             time.sleep(3 * (attempt + 1))
+            continue
+
+        # Census returns HTTP 200 (via a 302 redirect) with an HTML "Missing Key"
+        # page for keyless or invalid-key requests, so raise_for_status() passes but
+        # r.json() then fails with a cryptic "Expecting value: line 2 column 1".
+        # Detect that here and raise an actionable error instead — and do NOT retry,
+        # since a missing key will never succeed.
+        try:
+            return r.json()
+        except ValueError:
+            body = r.text.strip()
+            low = body.lower()
+            if "missing key" in low or ("valid" in low and "key" in low):
+                raise CensusKeyError(
+                    "Census API rejected the request — a valid CENSUS_API_KEY is required. "
+                    "Set it in ks_workforce_forecast/.env (local) or in the Streamlit app's "
+                    "Secrets (cloud). Free key: https://api.census.gov/data/key_signup.html"
+                ) from None
+            raise RuntimeError(
+                f"Census API returned a non-JSON response (HTTP {r.status_code}): "
+                f"{body[:200]!r}"
+            ) from None
 
 
 def _chunks(items: list[str], size: int) -> list[list[str]]:

@@ -23,11 +23,19 @@ TOTAL_POP = "B01001_001E"
 # B23001 — Sex by Age by Employment Status for the Population 16 Years and Over.
 # For the 18-64 workforce denominator, the 16-19 band is weighted at 0.5 to
 # approximate ages 18-19, then all ACS age bands from 20-64 are included.
+#
+# B23001 repeats a 7-variable block per sex×age band:
+#   +0 band total · +1 In labor force · +2 In labor force: In Armed Forces
+#   +3 In labor force: Civilian · +4 Civilian Employed · +5 Civilian Unemployed
+#   +6 Not in labor force
+# So civilian labor force = band_total + 3 and armed forces = band_total + 2.
+# (Bumping SCHEMA_VERSION below invalidates older caches that used wrong offsets.)
+B23001_SCHEMA_VERSION = 2
 B23001_18_64_WEIGHTS: dict[float, dict[str, list[str]]] = {
     0.5: {
         "total": ["B23001_003E", "B23001_089E"],
-        "civilian_lf": ["B23001_005E", "B23001_091E"],
-        "armed_forces": ["B23001_008E", "B23001_094E"],
+        "civilian_lf": ["B23001_006E", "B23001_092E"],
+        "armed_forces": ["B23001_005E", "B23001_091E"],
     },
     1.0: {
         "total": [
@@ -38,18 +46,18 @@ B23001_18_64_WEIGHTS: dict[float, dict[str, list[str]]] = {
             "B23001_145E", "B23001_152E",
         ],
         "civilian_lf": [
+            "B23001_013E", "B23001_020E", "B23001_027E", "B23001_034E",
+            "B23001_041E", "B23001_048E", "B23001_055E", "B23001_062E",
+            "B23001_069E", "B23001_099E", "B23001_106E", "B23001_113E",
+            "B23001_120E", "B23001_127E", "B23001_134E", "B23001_141E",
+            "B23001_148E", "B23001_155E",
+        ],
+        "armed_forces": [
             "B23001_012E", "B23001_019E", "B23001_026E", "B23001_033E",
             "B23001_040E", "B23001_047E", "B23001_054E", "B23001_061E",
             "B23001_068E", "B23001_098E", "B23001_105E", "B23001_112E",
             "B23001_119E", "B23001_126E", "B23001_133E", "B23001_140E",
             "B23001_147E", "B23001_154E",
-        ],
-        "armed_forces": [
-            "B23001_015E", "B23001_022E", "B23001_029E", "B23001_036E",
-            "B23001_043E", "B23001_050E", "B23001_057E", "B23001_064E",
-            "B23001_071E", "B23001_101E", "B23001_108E", "B23001_115E",
-            "B23001_122E", "B23001_129E", "B23001_136E", "B23001_143E",
-            "B23001_150E", "B23001_157E",
         ],
     },
 }
@@ -153,9 +161,12 @@ def fetch_year(year: int, state_fips: str = "20",
         print(f"  [cache] {year}")
         cached = pd.read_parquet(cache_file)
         cached = _add_acs_metadata(cached, year, state_fips)
-        if all(c in cached.columns for c in ACS_LF_STATUS_COLS):
+        cache_ver = int(cached["acs_lf_schema_version"].iloc[0]) \
+            if "acs_lf_schema_version" in cached.columns and len(cached) else 0
+        if all(c in cached.columns for c in ACS_LF_STATUS_COLS) and cache_ver >= B23001_SCHEMA_VERSION:
             return cached
-        print(f"  [cache stale] {year} missing ACS labor-force status fields; refetching")
+        print(f"  [cache stale] {year} ACS labor-force status missing or schema "
+              f"v{cache_ver} < v{B23001_SCHEMA_VERSION}; refetching")
 
     base = ACS_BASE.format(year=year)
     shared = {"for": f"county:*", "in": f"state:{state_fips}"}
@@ -251,6 +262,7 @@ def _add_labor_force_status(df: pd.DataFrame) -> pd.DataFrame:
     df["acs_lfpr_pct"] = (
         civilian_lf / civilian_denominator.replace(0, pd.NA) * 100
     ).round(2).clip(0, 100)
+    df["acs_lf_schema_version"] = B23001_SCHEMA_VERSION
     return df
 
 

@@ -1480,18 +1480,6 @@ def main():
                 ),
             ))
 
-            # Horizontal line: working-age population as supply context
-            fig_gap.add_hline(
-                y=wf_supply_end,
-                line_dash="dot",
-                line_color=C_GOLD,
-                line_width=2,
-                annotation_text=f"Working-age population {sec_end}: {_fmt(wf_supply_end)}",
-                annotation_position="top left",
-                annotation_font_color=C_GOLD,
-                annotation_font_size=11,
-            )
-
             fig_gap.update_layout(
                 barmode="group",
                 bargap=0.25,
@@ -1810,17 +1798,6 @@ def main():
                         width=6,
                     ),
                 ))
-                # County supply reference line
-                fig_c_gap.add_hline(
-                    y=c_wf_end,
-                    line_dash="dot",
-                    line_color=C_GOLD,
-                    line_width=2,
-                    annotation_text=f"County working-age population {sec_end}: {_fmt(c_wf_end)}",
-                    annotation_position="top left",
-                    annotation_font_color=C_GOLD,
-                    annotation_font_size=11,
-                )
                 fig_c_gap.update_layout(
                     barmode="group",
                     bargap=0.25,

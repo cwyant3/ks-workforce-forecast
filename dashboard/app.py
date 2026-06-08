@@ -697,6 +697,59 @@ def state_choropleth(summary: pd.DataFrame, state_fips: str,
     return fig
 
 
+def state_effective_labor_chart(part_df: pd.DataFrame,
+                                state_name: str) -> tuple[go.Figure, dict]:
+    """Statewide effective labor force vs. working-age population.
+
+    Aggregates the participation model across all counties for the most
+    recent ACS year and renders a waterfall from the raw working-age
+    population down to the effective labor force, exposing the two
+    structural decrements (SSA disability and ACS non-participation).
+    Returns the figure plus a stats dict for KPI cards.
+    """
+    year = int(part_df["year"].max())
+    snap = part_df[part_df["year"] == year]
+    wap  = float(snap["working_age_pop"].sum())
+    dadj = float(snap["disability_adjusted_pop"].sum())
+    elf  = float(snap["effective_labor_force"].sum())
+
+    disability_drop    = dadj - wap   # negative: SSA-determined disability
+    participation_drop = elf - dadj   # negative: not in the labor force (ACS LFPR)
+    gap     = wap - elf
+    gap_pct = gap / wap * 100 if wap else 0
+
+    fig = go.Figure(go.Waterfall(
+        orientation="v",
+        measure=["absolute", "relative", "relative", "total"],
+        x=["Working-Age<br>Population (18–64)",
+           "Less: disability<br>(SSA)",
+           "Less: not in<br>labor force (ACS)",
+           "Effective<br>Labor Force"],
+        y=[wap, disability_drop, participation_drop, elf],
+        text=[_fmt(wap), _fmt(disability_drop), _fmt(participation_drop), _fmt(elf)],
+        textposition="outside",
+        textfont=dict(color="black"),
+        connector=dict(line=dict(color=C_NEUTRAL, width=1)),
+        decreasing=dict(marker=dict(color=C_RED)),
+        increasing=dict(marker=dict(color=C_GREEN)),
+        totals=dict(marker=dict(color=C_BLUE)),
+        hovertemplate="<b>%{x}</b><br>%{y:,.0f}<extra></extra>",
+    ))
+    fig.update_layout(
+        title=dict(
+            text=f"{state_name} — Effective Labor Force vs. Working-Age Population ({year})",
+            font=dict(size=15, color=C_BLUE),
+        ),
+        yaxis=dict(title="People (18–64)", tickformat=",",
+                   title_font=dict(color="black"), tickfont=dict(color="black")),
+        xaxis=dict(tickfont=dict(color="black", size=11)),
+        plot_bgcolor=C_LIGHT, paper_bgcolor="white",
+        margin=dict(t=70, b=40, l=70, r=30), showlegend=False,
+    )
+    stats = dict(year=year, wap=wap, dadj=dadj, elf=elf, gap=gap, gap_pct=gap_pct)
+    return fig, stats
+
+
 # ── Main app ──────────────────────────────────────────────────────────────────
 def main():
 
@@ -1151,6 +1204,57 @@ def main():
     # TAB 2 — AVAILABLE WORKFORCE
     # ═════════════════════════════════════════════════════════════════════
     with tab_available:
+        # ── State anchor: effective labor force vs. working-age population ──
+        # This tab drills from the whole state down to one county. Lead with a
+        # statewide view so the county figures below read as a zoom-in, not an
+        # unexplained drop in magnitude.
+        state_part_df = load_participation(state_fips)
+        st.markdown(f"### Statewide Available Workforce — {selected_state}")
+        if state_part_df is not None and not state_part_df.empty:
+            fig_state_elf, elf_stats = state_effective_labor_chart(
+                state_part_df, selected_state)
+            scols = st.columns(4)
+            scols[0].markdown(metric_card(
+                f"Working-Age Pop ({elf_stats['year']})",
+                _fmt(elf_stats["wap"]),
+                "ACS 18–64 headcount",
+            ), unsafe_allow_html=True)
+            scols[1].markdown(metric_card(
+                "After Disability Adj. (SSA)",
+                _fmt(elf_stats["dadj"]),
+                f'−{_fmt(elf_stats["wap"] - elf_stats["dadj"])} SSDI/SSI',
+            ), unsafe_allow_html=True)
+            scols[2].markdown(metric_card(
+                "Effective Labor Force",
+                _fmt(elf_stats["elf"]),
+                "after ACS participation rate",
+            ), unsafe_allow_html=True)
+            scols[3].markdown(metric_card(
+                "Structural Gap",
+                _fmt(elf_stats["gap"]),
+                f'<span class="declining">{elf_stats["gap_pct"]:.0f}% below working-age pop</span>',
+            ), unsafe_allow_html=True)
+            st.markdown("<br>", unsafe_allow_html=True)
+            st.plotly_chart(fig_state_elf, use_container_width=True)
+            st.markdown(
+                '<div class="note-box">'
+                "Effective labor force = working-age population, less people with federal "
+                "disability determinations (SSA, where county data is available), times the "
+                "ACS civilian labor-force participation rate. The gap is structural — it is "
+                "who is not available to work today, before any forecast or county detail."
+                "</div>",
+                unsafe_allow_html=True,
+            )
+        else:
+            st.info(
+                "The statewide effective-labor-force view needs the participation model "
+                "(ACS B23001 labor-force status + SSA disability). It is not loaded for "
+                f"{selected_state} yet."
+            )
+
+        st.markdown("---")
+        st.markdown(f"### County Drill-Down — {selected_county}")
+
         county_proj = proj[proj["county_name"] == selected_county].sort_values("year")
         county_sum  = summary[summary["county_name"] == selected_county].iloc[0]
 

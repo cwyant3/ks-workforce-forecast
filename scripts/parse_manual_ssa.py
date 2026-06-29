@@ -121,11 +121,23 @@ def main():
     print(f"Parsed {len(df)} counties for state {args.state}")
     print(df.head(5).to_string())
 
-    # Save in the location run_forecast.py expects
+    # Save the raw counts in BOTH locations:
+    #  - outputs/  : the dashboard's display file (run_forecast later overwrites
+    #                this with the rate-computed version when it runs).
+    #  - ssa_cache/: the path fetch_ssa_disability() reads as its cache, so
+    #                run_forecast's Step 15 finds this data (the auto-download is
+    #                dead/403) and feeds the participation model's disability
+    #                Layer 2. Without this, projections_effective omits the
+    #                disability adjustment for every state. The cache copy stays
+    #                raw and is never overwritten, so no double rate-compute.
     sf = args.state.zfill(2)
     parquet_out = out / f"ssa_disability_s{sf}.parquet"
     df.to_parquet(parquet_out, index=False)
     print(f"Saved: {parquet_out}")
+
+    cache_out = cache / f"ssa_disability_s{sf}.parquet"
+    df.to_parquet(cache_out, index=False)
+    print(f"Saved: {cache_out}  (read by run_forecast Step 15)")
 
 
 if __name__ == "__main__":

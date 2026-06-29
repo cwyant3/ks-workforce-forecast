@@ -165,22 +165,16 @@ def main() -> int:
         print("\n[dry-run] complete — no changes made.")
         return 0
 
-    # ── Run the pipeline ──────────────────────────────────────────────────
-    print("\n=== Running run_forecast.py --all ===")
-    run = subprocess.run(
-        [sys.executable, "run_forecast.py", "--all",
-         "--state", args.state, "--sims", str(args.sims)],
-        cwd=str(BASE_DIR),
-    )
-    if run.returncode != 0:
-        print(f"\n!! run_forecast.py FAILED (exit {run.returncode}) — aborting before validation.")
-        return run.returncode
+    # ── Prepare manual inputs BEFORE the pipeline ─────────────────────────
+    # These parsers must run before run_forecast.py so their outputs are present
+    # when the pipeline consumes them. In particular the SSA parser writes the
+    # ssa_cache file that run_forecast's Step 15 reads to build the participation
+    # model's disability layer — if it ran after, the disability adjustment would
+    # be a cycle stale (or absent on a fresh cache).
 
-    # ── Parse KDOL labor force export (KS-only manual step) ────────────────
-    # run_forecast.py does NOT regenerate the KDOL labor-force outputs — the
-    # parser is a standalone script. Drive it here so a fresh KLIC export
-    # actually flows into the dashboard. KS-only (KDOL is Kansas data); a
-    # missing export is a warning, not a failure (outputs persist from prior run).
+    # KDOL labor force export (KS-only). run_forecast.py does NOT regenerate the
+    # KDOL labor-force outputs — the parser is standalone. A missing export is a
+    # warning, not a failure (outputs persist from the prior run).
     if args.state.zfill(2) == "20":
         labforce_xls = DATA_DIR / "kdol_cache" / "labforce__99999999.xls"
         if labforce_xls.exists():
@@ -198,12 +192,11 @@ def main() -> int:
             print(f"     Re-export from {MANUAL_SOURCES['KDOL labor force']['url']} "
                   f"and save as {labforce_xls.relative_to(BASE_DIR)}")
 
-    # ── Parse SSA disability workbook (multi-state manual step) ────────────
-    # Like KDOL, fetch_ssa_disability.py is a dead path (SSA 403-blocks scripts
-    # + renamed the publication). The real input is the oasdi_sc{YY}.xlsx workbook
-    # parsed by parse_manual_ssa.py, which reads the per-state "Table 4 - {State}"
-    # sheet — so the SAME workbook serves every state in the bloc. Runs for the
-    # target --state; a missing workbook is a warning, not a failure.
+    # SSA disability workbook (multi-state). fetch_ssa_disability.py is a dead path
+    # (SSA 403-blocks scripts + renamed the publication); the real input is the
+    # oasdi_sc{YY}.xlsx workbook parsed by parse_manual_ssa.py, which reads the
+    # per-state "Table 4 - {State}" sheet — the SAME workbook serves every state.
+    # The parser writes the ssa_cache copy that run_forecast Step 15 then reads.
     ssa_workbooks = list((DATA_DIR / "ssa_cache").glob("oasdi_sc*.xlsx"))
     if ssa_workbooks:
         print("\n=== Parsing SSA disability workbook ===")
@@ -218,6 +211,17 @@ def main() -> int:
         print("\n=== SSA disability workbook MISSING — skipping parse ===")
         print(f"     Download (in a browser) from "
               f"{MANUAL_SOURCES['SSA disability']['url']} into data/ssa_cache/")
+
+    # ── Run the pipeline ──────────────────────────────────────────────────
+    print("\n=== Running run_forecast.py --all ===")
+    run = subprocess.run(
+        [sys.executable, "run_forecast.py", "--all",
+         "--state", args.state, "--sims", str(args.sims)],
+        cwd=str(BASE_DIR),
+    )
+    if run.returncode != 0:
+        print(f"\n!! run_forecast.py FAILED (exit {run.returncode}) — aborting before validation.")
+        return run.returncode
 
     # ── Validate ──────────────────────────────────────────────────────────
     print("\n=== Validating outputs ===")

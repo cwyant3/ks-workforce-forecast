@@ -20,6 +20,7 @@ data/kdol_cache/
 data/ksde_cache/
 data/ssa_cache/
 data/bls_proj_cache/
+data/pc_cache/
 
 # Non-Kansas state data files (generated on demand per state)
 data/acs_cache/acs5_*_s08.parquet

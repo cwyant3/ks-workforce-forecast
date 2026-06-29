@@ -43,6 +43,7 @@ KDOL_CACHE   = BASE_DIR / "data" / "kdol_cache"
 KSDE_CACHE   = BASE_DIR / "data" / "ksde_cache"
 SSA_CACHE    = BASE_DIR / "data" / "ssa_cache"
 BLS_PROJ_CACHE = BASE_DIR / "data" / "bls_proj_cache"
+PC_CACHE     = BASE_DIR / "data" / "pc_cache"
 OUTPUT_DIR   = BASE_DIR / "data" / "outputs"
 
 # Ensure the project root is importable
@@ -62,6 +63,7 @@ from fetch_ksde          import fetch_ksde, apply_ksde_override
 from fetch_ssa_disability import fetch_ssa_disability, compute_disability_rate
 from fetch_bls_proj      import (fetch_national_projections, fetch_ks_state_projections,
                                   sector_demand_outlook)
+from fetch_projections_central import fetch_pc_longterm, pc_sector_outlook
 from participation_model import (build_participation_table, participation_summary,
                                   project_effective_workforce)
 
@@ -79,6 +81,7 @@ def main(state_fips: str = "20", api_key: str | None = None,
          run_ksde: bool = False,
          run_ssa: bool = False,
          run_bls_proj: bool = False,
+         run_pc_proj: bool = False,
          random_seed: int | None = DEFAULT_RANDOM_SEED):
 
     OUTPUT_DIR.mkdir(parents=True,  exist_ok=True)
@@ -381,6 +384,27 @@ def main(state_fips: str = "20", api_key: str | None = None,
         else:
             print("  BLS Projections: no data loaded — see warnings above")
 
+    # ── 16b. Fetch Projections Central state occupation projections ───────
+    # State-level long-term occupation projections (demand-side display layer),
+    # the multi-state generalization of the KS occproj source. Gap-tolerant:
+    # a state that has not yet published its cycle writes an empty file and the
+    # layer auto-fills on a later run. KS typically has no PC cycle and keeps its
+    # richer KDOL occproj layer instead — running PC for KS is harmless.
+    if run_pc_proj:
+        print("\n=== STEP 16b: Fetching Projections Central state projections ===")
+        pc_df = fetch_pc_longterm(state_fips=state_fips, cache_dir=PC_CACHE)
+        pc_occ_out = OUTPUT_DIR / f"pc_occ_proj_s{state_fips}.parquet"
+        pc_df.to_parquet(pc_occ_out, index=False)
+        print(f"  Saved: {pc_occ_out.name}  ({len(pc_df)} occupations)")
+        pc_outlook = pc_sector_outlook(pc_df)
+        if not pc_outlook.empty:
+            pc_sec_out = OUTPUT_DIR / f"pc_occ_by_sector_s{state_fips}.parquet"
+            pc_outlook.to_parquet(pc_sec_out, index=False)
+            print(f"  Saved: {pc_sec_out.name}  ({len(pc_outlook)} sector rows)")
+        else:
+            print(f"  PC: state {state_fips} has no published cycle yet — "
+                  f"layer will populate on a later run.")
+
     # ── 17. Print quick summary ────────────────────────────────────────────
     _print_summary(summary, state_fips, start_year, end_year)
 
@@ -516,13 +540,17 @@ if __name__ == "__main__":
                         help="Fetch SSA SSDI/SSI disability counts and build participation model Layer 2")
     parser.add_argument("--bls-proj", action="store_true", dest="bls_proj",
                         help="Fetch BLS national employment projections (display layer only)")
+    parser.add_argument("--pc-proj", action="store_true", dest="pc_proj",
+                        help="Fetch Projections Central state occupation projections "
+                             "(any state; gap-tolerant if a state hasn't published)")
     parser.add_argument("--all", action="store_true",
-                        help="Fetch all 10 datasets (equivalent to passing every dataset flag)")
+                        help="Fetch all datasets (equivalent to passing every dataset flag)")
     args = parser.parse_args()
 
     if args.all:
         args.laus = args.ipeds = args.lodes = args.oes = args.cbp = True
         args.jolts = args.kdol = args.ksde = args.ssa = args.bls_proj = True
+        args.pc_proj = True
 
     api_key = args.key or os.environ.get("CENSUS_API_KEY")
     if api_key:
@@ -543,4 +571,5 @@ if __name__ == "__main__":
          run_ksde=args.ksde,
          run_ssa=args.ssa,
          run_bls_proj=args.bls_proj,
+         run_pc_proj=args.pc_proj,
          random_seed=args.seed)

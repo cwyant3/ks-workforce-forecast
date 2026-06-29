@@ -48,7 +48,11 @@ DATA_DIR = BASE_DIR / "data"
 # Caches re-fetched from a live API. Safe to delete — they regenerate.
 # Split so --keep-annual-cache can skip the heavy annual re-downloads.
 MONTHLY_API_CACHES = ["laus_cache", "jolts_cache"]
-ANNUAL_API_CACHES = ["qcew_cache", "ipeds_cache", "lodes_cache", "oes_cache", "cbp_cache"]
+# pc_cache (Projections Central) is a live REST API on an annual cadence; clearing
+# it lets states that have newly published their cycle get picked up. Gap states
+# aren't cached anyway, so they re-fetch every run regardless.
+ANNUAL_API_CACHES = ["qcew_cache", "ipeds_cache", "lodes_cache", "oes_cache",
+                     "cbp_cache", "pc_cache"]
 
 # Manual-download sources (no public API). Checked for staleness, never cleared.
 MANUAL_SOURCES = {

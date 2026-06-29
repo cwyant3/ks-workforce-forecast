@@ -189,8 +189,29 @@ def data_exists(state_fips: str) -> bool:
                                   ("state_projection", "parquet")])
 
 
-def run_forecast_for_state(state_fips: str):
-    """Import and run the forecast pipeline for a new state."""
+def run_forecast_for_state(state_fips: str, force: bool = False):
+    """Bootstrap a cohort forecast for a state that has NO data yet.
+
+    This is a fast, cohort-only build — it does NOT fetch the LAUS, SSA, sector,
+    IPEDS, LODES, OES, CBP, or projection layers, so the participation model it
+    writes is base-only (ACS+ACS_LFPR). Full-parity builds come from the CLI
+    (`run_forecast.py --all --state X`) or the monthly refresh_dashboard task.
+
+    GUARD: it refuses to run when the state already has data (unless force=True).
+    The "Generate Forecast" button is gated by `not data_exists()` at RENDER time,
+    but Streamlit reruns / double-clicks can fire this after data exists — without
+    this execution-time guard, that silently OVERWRITES a state's full per-state
+    outputs with the cohort-only versions, stripping the SSA/LAUS participation
+    layers. (This regression hit CO/NE/KS during the 2026-06 multi-state build.)
+    """
+    if data_exists(state_fips) and not force:
+        raise RuntimeError(
+            f"{FIPS_STATE.get(state_fips, state_fips)} already has forecast data — "
+            f"refusing to regenerate. This cohort-only build would overwrite the full "
+            f"per-state outputs and drop the SSA/LAUS participation layers. To rebuild "
+            f"from scratch, run `python run_forecast.py --all --state {state_fips}` "
+            f"from the CLI, then commit the regenerated outputs."
+        )
     api_key = _census_api_key()
     if not api_key:
         raise RuntimeError(

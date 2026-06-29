@@ -22,49 +22,38 @@ data/ssa_cache/
 data/bls_proj_cache/
 data/pc_cache/
 
-# Non-Kansas state data files (generated on demand per state)
+# State ACS caches are regenerable — never tracked (dashboard reads outputs, not caches).
+data/acs_cache/acs5_*_s01.parquet
 data/acs_cache/acs5_*_s08.parquet
 data/acs_cache/acs5_*_s15.parquet
 data/acs_cache/acs5_*_s27.parquet
 data/acs_cache/acs5_*_s29.parquet
 data/acs_cache/acs5_*_s31.parquet
 data/acs_cache/acs5_*_s40.parquet
-data/outputs/acs_combined_s08.parquet
+
+# Test/benchmark states (AL 01, HI 15, MN 27) — outputs NOT tracked.
+data/outputs/acs_combined_s01.parquet
+data/outputs/projections_s01.parquet
+data/outputs/county_summary_s01.csv
+data/outputs/state_projection_s01.parquet
+data/outputs/participation_s01.parquet
+data/outputs/projections_effective_s01.parquet
+# The bloc (KS s20, CO s08, NE s31, MO s29, OK s40) IS tracked below the cache
+# line, so the deployed dashboard loads them like Kansas. Only the 6 base-build
+# files were ever ignored; the parity layers (LAUS/LODES/CBP/OES/IPEDS/SSA/PC…)
+# were already trackable.
 data/outputs/acs_combined_s15.parquet
 data/outputs/acs_combined_s27.parquet
-data/outputs/acs_combined_s29.parquet
-data/outputs/acs_combined_s31.parquet
-data/outputs/acs_combined_s40.parquet
-data/outputs/projections_s08.parquet
 data/outputs/projections_s15.parquet
 data/outputs/projections_s27.parquet
-data/outputs/projections_s29.parquet
-data/outputs/projections_s31.parquet
-data/outputs/projections_s40.parquet
-data/outputs/county_summary_s08.csv
 data/outputs/county_summary_s15.csv
 data/outputs/county_summary_s27.csv
-data/outputs/county_summary_s29.csv
-data/outputs/county_summary_s31.csv
-data/outputs/county_summary_s40.csv
-data/outputs/state_projection_s08.parquet
 data/outputs/state_projection_s15.parquet
 data/outputs/state_projection_s27.parquet
-data/outputs/state_projection_s29.parquet
-data/outputs/state_projection_s31.parquet
-data/outputs/state_projection_s40.parquet
-data/outputs/participation_s08.parquet
 data/outputs/participation_s15.parquet
 data/outputs/participation_s27.parquet
-data/outputs/participation_s29.parquet
-data/outputs/participation_s31.parquet
-data/outputs/participation_s40.parquet
-data/outputs/projections_effective_s08.parquet
 data/outputs/projections_effective_s15.parquet
 data/outputs/projections_effective_s27.parquet
-data/outputs/projections_effective_s29.parquet
-data/outputs/projections_effective_s31.parquet
-data/outputs/projections_effective_s40.parquet
 
 # User-dropped raw data files at data/ root (KDOL Telerik exports etc.)
 # These are large HTML-as-.xls reports; parsed outputs live in data/outputs/

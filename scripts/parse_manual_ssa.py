@@ -55,25 +55,41 @@ def parse_state(xlsx_path: Path, state_fips: str, pub_year: int) -> pd.DataFrame
 
     # Find the row where county data starts (county name in col 0, blank state-total row preceded it).
     # Header row 3 has "Disabled workers" at col index 9.
+    sf = state_fips.zfill(2)
     rows = []
     for i in range(5, len(raw)):
         county   = str(raw.iloc[i, 0]).strip()
         ansi     = str(raw.iloc[i, 2]).strip()
         if not county or county.lower() in ("nan", ""):
             continue
-        if not ansi or not ansi.isdigit() or len(ansi) != 5:
+        # SSA drops the leading zero on the county ANSI code for states with
+        # FIPS < 10 (e.g. Colorado county 08001 is stored as "8001"). Accept a
+        # 4- or 5-digit code, zero-pad to 5, then split state(2)+county(3). The
+        # state-total row (col 2 = bare FIPS, 1–2 digits) is excluded by length,
+        # and the state-prefix match guards against any stray non-county row.
+        if not ansi.isdigit() or len(ansi) not in (4, 5):
+            continue
+        fips5 = ansi.zfill(5)
+        if fips5[:2] != sf:
             continue
         # Disabled workers (SSDI proxy for working-age 18–64)
         disabled_workers = pd.to_numeric(str(raw.iloc[i, 9]).replace(",", ""),
                                          errors="coerce")
         rows.append({
-            "state_fips":     ansi[:2],
-            "county_fips":    ansi[2:],
+            "state_fips":     fips5[:2],
+            "county_fips":    fips5[2:],
             "year":           pub_year - 1,
             "ssdi_18_64":     int(disabled_workers) if pd.notna(disabled_workers) else None,
             "ssi_18_64":      None,
             "source":         "oasdi_sc_manual",
         })
+
+    if not rows:
+        raise ValueError(
+            f"parse_state: 0 county rows parsed from sheet {sheet!r} for state "
+            f"{sf}. The workbook layout may have changed (expected county name in "
+            f"col 0, ANSI code in col 2, disabled-workers count in col 9)."
+        )
 
     df = pd.DataFrame(rows)
     df["total_disabled_18_64"] = df["ssdi_18_64"]

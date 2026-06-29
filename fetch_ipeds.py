@@ -109,8 +109,16 @@ def _read_csv_from_zip(zip_bytes: bytes, target_suffix: str) -> pd.DataFrame:
         for name in zf.namelist():
             if name.lower().endswith(target_suffix.lower()):
                 with zf.open(name) as f:
-                    return pd.read_csv(f, dtype=str, low_memory=False,
-                                       encoding="latin-1")
+                    csv_bytes = f.read()
+                # IPEDS CSV bodies are Latin-1/CP1252 (institution names), but
+                # some files (e.g. HD2023) carry a leading UTF-8 BOM. Decoding
+                # those BOM bytes as Latin-1 yields the literal chars 'ï»¿' on the
+                # first column header (so 'unitid' → 'ï»¿unitid'). Strip the BOM at
+                # the byte level before Latin-1 decoding so headers stay clean.
+                if csv_bytes.startswith(b"\xef\xbb\xbf"):
+                    csv_bytes = csv_bytes[3:]
+                return pd.read_csv(io.BytesIO(csv_bytes), dtype=str,
+                                   low_memory=False, encoding="latin-1")
     raise FileNotFoundError(
         f"No file ending with '{target_suffix}' found in zip"
     )

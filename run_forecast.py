@@ -51,7 +51,7 @@ sys.path.insert(0, str(BASE_DIR))
 from fetch_acs      import fetch_all
 from cohort_model   import DEFAULT_RANDOM_SEED, run_all_counties
 from fetch_qcew     import fetch_state_qcew
-from sector_model   import run_all_sectors
+from sector_model   import run_all_sectors, project_total_employment
 from fetch_laus     import fetch_laus, compute_lfpr
 from fetch_ipeds    import fetch_ipeds, summarize_by_sector
 from fetch_lodes    import fetch_lodes, compute_commute_metrics, latest_commute_snapshot
@@ -180,6 +180,16 @@ def main(state_fips: str = "20", api_key: str | None = None,
         state_sector_df.to_parquet(sec_state_out,   index=False)
         print(f"  Saved: {sec_county_out.name}")
         print(f"  Saved: {sec_state_out.name}")
+
+        # True total-all-industries employment projection (honest denominator
+        # for labor pressure — every covered job, not just the focus sectors).
+        state_total_df = project_total_employment(
+            state_totals = state_totals,
+            cohort_proj  = proj_df,
+        )
+        sec_total_out = OUTPUT_DIR / f"state_total_projection_s{state_fips}.parquet"
+        state_total_df.to_parquet(sec_total_out, index=False)
+        print(f"  Saved: {sec_total_out.name}")
 
     # ── 7. Fetch LAUS labor force data (optional) ─────────────────────────
     if run_laus:

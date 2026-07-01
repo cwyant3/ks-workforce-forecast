@@ -182,6 +182,17 @@ def load_sector_data(state_fips: str):
     return pd.read_parquet(county_file), pd.read_parquet(state_file)
 
 
+@st.cache_data(show_spinner="Loading total-employment data…")
+def load_total_employment(state_fips: str):
+    """True all-industries (QCEW naics=10) total-employment projection.
+
+    Returns None when the file is absent so the Sector Exposure chart can fall
+    back to the focus-sector line only (states forecast before this layer was
+    added won't have the file until they're regenerated / backfilled)."""
+    f = OUTPUT_DIR / f"state_total_projection_s{state_fips}.parquet"
+    return pd.read_parquet(f) if f.exists() else None
+
+
 def data_exists(state_fips: str) -> bool:
     return all((OUTPUT_DIR / f"{stem}_s{state_fips}.{ext}").exists()
                for stem, ext in [("projections", "parquet"),
@@ -236,7 +247,7 @@ def run_forecast_for_state(state_fips: str, force: bool = False):
 def run_sector_forecast_for_state(state_fips: str):
     """Fetch QCEW and run sector model for a state that already has cohort data."""
     from fetch_qcew   import fetch_state_qcew
-    from sector_model import run_all_sectors
+    from sector_model import run_all_sectors, project_total_employment
 
     proj_file    = OUTPUT_DIR / f"projections_s{state_fips}.parquet"
     summary_file = OUTPUT_DIR / f"county_summary_s{state_fips}.csv"
@@ -256,10 +267,16 @@ def run_sector_forecast_for_state(state_fips: str):
         cohort_proj  = proj_df,
         state_fips   = state_fips,
     )
+    state_total_df = project_total_employment(
+        state_totals = state_totals,
+        cohort_proj  = proj_df,
+    )
     county_sector_df.to_parquet(
         OUTPUT_DIR / f"sector_projections_s{state_fips}.parquet", index=False)
     state_sector_df.to_parquet(
         OUTPUT_DIR / f"state_sector_projection_s{state_fips}.parquet", index=False)
+    state_total_df.to_parquet(
+        OUTPUT_DIR / f"state_total_projection_s{state_fips}.parquet", index=False)
     st.cache_data.clear()
 
 
@@ -1452,6 +1469,10 @@ def main():
                 st.error("Sector data files exist but could not be loaded.")
                 st.stop()
 
+            # True all-industries total (None for states not yet regenerated
+            # since this layer was added — chart falls back to focus sectors).
+            total_emp_df = load_total_employment(state_fips)
+
             sec_start = int(county_sector_df["year"].min())
             sec_end   = int(county_sector_df["year"].max())
 
@@ -1626,22 +1647,47 @@ def main():
             )
             st.plotly_chart(fig_gap, use_container_width=True)
 
-            # ── Working-age population vs. sector employment overlay ──────
-            st.markdown("#### Working-Age Population vs. Total Sector Employment Over Time")
-            st.caption(
-                "Population context (left axis) = state working-age population 18–64 "
-                "(Monte Carlo AR(1) simulation bands). "
-                "Employment context (right axis) = sum of projected employment across the five displayed QCEW groups. "
-                "Diverging trends suggest pressure, but do not by themselves measure a labor gap."
-            )
-            st.markdown(
-                '<div class="note-box" style="margin-bottom:0.6rem;">'
-                "<strong>CI note:</strong> The employment shaded band is the <em>sum of individual sector "
-                "80% prediction intervals</em>, not a joint confidence interval. "
-                "Because sector trends are not perfectly correlated, the true aggregate CI is narrower than shown.</div>",
-                unsafe_allow_html=True,
-            )
+            # ── Working-age population vs. total employment overlay ───────
+            _has_total = total_emp_df is not None and not total_emp_df.empty
+            st.markdown("#### Working-Age Population vs. Total Employment Over Time")
+            if _has_total:
+                st.caption(
+                    "Population context (left axis) = state working-age population 18–64 "
+                    "(Monte Carlo AR(1) simulation bands). "
+                    "Employment context (right axis): the solid line is projected "
+                    "employment across <strong>all industries</strong> (QCEW total, all ownership) — "
+                    "the true measure of labor demand pressure. The dashed line is the sum "
+                    "of the five WSU Tech focus sectors, shown for reference. "
+                    "Diverging population/employment trends suggest pressure, but do not by "
+                    "themselves measure a labor gap.",
+                    unsafe_allow_html=True,
+                )
+                st.markdown(
+                    '<div class="note-box" style="margin-bottom:0.6rem;">'
+                    "<strong>CI note:</strong> The employment shaded band is the 80% prediction "
+                    "interval for the all-industries total projection. The five focus sectors are "
+                    "private-only (QCEW own_code 5); the all-industries total includes government, "
+                    "so the focus line is an approximate — not exact — subset of the total.</div>",
+                    unsafe_allow_html=True,
+                )
+            else:
+                st.caption(
+                    "Population context (left axis) = state working-age population 18–64 "
+                    "(Monte Carlo AR(1) simulation bands). "
+                    "Employment context (right axis) = sum of projected employment across the five displayed QCEW groups. "
+                    "Diverging trends suggest pressure, but do not by themselves measure a labor gap."
+                )
+                st.markdown(
+                    '<div class="note-box" style="margin-bottom:0.6rem;">'
+                    "<strong>Note:</strong> This employment line covers only the five WSU Tech focus "
+                    "sectors, not all industries — regenerate this state's forecast to add the "
+                    "all-industries total line. "
+                    "The shaded band is the <em>sum of individual sector 80% prediction intervals</em>, "
+                    "not a joint confidence interval.</div>",
+                    unsafe_allow_html=True,
+                )
 
+            # Focus-sector sum (the five WSU Tech sectors) — secondary reference line
             demand_by_year = (
                 state_sector_df.groupby("year")["emp_proj"].sum().reset_index()
             )
@@ -1661,6 +1707,7 @@ def main():
                 fill="toself", fillcolor="rgba(0,63,135,0.10)",
                 line=dict(color="rgba(0,0,0,0)"),
                 name="Population 80% PI", hoverinfo="skip", yaxis="y1",
+                showlegend=False,
             ))
             fig_svd.add_trace(go.Scatter(
                 x=state_proj["year"], y=state_proj["p50"],
@@ -1677,41 +1724,92 @@ def main():
                 marker=dict(color=C_GOLD, size=10, symbol="diamond"),
                 yaxis="y1",
                 hovertemplate=f"<b>{base_year} Baseline</b><br>%{{y:,.0f}}<extra></extra>",
+                showlegend=False,
             ))
 
-            # Employment context: prediction band + line
-            fig_svd.add_trace(go.Scatter(
-                x=pd.concat([demand_hi_by_year["year"],
-                             demand_lo_by_year["year"].iloc[::-1]]),
-                y=pd.concat([demand_hi_by_year["emp_ci_hi"],
-                             demand_lo_by_year["emp_ci_lo"].iloc[::-1]]),
-                fill="toself", fillcolor="rgba(245,166,35,0.12)",
-                line=dict(color="rgba(0,0,0,0)"),
-                name="Employment 80% PI", hoverinfo="skip", yaxis="y2",
-            ))
-            fig_svd.add_trace(go.Scatter(
-                x=demand_by_year["year"], y=demand_by_year["emp_proj"],
-                mode="lines+markers", name="Projected Sector Employment",
-                line=dict(color=C_GOLD, width=2.5, dash="dash"),
-                marker=dict(size=5),
-                yaxis="y2",
-                hovertemplate="<b>%{x}</b><br>Employment: %{y:,.0f}<extra></extra>",
-            ))
-            # Employment baseline anchor
-            fig_svd.add_trace(go.Scatter(
-                x=[sec_base_year], y=[total_jobs_2023],
-                mode="markers", name=f"{sec_base_year} QCEW Employment",
-                marker=dict(color=C_GOLD, size=10, symbol="circle",
-                            line=dict(color=C_BLUE, width=2)),
-                yaxis="y2",
-                hovertemplate=f"<b>{sec_base_year} Employment Baseline</b><br>%{{y:,.0f}}<extra></extra>",
-            ))
+            if _has_total:
+                total_by_year = total_emp_df.sort_values("year")
+                total_all_base = (
+                    float(total_emp_df["emp_base"].iloc[0])
+                    if not pd.isna(total_emp_df["emp_base"].iloc[0]) else None
+                )
+
+                # Employment band: 80% PI for the all-industries total (primary)
+                fig_svd.add_trace(go.Scatter(
+                    x=pd.concat([total_by_year["year"], total_by_year["year"].iloc[::-1]]),
+                    y=pd.concat([total_by_year["emp_ci_hi"],
+                                 total_by_year["emp_ci_lo"].iloc[::-1]]),
+                    fill="toself", fillcolor="rgba(245,166,35,0.12)",
+                    line=dict(color="rgba(0,0,0,0)"),
+                    name="Total Employment 80% PI", hoverinfo="skip", yaxis="y2",
+                    showlegend=False,
+                ))
+                # PRIMARY: total employment across all industries (solid)
+                fig_svd.add_trace(go.Scatter(
+                    x=total_by_year["year"], y=total_by_year["emp_proj"],
+                    mode="lines+markers", name="Projected Total Employment (all industries)",
+                    line=dict(color=C_GOLD, width=3),
+                    marker=dict(size=5),
+                    yaxis="y2",
+                    hovertemplate="<b>%{x}</b><br>Total employment: %{y:,.0f}<extra></extra>",
+                ))
+                # SECONDARY: five WSU Tech focus sectors (dashed reference)
+                fig_svd.add_trace(go.Scatter(
+                    x=demand_by_year["year"], y=demand_by_year["emp_proj"],
+                    mode="lines+markers", name="Focus-Sector Employment (5 WSU Tech sectors)",
+                    line=dict(color="#B8860B", width=2, dash="dash"),
+                    marker=dict(size=4),
+                    yaxis="y2",
+                    hovertemplate="<b>%{x}</b><br>Focus-sector employment: %{y:,.0f}<extra></extra>",
+                ))
+                # Total-employment baseline anchor
+                if total_all_base is not None:
+                    fig_svd.add_trace(go.Scatter(
+                        x=[sec_base_year], y=[total_all_base],
+                        mode="markers", name=f"{sec_base_year} QCEW Total Employment",
+                        marker=dict(color=C_GOLD, size=10, symbol="circle",
+                                    line=dict(color=C_BLUE, width=2)),
+                        yaxis="y2",
+                        hovertemplate=f"<b>{sec_base_year} Total Employment Baseline</b><br>%{{y:,.0f}}<extra></extra>",
+                        showlegend=False,
+                    ))
+            else:
+                # Fallback (state not yet regenerated): focus sectors only
+                fig_svd.add_trace(go.Scatter(
+                    x=pd.concat([demand_hi_by_year["year"],
+                                 demand_lo_by_year["year"].iloc[::-1]]),
+                    y=pd.concat([demand_hi_by_year["emp_ci_hi"],
+                                 demand_lo_by_year["emp_ci_lo"].iloc[::-1]]),
+                    fill="toself", fillcolor="rgba(245,166,35,0.12)",
+                    line=dict(color="rgba(0,0,0,0)"),
+                    name="Employment 80% PI", hoverinfo="skip", yaxis="y2",
+                    showlegend=False,
+                ))
+                fig_svd.add_trace(go.Scatter(
+                    x=demand_by_year["year"], y=demand_by_year["emp_proj"],
+                    mode="lines+markers", name="Projected Sector Employment (5 focus sectors)",
+                    line=dict(color=C_GOLD, width=2.5, dash="dash"),
+                    marker=dict(size=5),
+                    yaxis="y2",
+                    hovertemplate="<b>%{x}</b><br>Employment: %{y:,.0f}<extra></extra>",
+                ))
+                fig_svd.add_trace(go.Scatter(
+                    x=[sec_base_year], y=[total_jobs_2023],
+                    mode="markers", name=f"{sec_base_year} QCEW Employment",
+                    marker=dict(color=C_GOLD, size=10, symbol="circle",
+                                line=dict(color=C_BLUE, width=2)),
+                    yaxis="y2",
+                    hovertemplate=f"<b>{sec_base_year} Employment Baseline</b><br>%{{y:,.0f}}<extra></extra>",
+                    showlegend=False,
+                ))
 
             fig_svd.update_layout(
                 title=dict(
-                    text=(f"{selected_state} — Working-Age Population vs. Sector Employment "
+                    text=(f"{selected_state} — Working-Age Population vs. "
+                          f"{'Total' if _has_total else 'Sector'} Employment "
                           f"{sec_start}–{sec_end}"),
                     font=dict(size=15, color=C_BLUE),
+                    y=0.97, yanchor="top", x=0, xanchor="left",
                 ),
                 xaxis=dict(title="Year", tickmode="linear", dtick=1,
                            title_font=dict(color="black"), tickfont=dict(color="black")),
@@ -1721,15 +1819,16 @@ def main():
                     title_font=dict(color=C_BLUE), tickfont=dict(color=C_BLUE),
                 ),
                 yaxis2=dict(
-                    title="Projected Sector Employment",
+                    title=("Projected Employment (all industries)"
+                           if _has_total else "Projected Sector Employment"),
                     tickformat=",", side="right", overlaying="y",
                     title_font=dict(color="#B8860B"), tickfont=dict(color="#B8860B"),
                     showgrid=False,
                 ),
                 legend=dict(orientation="h", yanchor="bottom", y=1.02,
-                            xanchor="right", x=1, font=dict(color="black")),
+                            xanchor="center", x=0.5, font=dict(color="black", size=11)),
                 plot_bgcolor=C_LIGHT, paper_bgcolor="white",
-                margin=dict(t=80, b=40, l=70, r=80), hovermode="x unified",
+                margin=dict(t=130, b=40, l=70, r=80), hovermode="x unified",
             )
             st.plotly_chart(fig_svd, use_container_width=True)
 

@@ -220,6 +220,83 @@ def _forecast_one(
     })
 
 
+# ── Total all-industries employment projection ────────────────────────────────
+
+def project_total_employment(
+    state_totals: pd.DataFrame,
+    cohort_proj:  pd.DataFrame,
+) -> pd.DataFrame:
+    """
+    Forecast TRUE total employment across ALL industries (QCEW naics="10",
+    all ownership) — not just the five WSU Tech focus sectors.
+
+    This is the honest denominator for labor-market pressure: the count of
+    every covered job in the state, plotted against working-age population.
+    The five-sector sum produced by run_all_sectors() is a curated subset and
+    understates total demand; this function projects the real total so the
+    Sector Exposure overlay can show both lines.
+
+    Uses the same log-linear OLS method (with 80% prediction interval) as the
+    per-sector projections, so the two lines are methodologically comparable.
+
+    Parameters
+    ----------
+    state_totals : year, total_employment  (state-level, all industries).
+                   Produced by fetch_qcew.fetch_state_qcew() from the naics="10"
+                   total-all-industries rows.
+    cohort_proj  : cohort projection frame; supplies the projection year grid
+                   (its unique `year` values) so the total line spans exactly
+                   the same horizon as the population and sector lines.
+
+    Returns
+    -------
+    DataFrame: year, emp_proj, emp_ci_lo, emp_ci_hi, emp_base, base_year,
+               method, note  (one row per projection year). Empty frame with
+               the same columns if no usable total history is available.
+    """
+    cols = ["year", "emp_proj", "emp_ci_lo", "emp_ci_hi",
+            "emp_base", "base_year", "method", "note"]
+    proj_years = np.array(sorted(cohort_proj["year"].unique()), dtype=float)
+
+    if state_totals is None or state_totals.empty or proj_years.size == 0:
+        return pd.DataFrame(columns=cols)
+
+    hist = (state_totals.dropna(subset=["total_employment"])
+            .sort_values("year"))
+    hist = hist[hist["total_employment"] > 0]
+    if hist.empty:
+        return pd.DataFrame(columns=cols)
+
+    base_year = int(hist["year"].max())
+    emp_base  = float(hist[hist["year"] == base_year]["total_employment"].iloc[0])
+
+    if len(hist) >= 3:
+        yrs = hist["year"].values.astype(float)
+        emp = hist["total_employment"].values.astype(float)
+        proj, ci_lo, ci_hi, sig, slope, p_val = _ols_project(
+            yrs, emp, proj_years, log_linear=True)
+        method = "option_b"
+        note   = (f"Total all-industries OLS (log-linear); p={p_val:.3f}"
+                  + (", significant" if sig else ", trend uncertain"))
+    else:
+        proj  = np.full(len(proj_years), emp_base)
+        ci_lo = proj * 0.85
+        ci_hi = proj * 1.15
+        method = "option_b_flat"
+        note   = "Insufficient total-employment history; held constant"
+
+    return pd.DataFrame({
+        "year":      proj_years.astype(int),
+        "emp_proj":  np.round(proj,  1),
+        "emp_ci_lo": np.round(ci_lo, 1),
+        "emp_ci_hi": np.round(ci_hi, 1),
+        "emp_base":  emp_base,
+        "base_year": base_year,
+        "method":    method,
+        "note":      note,
+    })
+
+
 # ── Public entry point ────────────────────────────────────────────────────────
 
 def run_all_sectors(

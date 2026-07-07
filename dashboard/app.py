@@ -12,8 +12,10 @@ Deploy to Streamlit Community Cloud:
     3. Add CENSUS_API_KEY to the app's Secrets settings.
 """
 
+import json
 import os
 import sys
+import urllib.request
 from pathlib import Path
 
 import numpy as np
@@ -27,7 +29,19 @@ sys.path.insert(0, str(ROOT))
 
 OUTPUT_DIR = ROOT / "data" / "outputs"
 QCEW_CACHE = ROOT / "data" / "qcew_cache"
+GEO_CACHE  = ROOT / "data" / "geo" / "geojson-counties-fips.json"
 LOGO_PATH  = Path(__file__).parent / "wsu-tech-logo.png"
+
+# County-boundary GeoJSON. Passing a URL to Plotly makes the *browser* fetch it
+# at render time — which silently fails on networks that block
+# raw.githubusercontent.com (e.g. WSU Tech), leaving a blank map. We instead
+# load the geometry server-side and embed it in the figure so no client-side
+# fetch is needed. jsDelivr mirrors the same file and is usually reachable when
+# raw.githubusercontent.com is not.
+_GEO_URLS = [
+    "https://cdn.jsdelivr.net/gh/plotly/datasets@master/geojson-counties-fips.json",
+    "https://raw.githubusercontent.com/plotly/datasets/master/geojson-counties-fips.json",
+]
 
 # ── All US states + DC: name → 2-digit FIPS ─────────────────────────────────
 STATE_FIPS: dict[str, str] = {
@@ -701,6 +715,43 @@ def ci_chart(df: pd.DataFrame, title: str,
     return fig
 
 
+@st.cache_data(show_spinner=False)
+def load_counties_geojson(state_fips: str | None = None) -> dict | None:
+    """County-boundary GeoJSON as a dict for server-side embedding.
+
+    Reads the local cache first; if absent, downloads once (jsDelivr, then the
+    plotly raw URL) and writes the cache. When ``state_fips`` is given, only the
+    features for that state are returned — this shrinks the figure payload from
+    ~3 MB (all 3,221 US counties) to a few KB. Returns None if the geometry
+    cannot be obtained, so the caller can show a graceful message."""
+    gj = None
+    if GEO_CACHE.exists():
+        try:
+            gj = json.loads(GEO_CACHE.read_text(encoding="utf-8"))
+        except Exception:
+            gj = None
+    if gj is None:
+        for url in _GEO_URLS:
+            try:
+                req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+                data = urllib.request.urlopen(req, timeout=30).read()
+                gj = json.loads(data)
+                if gj.get("type") == "FeatureCollection" and gj.get("features"):
+                    GEO_CACHE.parent.mkdir(parents=True, exist_ok=True)
+                    GEO_CACHE.write_bytes(data)
+                    break
+                gj = None
+            except Exception:
+                gj = None
+    if gj is None:
+        return None
+    if state_fips:
+        sf = state_fips.zfill(2)
+        feats = [f for f in gj["features"] if str(f.get("id", "")).startswith(sf)]
+        return {"type": "FeatureCollection", "features": feats}
+    return gj
+
+
 def state_choropleth(summary: pd.DataFrame, state_fips: str,
                      end_year: int, metric: str = "pct_change_end",
                      base_year: int = 2024) -> go.Figure:
@@ -710,8 +761,17 @@ def state_choropleth(summary: pd.DataFrame, state_fips: str,
     z_max = max(abs(df[metric].min()), abs(df[metric].max()), 1)
     state_name = FIPS_STATE.get(state_fips, state_fips)
 
+    counties = load_counties_geojson(state_fips)
+    if counties is None:
+        # Signal the caller (which wraps this in try/except) to show a warning
+        # instead of rendering a blank map.
+        raise RuntimeError(
+            "County boundary GeoJSON unavailable — could not read the local "
+            "cache or download it (network may block the source)."
+        )
+
     fig = go.Figure(go.Choropleth(
-        geojson="https://raw.githubusercontent.com/plotly/datasets/master/geojson-counties-fips.json",
+        geojson=counties, featureidkey="id",
         locations=df["fips5"], z=df[metric], text=df["label"],
         hoverinfo="text",
         colorscale=[
@@ -1214,9 +1274,11 @@ def main():
             )
         except Exception:
             st.warning(
-                "County map could not load — the GeoJSON boundary file requires "
-                "an internet connection (fetched from GitHub at render time). "
-                "All other charts and tables are unaffected."
+                "County map could not load — the county boundary file "
+                "(`data/geo/geojson-counties-fips.json`) is missing and could not "
+                "be downloaded (the network may block the source). Once that file "
+                "is present the map renders offline. All other charts and tables "
+                "are unaffected."
             )
 
         col_left, col_right = st.columns(2)

@@ -385,6 +385,64 @@ def _fmt(n: float, decimals: int = 0) -> str:
     return f"{n:,.{decimals}f}"
 
 
+# ── Table number formatting ───────────────────────────────────────────────────
+# Formatting belongs in column config, NOT baked into the values with _fmt().
+# st.dataframe sorts on a column's underlying dtype, so handing it pre-formatted
+# strings makes click-to-sort collate as TEXT: "954" lands above "375,875"
+# (because "9" > "3"), and "-3.2%" above "-30.5%" (because "." < "0"). Keeping
+# the columns numeric preserves correct sorting while the grid still renders the
+# separators, signs, and decimals.
+def col_count():
+    """Whole number with thousands separators — "375,875"."""
+    return st.column_config.NumberColumn(format="%,d")
+
+
+def col_year():
+    """Four-digit year — "2035", never "2,035"."""
+    return st.column_config.NumberColumn(format="%d")
+
+
+def col_pct(decimals: int = 1, signed: bool = True):
+    """Percentage with a trailing sign — "+7.3%" / "3.8%"."""
+    return st.column_config.NumberColumn(
+        format=f"%+.{decimals}f%%" if signed else f"%.{decimals}f%%")
+
+
+def col_num(decimals: int = 1):
+    """Bare decimal, no percent sign — for columns whose header already says (%)."""
+    return st.column_config.NumberColumn(format=f"%.{decimals}f")
+
+
+def county_table_config(base_year: int, end_year: int) -> dict:
+    """Column config for the county tables on the Population and Data tabs.
+
+    Deliberately a SUPERSET of either table's columns: the Population tables
+    carry "Projected {end_year}" while the Data tab carries "Median {end_year}"
+    plus the percentile and migration columns. Streamlit ignores config entries
+    whose column is absent, so one dict can serve both.
+    """
+    return {
+        f"Baseline {base_year}":  col_count(),
+        f"Projected {end_year}":  col_count(),
+        f"Median {end_year}":     col_count(),
+        f"P10 {end_year}":        col_count(),
+        f"P90 {end_year}":        col_count(),
+        "Annual Retirements":     col_count(),
+        "Annual Entries":         col_count(),
+        "% Change":               col_pct(1),
+        "Net Mig Rate (%)":       col_pct(2),
+    }
+
+
+def projection_table_config(base_year: int, percentile_cols: list[str]) -> dict:
+    """Column config for the per-year projection tables (Available Workforce,
+    Explorer), whose percentile column labels differ between the two."""
+    cfg = {"Year": col_year(), f"% vs {base_year}": col_pct(1),
+           "Annual Retirements": col_count(), "Annual Entries": col_count()}
+    cfg.update({c: col_count() for c in percentile_cols})
+    return cfg
+
+
 def _delta_html(pct: float) -> str:
     cls  = "growing" if pct >= 0 else "declining"
     sign = "+" if pct >= 0 else ""
@@ -1298,20 +1356,19 @@ def main():
         disp_cols = ["county_name", "workforce_base", "wf_end_p50", "pct_change_end"]
         rename    = {"county_name": "County", "workforce_base": f"Baseline {base_year}",
                      "wf_end_p50": f"Projected {end_year}", "pct_change_end": "% Change"}
+        # Values stay numeric — see county_table_config() for why formatting is
+        # applied as column config instead of with _fmt().
+        tbl_cfg = county_table_config(base_year, end_year)
         with col_left:
             st.markdown(f"**Top 10 Growing Counties ({end_year} median)**")
             top = summary.nlargest(10, "pct_change_end")[disp_cols].rename(columns=rename)
-            top["% Change"]          = top["% Change"].map(lambda x: f"{x:+.1f}%")
-            top[f"Baseline {base_year}"]     = top[f"Baseline {base_year}"].map(_fmt)
-            top[f"Projected {end_year}"] = top[f"Projected {end_year}"].map(_fmt)
-            st.dataframe(top, hide_index=True, use_container_width=True)
+            st.dataframe(top, hide_index=True, use_container_width=True,
+                         column_config=tbl_cfg)
         with col_right:
             st.markdown(f"**Top 10 Declining Counties ({end_year} median)**")
             bot = summary.nsmallest(10, "pct_change_end")[disp_cols].rename(columns=rename)
-            bot["% Change"]          = bot["% Change"].map(lambda x: f"{x:+.1f}%")
-            bot[f"Baseline {base_year}"]     = bot[f"Baseline {base_year}"].map(_fmt)
-            bot[f"Projected {end_year}"] = bot[f"Projected {end_year}"].map(_fmt)
-            st.dataframe(bot, hide_index=True, use_container_width=True)
+            st.dataframe(bot, hide_index=True, use_container_width=True,
+                         column_config=tbl_cfg)
 
     # ═════════════════════════════════════════════════════════════════════
     # TAB 2 — AVAILABLE WORKFORCE
@@ -1500,14 +1557,12 @@ def main():
         st.markdown("#### Annual Projections")
         tbl = county_proj[["year", "p10", "p25", "p50", "p75", "p90",
                             "retirements_p50", "entries_p50", "pct_change_p50"]].copy()
-        tbl.columns = ["Year", "P10 (80% lo)", "P25 (50% lo)", "Median",
-                       "P75 (50% hi)", "P90 (80% hi)",
+        pctile_cols = ["P10 (80% lo)", "P25 (50% lo)", "Median",
+                       "P75 (50% hi)", "P90 (80% hi)"]
+        tbl.columns = ["Year", *pctile_cols,
                        "Annual Retirements", "Annual Entries", f"% vs {base_year}"]
-        for c in ["P10 (80% lo)", "P25 (50% lo)", "Median",
-                  "P75 (50% hi)", "P90 (80% hi)", "Annual Retirements", "Annual Entries"]:
-            tbl[c] = tbl[c].map(_fmt)
-        tbl[f"% vs {base_year}"] = tbl[f"% vs {base_year}"].map(lambda x: f"{x:+.1f}%")
-        st.dataframe(tbl, hide_index=True, use_container_width=True)
+        st.dataframe(tbl, hide_index=True, use_container_width=True,
+                     column_config=projection_table_config(base_year, pctile_cols))
 
     # ═════════════════════════════════════════════════════════════════════
     # TAB 4 — SECTOR EXPOSURE
@@ -2592,14 +2647,17 @@ def main():
                 "pct_workers_imported":         "% In-Commuters",
                 "top_feeder_counties":          "Top Feeder Counties",
             })
-            for col in ["Total Jobs", "Local Worker Jobs", "In-Commuter Jobs"]:
-                tbl_comm[col] = tbl_comm[col].map(_fmt)
-            for col in ["% Local", "% In-Commuters"]:
-                tbl_comm[col] = tbl_comm[col].map(lambda x: f"{x:.1f}%")
             tbl_comm = tbl_comm[["County", "Total Jobs", "Local Worker Jobs",
                                   "In-Commuter Jobs", "% Local", "% In-Commuters",
                                   "Top Feeder Counties"]].sort_values("County")
-            st.dataframe(tbl_comm, hide_index=True, use_container_width=True, height=400)
+            st.dataframe(tbl_comm, hide_index=True, use_container_width=True, height=400,
+                         column_config={
+                             "Total Jobs":        col_count(),
+                             "Local Worker Jobs": col_count(),
+                             "In-Commuter Jobs":  col_count(),
+                             "% Local":           col_pct(1, signed=False),
+                             "% In-Commuters":    col_pct(1, signed=False),
+                         })
 
             st.markdown(
                 '<div class="note-box">'
@@ -2809,11 +2867,16 @@ def main():
                 display = pd.DataFrame({
                     "Occupation":          top_df["occ_title"],
                     "Sector":              top_df["Sector"],
-                    "Annual Openings":     top_df["annual_openings"].map(_fmt),
-                    "Current Employment":  top_df["base_emp"].map(_fmt),
-                    f"% Change {id_vintage}": top_df["pct_change"].map(lambda v: f"{v:+.1f}%"),
+                    "Annual Openings":     top_df["annual_openings"],
+                    "Current Employment":  top_df["base_emp"],
+                    f"% Change {id_vintage}": top_df["pct_change"],
                 })
-                st.dataframe(display, hide_index=True, use_container_width=True)
+                st.dataframe(display, hide_index=True, use_container_width=True,
+                             column_config={
+                                 "Annual Openings":        col_count(),
+                                 "Current Employment":     col_count(),
+                                 f"% Change {id_vintage}": col_pct(1),
+                             })
                 st.caption(
                     f"Showing top {top_n} of {len(in_demand_df)} in-demand occupations. "
                     "Source: KDOL LMIS occupational projections."
@@ -2971,12 +3034,16 @@ def main():
                     county_view = county_view.sort_values("Unemprate", ascending=False)
                     county_view.columns = ["County", "Labor Force", "Employed",
                                             "Unemployed", "Unemp Rate (%)", "LFPR (%)"]
-                    for c in ["Labor Force", "Employed", "Unemployed"]:
-                        county_view[c] = county_view[c].map(_fmt)
-                    for c in ["Unemp Rate (%)", "LFPR (%)"]:
-                        county_view[c] = county_view[c].map(lambda v: f"{v:.1f}")
                     st.dataframe(county_view, hide_index=True, use_container_width=True,
-                                 height=420)
+                                 height=420,
+                                 column_config={
+                                     "Labor Force":    col_count(),
+                                     "Employed":       col_count(),
+                                     "Unemployed":     col_count(),
+                                     # Headers already carry (%), so no % suffix.
+                                     "Unemp Rate (%)": col_num(1),
+                                     "LFPR (%)":       col_num(1),
+                                 })
 
             st.markdown(
                 '<div class="note-box">'
@@ -3121,10 +3188,9 @@ def main():
         explorer_tbl.columns = [
             "Year", "P10", "Median", "P90", "Annual Retirements", "Annual Entries", f"% vs {base_year}"
         ]
-        for c in ["P10", "Median", "P90", "Annual Retirements", "Annual Entries"]:
-            explorer_tbl[c] = explorer_tbl[c].map(_fmt)
-        explorer_tbl[f"% vs {base_year}"] = explorer_tbl[f"% vs {base_year}"].map(lambda x: f"{x:+.1f}%")
-        st.dataframe(explorer_tbl, hide_index=True, use_container_width=True)
+        st.dataframe(explorer_tbl, hide_index=True, use_container_width=True,
+                     column_config=projection_table_config(
+                         base_year, ["P10", "Median", "P90"]))
 
     # ═════════════════════════════════════════════════════════════════════
     # TAB 7 — DATA TABLE
@@ -3167,23 +3233,22 @@ def main():
             mask |= disp["% Change"].abs() <= 2
         disp = disp[mask]
 
+        # ascending=True puts the smallest value first. "worst first" on a signed
+        # % change means most-negative first (True); "largest first" on a count
+        # means descending (False); a plain name sort reads A→Z (True).
         sort_map = {
             "% Change (worst first)":             ("% Change", True),
             "% Change (best first)":              ("% Change", False),
-            "County Name":                        ("County", False),
-            "Baseline Workforce (largest first)": (f"Baseline {base_year}", True),
+            "County Name":                        ("County", True),
+            "Baseline Workforce (largest first)": (f"Baseline {base_year}", False),
         }
         sort_col, sort_asc = sort_map.get(sort_by, ("% Change", True))
         disp = disp.sort_values(sort_col, ascending=sort_asc)
 
-        for c in [f"Baseline {base_year}", f"Median {end_year}",
-                  f"P10 {end_year}", f"P90 {end_year}",
-                  "Annual Retirements", "Annual Entries"]:
-            disp[c] = disp[c].map(_fmt)
-        disp["% Change"]        = disp["% Change"].map(lambda x: f"{x:+.1f}%")
-        disp["Net Mig Rate (%)"] = disp["Net Mig Rate (%)"].map(lambda x: f"{x:+.2f}%")
-
-        st.dataframe(disp, hide_index=True, use_container_width=True, height=500)
+        # Values stay numeric so the grid's own click-to-sort agrees with the
+        # dropdown — see county_table_config().
+        st.dataframe(disp, hide_index=True, use_container_width=True, height=500,
+                     column_config=county_table_config(base_year, end_year))
 
         csv = summary.to_csv(index=False).encode("utf-8")
         st.download_button(

@@ -61,5 +61,10 @@ data/*.xls
 data/*.xlsx
 data/*.csv
 
+# KDOL LMIS published projection workbooks, dropped in under their published
+# filenames (e.g. "2024-2034 KS Industry Projections.xlsx"). Manual downloads
+# like every other source above; parsed outputs live in data/outputs/.
+data/kdol_proj/
+
 # Per-run refresh logs (transient; regenerated on each --all)
 data/outputs/_refresh_log_*.txt

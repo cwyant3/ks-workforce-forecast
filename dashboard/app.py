@@ -347,6 +347,19 @@ def load_ks_occ_by_sector(state_fips: str):
     return pd.read_parquet(f) if f.exists() else None
 
 
+def vintage_label(df, base: str = "base_year", proj: str = "proj_year",
+                  fallback: str = "") -> str:
+    """Render a projection vintage ("2024–2034") from the frame's own year
+    columns. KDOL republishes on a new cycle every couple of years, so deriving
+    the label from the data keeps captions from silently describing the wrong
+    vintage after a refresh."""
+    if df is None or getattr(df, "empty", True):
+        return fallback
+    if base not in df.columns or proj not in df.columns:
+        return fallback
+    return f"{df[base].iloc[0]}–{df[proj].iloc[0]}"
+
+
 @st.cache_data(show_spinner="Loading KDOL labor force state…")
 def load_kdol_labforce_state(state_fips: str):
     f = OUTPUT_DIR / f"kdol_labforce_state_s{state_fips}.parquet"
@@ -2729,10 +2742,11 @@ def main():
             # ── KS State vs BLS National — sector outlook comparison ──────
             ks_sector_df = load_ks_occ_by_sector(state_fips)
             if has_bls and ks_sector_df is not None and not ks_sector_df.empty:
+                ks_vintage = vintage_label(ks_sector_df, fallback="KS cycle")
                 st.markdown("#### KS State (KDOL) vs. BLS National — Sector Outlook Comparison")
                 st.caption(
                     "Side-by-side projected % change in sector employment, comparing the KS-specific "
-                    "KDOL occupational projection (2022–2032) against the BLS national projection "
+                    f"KDOL occupational projection ({ks_vintage}) against the BLS national projection "
                     "(2024–2034). Divergence highlights where KS demand differs from national trends."
                 )
                 bls_sector_map = dict(zip(bls_df["sector"], bls_df["emp_change_pct"]))
@@ -2751,7 +2765,7 @@ def main():
                     hovertemplate="<b>%{x}</b><br>BLS National: %{y:+.1f}%<extra></extra>",
                 ))
                 fig_comp.add_trace(go.Bar(
-                    name="KS State KDOL (2022–2032)",
+                    name=f"KS State KDOL ({ks_vintage})",
                     x=[sector_label(s) for s in comp_sectors],
                     y=[ks_sector_map.get(s) for s in comp_sectors],
                     marker_color=C_GOLD,
@@ -2780,10 +2794,11 @@ def main():
             # ── KS In-Demand Occupations (KDOL Workforce Innovation Board) ─
             in_demand_df = load_ks_occ_in_demand(state_fips)
             if in_demand_df is not None and not in_demand_df.empty:
+                id_vintage = vintage_label(in_demand_df, fallback="current KDOL cycle")
                 st.markdown("#### Kansas In-Demand Occupations — Top by Annual Openings")
                 st.caption(
                     "Occupations flagged in-demand by the Kansas Workforce Innovation Board, "
-                    "ranked by projected annual openings (2022–2032). Directly relevant for "
+                    f"ranked by projected annual openings ({id_vintage}). Directly relevant for "
                     "WSU Tech program design priorities."
                 )
                 top_n = 25
@@ -2796,7 +2811,7 @@ def main():
                     "Sector":              top_df["Sector"],
                     "Annual Openings":     top_df["annual_openings"].map(_fmt),
                     "Current Employment":  top_df["base_emp"].map(_fmt),
-                    "% Change 2022–2032":  top_df["pct_change"].map(lambda v: f"{v:+.1f}%"),
+                    f"% Change {id_vintage}": top_df["pct_change"].map(lambda v: f"{v:+.1f}%"),
                 })
                 st.dataframe(display, hide_index=True, use_container_width=True)
                 st.caption(

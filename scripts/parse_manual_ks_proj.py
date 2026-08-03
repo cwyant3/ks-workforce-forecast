@@ -22,10 +22,127 @@ Usage:
 """
 
 import argparse
+import re
 import sys
 from pathlib import Path
 
 import pandas as pd
+
+# ── Published-workbook support ────────────────────────────────────────────────
+# Since the 2024-2034 cycle KDOL also publishes a clean .xlsx ("2024-2034 KS
+# Industry Projections.xlsx", LMIS, published July 2026) alongside the legacy
+# Telerik HTML-as-.xls export. The published book is statewide-only but has
+# real column headers and a stated vintage, so it is preferred when present.
+# Its "Industry Level" is descriptive text where the Telerik export used a
+# numeric naicslvl; map it back so sector_outlook()'s naicslvl == "2" filter
+# keeps working.
+_LEVEL_TO_NAICSLVL: dict[str, str] = {
+    "total, all industries": "0",
+    "supersector": "1",
+    "industry sector (2-digit)": "2",
+    "industry subsector (3-digit)": "3",
+    "industry group (4-digit)": "4",
+    "industry (5-digit)": "5",
+    "industry (6-digit)": "6",
+}
+
+
+def _norm(col: object) -> str:
+    """Collapse a multi-line Excel header into a lowercase single-space key."""
+    return re.sub(r"\s+", " ", str(col)).strip().lower()
+
+
+def _find(cols: list[str], *needles: str) -> str | None:
+    """First column containing every needle (already-normalised keys)."""
+    for c in cols:
+        if all(n in c for n in needles):
+            return c
+    return None
+
+
+def _years_from_columns(cols: list[str]) -> tuple[str | None, str | None]:
+    """Read the projection vintage off the employment column headers.
+
+    "2024 employment" -> base, "2034 projected employment" -> projected. Reading
+    the years from the data instead of the filename means a new cycle needs no
+    code change.
+    """
+    base = proj = None
+    for c in cols:
+        m = re.search(r"(?:19|20)\d{2}", c)
+        if not m or "employment" not in c:
+            continue
+        if "projected" in c:
+            proj = m.group(0)
+        elif base is None:
+            base = m.group(0)
+    return base, proj
+
+
+def _pct(series: pd.Series) -> pd.Series:
+    """Published workbooks store rates as decimal fractions (0.0234); the
+    Telerik export and every downstream consumer use percent (2.34)."""
+    return (pd.to_numeric(
+        series.astype(str).str.replace(",", "").str.replace("%", "").str.strip(),
+        errors="coerce",
+    ) * 100).round(4)
+
+
+def parse_ks_proj_published(xlsx_path: Path, state_fips: str = "20") -> pd.DataFrame:
+    """Parse KDOL's published industry-projections .xlsx into the Telerik schema."""
+    xl = pd.ExcelFile(xlsx_path)
+    sheet = next((s for s in xl.sheet_names if "industry projections" in s.lower()), None)
+    if sheet is None:
+        raise RuntimeError(
+            f"No 'Industry Projections' sheet in {xlsx_path.name} "
+            f"(sheets: {xl.sheet_names})"
+        )
+    raw = xl.parse(sheet, dtype=str, header=1)
+    raw.columns = [_norm(c) for c in raw.columns]
+    cols = list(raw.columns)
+
+    lvl_col   = _find(cols, "industry level")
+    code_col  = _find(cols, "industry code")
+    title_col = _find(cols, "industry title")
+    if not (lvl_col and code_col and title_col):
+        raise RuntimeError(f"Unexpected industry columns in {xlsx_path.name}: {cols}")
+    base_year, proj_year = _years_from_columns(cols)
+    base_col = _find(cols, base_year or "", "employment") if base_year else None
+    proj_col = _find(cols, "projected", "employment")
+    chg_col  = _find(cols, "change in employment")
+    pchg_col = _find(cols, "percent change")
+    grr_col  = _find(cols, "growth rate")
+
+    # Drop the trailing footnote/blank rows the workbook carries under the table.
+    raw = raw[raw[code_col].notna() & raw[lvl_col].notna()].copy()
+
+    result = pd.DataFrame()
+    result["state_fips"] = [state_fips.zfill(2)] * len(raw)
+    result["naicscode"]  = raw[code_col].astype(str).str.strip()
+    result["naicstitle"] = raw[title_col].astype(str).str.strip()
+    result["naicslvl"]   = raw[lvl_col].map(lambda v: _LEVEL_TO_NAICSLVL.get(_norm(v)))
+    result["estyear"]    = base_year
+    result["projyear"]   = proj_year
+    result["estindprj"]  = pd.to_numeric(
+        raw[base_col].astype(str).str.replace(",", ""), errors="coerce") if base_col else pd.NA
+    result["projindprj"] = pd.to_numeric(
+        raw[proj_col].astype(str).str.replace(",", ""), errors="coerce") if proj_col else pd.NA
+    result["nchg"]       = pd.to_numeric(
+        raw[chg_col].astype(str).str.replace(",", ""), errors="coerce") if chg_col else pd.NA
+    result["pchg"]       = _pct(raw[pchg_col]) if pchg_col else pd.NA
+    result["grrate"]     = _pct(raw[grr_col]) if grr_col else pd.NA
+    # The published book carries no openings columns (the Telerik export's were
+    # empty too), so these stay null rather than being invented.
+    result["openings"] = pd.NA
+    result["annualopenings"] = pd.NA
+    result["sector"] = result["naicscode"].str[:2].map(NAICS2_TO_SECTOR)
+    result["projection_source"] = "KS_State_Industry_Published"
+    return result.reset_index(drop=True)
+
+
+def is_published_workbook(path: Path) -> bool:
+    """True for a real .xlsx; the legacy KDOL export is an HTML table named .xls."""
+    return path.suffix.lower() == ".xlsx"
 
 # NAICS 2-digit → dashboard sector (mirrors fetch_qcew.py SECTOR_NAICS)
 NAICS2_TO_SECTOR: dict[str, str] = {
@@ -116,8 +233,14 @@ def main():
         print(f"Input not found: {xls}", file=sys.stderr)
         sys.exit(1)
 
-    df = parse_ks_proj(xls, args.state)
-    print(f"Parsed {len(df)} industry-projection rows for state {args.state}")
+    if is_published_workbook(xls):
+        df = parse_ks_proj_published(xls, args.state)
+        print(f"Parsed {len(df)} industry-projection rows for state {args.state} "
+              f"from published workbook {xls.name} "
+              f"(vintage {df['estyear'].iloc[0]}-{df['projyear'].iloc[0]}, statewide only)")
+    else:
+        df = parse_ks_proj(xls, args.state)
+        print(f"Parsed {len(df)} industry-projection rows for state {args.state}")
     print(df.head(5).to_string())
 
     out = Path(args.output_dir)

@@ -21,7 +21,9 @@ Notes:
     have EMP/PAYANN replaced with ranges (stored as flags like 'a', 'b', 'c').
   • ESTAB is always published without suppression — it is the most reliable
     variable for trend analysis in small counties.
-  • Annual lag: ~18 months. 2022 is the latest available as of mid-2024.
+  • Annual lag: ~18 months. 2023 is the latest available as of 2026-08-27
+    (released 2025-06-26); 2024 had not published as of that date. Bumping
+    CBP_YEARS is what adopts a new vintage — a cache clear alone will not.
 
 Output DataFrame columns:
   state_fips, county_fips (3-digit str), year (int),
@@ -36,7 +38,7 @@ import pandas as pd
 import numpy as np
 from pathlib import Path
 
-CBP_YEARS  = list(range(2015, 2023))   # 2015–2022
+CBP_YEARS  = list(range(2015, 2024))   # 2015–2023
 CBP_BASE   = "https://api.census.gov/data/{year}/cbp"
 
 # 2-digit NAICS → dashboard sector (mirrors fetch_qcew.py SECTOR_NAICS)
@@ -73,6 +75,69 @@ def _to_int(val: str | None) -> int | None:
         return None
 
 
+class CBPPartialFetchError(RuntimeError):
+    """Raised when CBP could not supply every requested year.
+
+    A partial CBP pull is silently wrong rather than obviously broken: the trend
+    columns (estab_slope, estab_pct_chg, year_range, n_years) are fitted over
+    whichever years survived, so one dropped year shifts every slope in the
+    dashboard without anything erroring. Refusing to cache — or return — a
+    partial pull is deliberate; see the 2026-08-27 entry in
+    docs/data-refresh-log.md for the incident that motivated it.
+    """
+
+
+# Transient HTTP statuses worth a retry. Other 4xx are deterministic (bad
+# variable name, retired vintage) — retrying only delays the same failure.
+_RETRY_STATUS = {429, 500, 502, 503, 504}
+
+
+def _get_with_retry(
+    url: str,
+    params: dict,
+    *,
+    timeout: int = 60,
+    attempts: int = 4,
+    backoff: float = 1.5,
+    label: str = "",
+) -> requests.Response:
+    """GET with exponential backoff on transient failures.
+
+    A full bloc refresh is ~495 requests (9 years x 11 NAICS x 5 states), so a
+    single connection reset used to cost a whole year of data. Retries cover
+    connection resets, timeouts, and 429/5xx.
+    """
+    delay = backoff
+    last_exc: Exception | None = None
+
+    for attempt in range(1, attempts + 1):
+        try:
+            resp = requests.get(url, params=params, timeout=timeout)
+        except (requests.ConnectionError, requests.Timeout,
+                requests.exceptions.ChunkedEncodingError) as exc:
+            last_exc = exc
+            if attempt == attempts:
+                break
+            print(f"      retry {attempt}/{attempts - 1} {label}: "
+                  f"{type(exc).__name__} — waiting {delay:.1f}s")
+            time.sleep(delay)
+            delay *= backoff
+            continue
+
+        if resp.status_code in _RETRY_STATUS and attempt < attempts:
+            print(f"      retry {attempt}/{attempts - 1} {label}: "
+                  f"HTTP {resp.status_code} — waiting {delay:.1f}s")
+            time.sleep(delay)
+            delay *= backoff
+            continue
+
+        return resp
+
+    raise requests.ConnectionError(
+        f"CBP request failed after {attempts} attempts ({label}): {last_exc}"
+    )
+
+
 def _fetch_year(
     year: int,
     state_fips: str,
@@ -101,7 +166,8 @@ def _fetch_year(
         if api_key:
             params["key"] = api_key
 
-        resp = requests.get(url, params=params, timeout=60)
+        resp = _get_with_retry(url, params,
+                               label=f"{year} state {sf} NAICS {naics2}")
         if resp.status_code == 204:
             continue
         resp.raise_for_status()
@@ -137,44 +203,77 @@ def fetch_cbp(
     years: list[int] | None = None,
     api_key: str | None = None,
     cache_dir: Path | None = None,
+    allow_partial: bool = False,
 ) -> pd.DataFrame:
     """
     Fetch CBP establishment counts for all counties in a state.
 
     Parameters
     ----------
-    state_fips : 2-digit state FIPS (default "20" = Kansas)
-    years      : years to fetch (default 2015–2022)
-    api_key    : Census API key (optional; same key as fetch_acs.py)
-    cache_dir  : parquet cache directory
+    state_fips    : 2-digit state FIPS (default "20" = Kansas)
+    years         : years to fetch (default 2015–2023)
+    api_key       : Census API key (optional; same key as fetch_acs.py)
+    cache_dir     : parquet cache directory
+    allow_partial : if False (default), raise CBPPartialFetchError when any
+                    requested year could not be fetched, rather than returning
+                    or caching a silently truncated series. Set True only when
+                    a year is known-unavailable upstream and a short series is
+                    genuinely acceptable.
 
     Returns
     -------
     DataFrame: state_fips, county_fips, year, naics2, sector,
                estab, emp, payann
+
+    Raises
+    ------
+    CBPPartialFetchError : a requested year is missing and allow_partial=False.
     """
     if years is None:
         years = CBP_YEARS
     sf = state_fips.zfill(2)
+    wanted = set(years)
 
     cache_file = (cache_dir / f"cbp_s{sf}.parquet") if cache_dir else None
     if cache_file and cache_file.exists():
-        print(f"  [cache] CBP {sf}")
-        return pd.read_parquet(cache_file)
+        cached = pd.read_parquet(cache_file)
+        cached_years = (set(cached["year"].astype(int).unique())
+                        if "year" in cached.columns else set())
+        stale = sorted(wanted - cached_years)
+        if not stale:
+            print(f"  [cache] CBP {sf}")
+            return cached
+        # A cache that predates a CBP_YEARS bump — or one written before the
+        # partial-pull guard existed — must not be served as if complete.
+        print(f"  [cache stale] CBP {sf} missing {stale} — re-fetching")
 
     frames = []
+    fetched_years: set[int] = set()
     for year in years:
         print(f"  CBP {year} (state {sf})…")
         try:
             df = _fetch_year(year, sf, api_key)
-            if not df.empty:
-                frames.append(df)
-                print(f"    {len(df)} county-NAICS rows")
         except requests.HTTPError as exc:
-            print(f"    Warning: CBP {year} failed ({exc.response.status_code}) — skipping")
+            print(f"    ERROR: CBP {year} failed "
+                  f"(HTTP {exc.response.status_code})")
         except Exception as exc:
-            print(f"    Warning: CBP {year} error — {exc}")
+            print(f"    ERROR: CBP {year} — {type(exc).__name__}: {exc}")
+        else:
+            if df.empty:
+                print(f"    ERROR: CBP {year} returned no rows")
+            else:
+                frames.append(df)
+                fetched_years.add(year)
+                print(f"    {len(df)} county-NAICS rows")
         time.sleep(1.0)
+
+    missing = sorted(wanted - fetched_years)
+    if missing:
+        msg = (f"CBP state {sf}: {len(missing)} of {len(years)} requested "
+               f"years absent {missing} — refusing to cache a partial pull")
+        if not allow_partial:
+            raise CBPPartialFetchError(msg)
+        print(f"  WARNING: {msg}")
 
     if not frames:
         return pd.DataFrame(columns=["state_fips", "county_fips", "year",
@@ -183,10 +282,13 @@ def fetch_cbp(
     df = pd.concat(frames, ignore_index=True)
     df = df.sort_values(["county_fips", "naics2", "year"]).reset_index(drop=True)
 
-    if cache_file:
+    if cache_file and not missing:
         cache_dir.mkdir(parents=True, exist_ok=True)
         df.to_parquet(cache_file, index=False)
         print(f"  [saved] cbp_s{sf}.parquet  ({len(df)} rows)")
+    elif cache_file:
+        print(f"  [not cached] partial pull for state {sf} — "
+              f"cache left untouched so the next run re-fetches")
 
     return df
 

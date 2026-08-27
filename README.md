@@ -263,7 +263,7 @@ by hand (see [§8.4](#84-monthly-refresh-and-manual-sources)).
 | 3 | **LAUS** | BLS Local Area Unemployment Statistics | County, annual | Labor force / unemployment | API |
 | 4 | **JOLTS** | BLS Job Openings & Labor Turnover | **National only** | Vacancy-rate proxy by sector | API |
 | 5 | **IPEDS** | NCES completions + institution chars | Institution→county, 2015–2023 | Training pipeline (supply) | Bulk CSV |
-| 6 | **CBP** | Census County Business Patterns | County×NAICS, 2015–2022 | Establishment/firm-formation trend | API (key) |
+| 6 | **CBP** | Census County Business Patterns | County×NAICS, 2015–2023 | Establishment/firm-formation trend | API (key) |
 | 7 | **LODES** | Census LEHD LODES8 origin-destination | County-to-county, 2015–2021 | Commute flows | Bulk CSV |
 | 8 | **OES/OEWS** | BLS Occupational Employment & Wages | State + national industry | Occupation wage benchmarks | Bulk ZIP |
 | 9 | **SSA** | SSA OASDI (SSDI+SSI), 18–64 | County | Disability decrement (participation) | **Manual** |

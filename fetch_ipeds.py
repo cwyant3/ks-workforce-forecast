@@ -34,6 +34,8 @@ import requests
 import pandas as pd
 from pathlib import Path
 
+import bulk_cache
+
 IPEDS_YEARS = list(range(2015, 2024))   # 2014–15 through 2022–23 academic years
 
 IPEDS_BASE         = "https://nces.ed.gov/ipeds/datacenter/data"
@@ -94,6 +96,20 @@ _HTTP_HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; workforce-forecast/1.0)
 # ── Download helpers ──────────────────────────────────────────────────────────
 
 def _download_zip(url: str, label: str) -> bytes:
+    """Fetch an IPEDS archive, shared across states within a refresh session.
+
+    The completions archive (C{year}_A.zip) is national but cached per state, so
+    without the bulk cache every state in a multi-state refresh re-downloads it.
+    (HD{year}.zip is already cached nationally, so it only benefits from this
+    within a single cold run.) Outside a session this is a plain download.
+    """
+    return bulk_cache.cached_download(
+        f"ipeds_{url.rsplit('/', 1)[-1]}",
+        lambda: _http_get_zip(url, label),
+    )
+
+
+def _http_get_zip(url: str, label: str) -> bytes:
     print(f"    Downloading {label}…")
     resp = requests.get(url, headers=_HTTP_HEADERS, timeout=300, stream=True)
     resp.raise_for_status()

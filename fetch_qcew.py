@@ -26,6 +26,8 @@ from pathlib import Path
 import pandas as pd
 import requests
 
+import bulk_cache
+
 ROOT          = Path(__file__).parent
 QCEW_CACHE    = ROOT / "data" / "qcew_cache"
 QCEW_BASE_URL = "https://data.bls.gov/cew/data/files"
@@ -80,6 +82,20 @@ _HTTP_HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; workforce-forecast/1.0)
 
 
 def _download_zip(year: int) -> bytes:
+    """Fetch the national by-area ZIP for `year`, shared across states.
+
+    Only the requested state's CSVs are kept (see _extract_state_from_zip), so
+    without the bulk cache every state in a multi-state refresh re-downloads
+    this same ~140 MB archive. bulk_cache holds it for the duration of one
+    refresh session; outside a session this is a plain download.
+    """
+    return bulk_cache.cached_download(
+        f"qcew_{year}_annual_by_area.zip",
+        lambda: _http_get_zip(year),
+    )
+
+
+def _http_get_zip(year: int) -> bytes:
     url = f"{QCEW_BASE_URL}/{year}/csv/{year}_annual_by_area.zip"
     print(f"    Downloading {year} QCEW ZIP (~140 MB)…")
     resp = requests.get(url, headers=_HTTP_HEADERS, timeout=600, stream=True)

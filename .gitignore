@@ -68,3 +68,9 @@ data/kdol_proj/
 
 # Per-run refresh logs (transient; regenerated on each --all)
 data/outputs/_refresh_log_*.txt
+
+# Machine-local Claude Code permission allowlist. Accumulates per-session
+# one-off command grants and differs per machine, so it would only create
+# churn and conflicts between JAB-EMPLAP-350 and NCAT-SPMA-01.
+# .claude/launch.json IS tracked — it is real project config.
+.claude/settings.local.json

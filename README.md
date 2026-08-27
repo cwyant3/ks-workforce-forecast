@@ -451,10 +451,41 @@ hand into the right cache folder, then parsed by the scripts in `scripts/`:
 | KDOL labor force | `data/kdol_cache/labforce__99999999.xls` | KLIC report builder (`klic.dol.ks.gov`) |
 | SSA disability | `data/ssa_cache/oasdi_sc24.xlsx` | SSA Policy Statistics (OASDI-SC) |
 | BLS national projections | `data/bls_proj_cache/bls_proj_national_manual.xlsx` | BLS Employment Projections |
-| KS state projections | `data/bls_proj_cache/ks_proj_manual.xlsx` | KDOL LMIS |
+| KS projections (3 workbooks) | `data/kdol_proj/*.xlsx` (published filenames) | KDOL LMIS |
 
 Caches **preserved** by refresh (never auto-cleared): `acs_cache`, `kdol_cache`,
 `ssa_cache`, `bls_proj_cache`, `ksde_cache`.
+
+### 8.5 Per-source refresh and the scheduled routines
+
+A full refresh re-downloads everything, which is wasteful when only one agency
+published. Two flags narrow it:
+
+```bash
+python refresh_dashboard.py --sources laus --states bloc   # one source, all 5 deployed states
+python refresh_dashboard.py --sources none --states 20     # manual sources: re-parse + rerun KS
+python refresh_dashboard.py --list-sources                 # print the source -> cache map
+```
+
+- `--sources` clears **only** the named source's cache, so every other layer is
+  served from cache and the resulting git diff isolates the source that moved.
+  The pipeline still runs `--all`; the deterministic layers recompute to
+  identical outputs because the seed and their caches are unchanged.
+- `--states bloc` covers KS, CO, MO, NE, OK — every state whose outputs are
+  tracked in git and therefore served by the app. Refreshing Kansas alone leaves
+  the neighbour states a vintage behind on the same series, which the
+  dashboard's cross-state comparisons cannot reveal.
+
+Each source has a scheduled routine that fires the day after that source
+publishes, checks whether new data actually appeared, and refreshes only if so.
+The calendar, the cron for each routine, and the release dates they were derived
+from live in [docs/data-source-release-calendar.md](docs/data-source-release-calendar.md);
+what each run did is appended to
+[docs/data-refresh-log.md](docs/data-refresh-log.md).
+
+**The routines never commit or push.** Streamlit Cloud builds from git, so
+refreshed data reaches the public dashboard only after a human reviews the diff
+and pushes it.
 
 ---
 

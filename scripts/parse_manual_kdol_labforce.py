@@ -1,7 +1,11 @@
 """
 parse_manual_kdol_labforce.py
-Parse the KDOL LMIS labor force file (HTML-as-.xls export from the KDOL
-Telerik report builder). This is NOT the UI claims dataset originally
+Parse the KDOL LMIS labor force file. KLIC exports this two ways and BOTH are
+accepted (detected by content, not extension): the Telerik report builder's
+HTML-as-.xls, and the newer real .xlsx. In KLIC this report lives under LAUS —
+KDOL is Kansas's LAUS partner agency, so these ARE the state's LAUS estimates,
+published monthly rather than on the BLS annual county schedule. This is NOT the
+UI claims dataset originally
 scoped for fetch_kdol_ui.py — KDOL does not expose UI claims by NAICS
 publicly. Instead this is monthly labor force statistics (LF, employed,
 unemployed, unemployment rate, LFPR, emp/pop ratio) at county and state
@@ -38,11 +42,37 @@ _NUMERIC_COLS    = ["Laborforce", "Emplab", "Unemp", "Unemprate",
                     "Clfprate", "Emppopratio"]
 
 
-def parse_kdol_labforce(xls_path: Path, state_fips: str = "20") -> pd.DataFrame:
-    tables = pd.read_html(xls_path)
-    raw    = tables[0]
+def _read_kdol_export(path: Path) -> pd.DataFrame:
+    """Read the KDOL labor force export from either format KLIC emits.
+
+    KLIC's Telerik report builder exports HTML-as-.xls: a bare <table> whose
+    header sits in <td> cells, so pandas does not recognize it as a header row
+    and it arrives as data row 0. KLIC's newer "export to Excel" path emits a
+    real .xlsx with a proper header on a sheet named "Data". Same 23 columns
+    either way, so detect by content (a real xlsx is a zip) rather than by
+    extension — the file is often saved under whichever suffix the browser
+    offered.
+    """
+    is_xlsx = path.open("rb").read(2) == b"PK"
+    if is_xlsx:
+        return pd.read_excel(path, sheet_name=0)
+
+    raw = pd.read_html(path)[0]
     raw.columns = [str(c).strip() for c in raw.iloc[0]]
-    raw    = raw.iloc[1:].reset_index(drop=True)
+    return raw.iloc[1:].reset_index(drop=True)
+
+
+def parse_kdol_labforce(xls_path: Path, state_fips: str = "20") -> pd.DataFrame:
+    raw = _read_kdol_export(Path(xls_path))
+
+    # Normalize the code columns to zero-padded strings. The HTML export yields
+    # strings ("04"); the .xlsx export yields integers (4). Without this the
+    # Areatype comparisons below silently match nothing and the county/state
+    # outputs come out EMPTY rather than erroring.
+    _areatype = pd.to_numeric(raw["Areatype"], errors="coerce")
+    raw["Areatype"] = _areatype.map(
+        lambda v: f"{int(v):02d}" if pd.notna(v) else ""
+    )
 
     sf = state_fips.zfill(2)
     raw = raw[raw["Stfips"].astype(str).str.zfill(2) == sf].copy()
@@ -54,8 +84,13 @@ def parse_kdol_labforce(xls_path: Path, state_fips: str = "20") -> pd.DataFrame:
                 errors="coerce",
             )
 
-    # 5-digit FIPS for counties; Area column is 6-digit "020001" → county_fips=001
-    raw["county_fips"] = raw["Area"].astype(str).str.zfill(6).str[-3:]
+    # 5-digit FIPS for counties; Area column is 6-digit "020001" → county_fips=001.
+    # Go through to_numeric so the .xlsx export's integer Area (1) and the HTML
+    # export's string Area ("000001") both land on "001" — a plain astype(str)
+    # on a float column would yield "1.0" and silently produce garbage FIPS.
+    raw["county_fips"] = pd.to_numeric(raw["Area"], errors="coerce").map(
+        lambda v: f"{int(v):06d}"[-3:] if pd.notna(v) else ""
+    )
 
     # Construct sortable period_date (Period 13 = annual average; otherwise month)
     raw["Periodyear"] = pd.to_numeric(raw["Periodyear"], errors="coerce").astype("Int64")
@@ -102,12 +137,17 @@ def main():
     cutoff = recent["_period"].nlargest(
         args.recent_months * recent["county_fips"].nunique()
     ).min()
-    recent = recent[recent["_period"] >= cutoff].drop(columns=["_period"])
+    recent = recent[recent["_period"] >= cutoff]
+    # Report the newest period as one value. Taking max(Periodyear) and
+    # max(month) independently reads December off an earlier year and claims a
+    # month the file does not contain (a 2025-07..2026-06 window printed as
+    # "2026/12"), which is exactly the kind of thing a staleness check trusts.
+    newest = int(recent["_period"].max())
+    recent = recent.drop(columns=["_period"])
     rec_out = out / f"kdol_labforce_county_recent_s{sf}.parquet"
     recent.to_parquet(rec_out, index=False)
     print(f"Saved: {rec_out.name}  ({len(recent)} rows, "
-          f"{recent['Periodyear'].astype('Int64').max()}/"
-          f"{int(recent['month'].max())} most-recent month)")
+          f"{newest // 100}/{newest % 100:02d} most-recent month)")
 
     # Print latest statewide snapshot
     latest_state = state[state["month"].notna()].sort_values(

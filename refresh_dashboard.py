@@ -31,20 +31,39 @@ Caches that are PRESERVED (never auto-cleared):
   - ksde_cache   : KSDE K-12 enrollment override — annual, leave intact.
 Deleting any of those would destroy user-placed manual downloads.
 
+Per-source refresh (added 2026-08-20)
+------------------------------------
+Each upstream agency publishes on its own calendar, so refreshing everything
+whenever any one source updates is wasteful and blurs the audit trail. --sources
+narrows the cache clear to one source's cache, leaving every other cache intact
+so the pipeline re-fetches ONLY the source that actually published. The pipeline
+itself still runs `--all` (the tested path); the deterministic layers recompute
+to byte-identical outputs because the seed and their caches are unchanged, so the
+resulting git diff isolates the source that moved. See
+docs/data-source-release-calendar.md for the release calendar the scheduled
+routines are built from.
+
 Usage:
     python refresh_dashboard.py                 # Kansas (state 20), full refresh
     python refresh_dashboard.py --state 20
     python refresh_dashboard.py --dry-run       # show what would be cleared, do nothing
     python refresh_dashboard.py --keep-annual-cache   # only clear monthly series (LAUS/JOLTS)
+    python refresh_dashboard.py --sources laus --states bloc   # one source, all 5 deployed states
+    python refresh_dashboard.py --sources none --states bloc   # manual sources only: re-parse + rerun
+    python refresh_dashboard.py --list-sources  # print the source -> cache map and exit
 """
 
 from __future__ import annotations
 
 import argparse
+import os
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
+
+import bulk_cache
 
 BASE_DIR = Path(__file__).parent
 DATA_DIR = BASE_DIR / "data"
@@ -58,6 +77,44 @@ MONTHLY_API_CACHES = ["laus_cache", "jolts_cache"]
 ANNUAL_API_CACHES = ["qcew_cache", "ipeds_cache", "lodes_cache", "oes_cache",
                      "cbp_cache", "pc_cache"]
 
+# ── Per-source cache map (for --sources) ──────────────────────────────────────
+# Keys are the source names used by the scheduled refresh routines, one per row
+# of README §5. A source whose caches list is empty has no API cache to clear:
+# either it is a manual download (the parsers run every non-dry-run invocation
+# regardless) or its cache is deliberately preserved.
+#
+# acs and ksde are opt-in ONLY. Clearing acs_cache re-downloads every vintage in
+# fetch_acs.ACS_YEARS, which is a hardcoded list — so it is worth clearing only
+# right after that list has been edited to add a newly published ACS vintage.
+# Clearing it on any other occasion re-fetches identical years for nothing.
+SOURCE_CACHES: dict[str, list[str]] = {
+    "acs":            ["acs_cache"],      # opt-in; requires editing ACS_YEARS first
+    "qcew":           ["qcew_cache"],
+    "laus":           ["laus_cache"],
+    "jolts":          ["jolts_cache"],
+    "ipeds":          ["ipeds_cache"],
+    "cbp":            ["cbp_cache"],
+    "lodes":          ["lodes_cache"],
+    "oes":            ["oes_cache"],
+    "pc":             ["pc_cache"],
+    "ksde":           ["ksde_cache"],     # opt-in; annual K-12 override
+    # Manual downloads — no API cache to clear. Named so a routine can say what
+    # it is refreshing, and so --sources rejects nothing a routine legitimately
+    # passes. The manual parsers run on every non-dry-run invocation.
+    "ssa":            [],
+    "kdol-labforce":  [],
+    "bls-proj":       [],
+    "kdol-proj":      [],
+    # Explicit "clear nothing" — the manual-source routines' normal setting.
+    "none":           [],
+}
+
+# The deployed bloc: every state whose outputs are tracked in git and therefore
+# served by the Streamlit app (see .gitignore). Kansas first so a partial run
+# still leaves the primary state current. AL 01 / HI 15 / MN 27 are test builds
+# with untracked outputs and are deliberately excluded.
+BLOC_STATES = ["20", "08", "29", "31", "40"]  # KS, CO, MO, NE, OK
+
 # Manual-download sources (no public API). Checked for staleness, never cleared.
 MANUAL_SOURCES = {
     # KDOL labor force export from KLIC's Telerik report builder (HTML-as-.xls).
@@ -66,8 +123,18 @@ MANUAL_SOURCES = {
     # docstring); fetch_kdol_ui.py is a dead path that returns empty. The labor
     # force file is the dataset that actually feeds the dashboard's pulse layer.
     "KDOL labor force": {
-        "files": ["kdol_cache/labforce__99999999.xls"],
+        # KLIC exports this either as HTML-as-.xls (Telerik report builder) or as
+        # a real .xlsx. Glob both: the filename carries a fixed 99999999 sentinel
+        # rather than a vintage, so the newest download is whichever file was
+        # written last — see the mtime pick in refresh_state().
+        "glob": "kdol_cache/labforce__*.xls*",
+        "glob_by": "mtime",
         "url": "https://klic.dol.ks.gov/",
+        # KDOL publishes the KS labor report monthly (3rd Friday). A single
+        # flat 100-day threshold let this file drift three vintages behind
+        # while still reporting "ok", so it carries its own cadence-sized
+        # window: one month plus slack for a late report.
+        "stale_days": 40,
     },
     # SSA OASDI "Beneficiaries by State and County" workbook (oasdi_sc{YY}.xlsx),
     # downloaded manually from SSA (the site 403-blocks scripted requests).
@@ -114,7 +181,11 @@ MANUAL_SOURCES = {
     },
 }
 
-STALE_AFTER_DAYS = 100  # manual sources older than this get flagged
+# Default staleness window for a manual source, in days. Sized for the annual
+# publications (SSA, BLS/KDOL projections): well inside a year, so a missed
+# download surfaces long before the next cycle. Sources that publish faster
+# override it with their own "stale_days" — see KDOL labor force above.
+STALE_AFTER_DAYS = 100
 
 
 def _mtime_age_days(path: Path, today: float) -> float | None:
@@ -129,13 +200,16 @@ def _resolve_source_files(meta: dict) -> list[str]:
     Entries normally list explicit "files". An entry may instead (or also)
     carry a "glob" for sources whose filename encodes a vintage — the newest
     match by name wins, since KDOL's vintage codes sort chronologically
-    (202201002032 < 202501002035). An unmatched glob is returned as-is so it
+    (202201002032 < 202501002035). An entry whose filename does NOT encode a
+    vintage sets "glob_by": "mtime" instead, so the most recently downloaded
+    file wins regardless of extension. An unmatched glob is returned as-is so it
     reports MISSING rather than silently passing.
     """
     rels = list(meta.get("files", []))
     pattern = meta.get("glob")
     if pattern:
-        matches = sorted(DATA_DIR.glob(pattern))
+        key = (lambda p: p.stat().st_mtime) if meta.get("glob_by") == "mtime" else None
+        matches = sorted(DATA_DIR.glob(pattern), key=key)
         # Must stay DATA_DIR-relative (not just .name) so globs that reach into a
         # subdirectory still resolve when re-joined to DATA_DIR.
         rels.append(matches[-1].relative_to(DATA_DIR).as_posix()
@@ -146,6 +220,18 @@ def _resolve_source_files(meta: dict) -> list[str]:
 def newest_glob(pattern: str) -> Path | None:
     """Newest DATA_DIR file matching `pattern` by name, or None."""
     matches = sorted(DATA_DIR.glob(pattern))
+    return matches[-1] if matches else None
+
+
+def newest_by_mtime(pattern: str) -> Path | None:
+    """Most recently modified DATA_DIR file matching `pattern`, or None.
+
+    For sources whose filename carries no vintage (KDOL's labor force export
+    uses a fixed 99999999 sentinel), download time is the only ordering
+    available — and it must not be confused by the extension, since KLIC emits
+    both .xls and .xlsx for the same report.
+    """
+    matches = sorted(DATA_DIR.glob(pattern), key=lambda p: p.stat().st_mtime)
     return matches[-1] if matches else None
 
 
@@ -170,12 +256,13 @@ def report_manual_sources(now_ts: float) -> list[str]:
         statuses = []
         worst_missing = False
         worst_stale = False
+        stale_days = meta.get("stale_days", STALE_AFTER_DAYS)
         for rel in _resolve_source_files(meta):
             age = _mtime_age_days(DATA_DIR / rel, now_ts)
             if age is None:
                 statuses.append(f"MISSING ({rel})")
                 worst_missing = True
-            elif age > STALE_AFTER_DAYS:
+            elif age > stale_days:
                 statuses.append(f"STALE {age:.0f}d ({rel})")
                 worst_stale = True
             else:
@@ -189,35 +276,36 @@ def report_manual_sources(now_ts: float) -> list[str]:
     return stale
 
 
-def main() -> int:
-    parser = argparse.ArgumentParser(description="Monthly KS Workforce Dashboard refresh")
-    parser.add_argument("--state", default="20", help="State FIPS (default 20 = Kansas)")
-    parser.add_argument("--dry-run", action="store_true", help="Show actions, change nothing")
-    parser.add_argument("--keep-annual-cache", action="store_true",
-                        help="Only clear monthly series (LAUS/JOLTS); keep annual caches")
-    parser.add_argument("--sims", default=2000, type=int, help="Monte Carlo sims per county")
-    args = parser.parse_args()
+def resolve_sources(names: list[str]) -> list[str]:
+    """Map --sources names to the caches they own, rejecting unknown names.
 
-    # time.time() is the wall clock; staleness comparison only, fine for a driver.
-    import time
-    now_ts = time.time()
+    Returns caches in SOURCE_CACHES declaration order (deduped) so the printed
+    clear list is stable regardless of the order the routine passed them in.
+    """
+    unknown = [n for n in names if n not in SOURCE_CACHES]
+    if unknown:
+        raise SystemExit(
+            f"Unknown --sources value(s): {', '.join(unknown)}\n"
+            f"Valid: {', '.join(SOURCE_CACHES)}"
+        )
+    selected = {c for n in names for c in SOURCE_CACHES[n]}
+    ordered: list[str] = []
+    for cache_list in SOURCE_CACHES.values():
+        for cache in cache_list:
+            if cache in selected and cache not in ordered:
+                ordered.append(cache)
+    return ordered
 
-    print("=" * 60)
-    print(f"  KS Workforce Dashboard refresh — state {args.state}")
-    print("=" * 60)
 
-    caches = list(MONTHLY_API_CACHES)
-    if not args.keep_annual_cache:
-        caches += ANNUAL_API_CACHES
+def refresh_state(state: str, sims: int) -> int:
+    """Run the manual parsers, pipeline, and validation for one state.
 
-    print("\n=== Clearing API caches (forces live re-fetch) ===")
-    clear_caches(caches, args.dry_run)
-
-    if args.dry_run:
-        print("\n[dry-run] would run: run_forecast.py --all and validate_outputs.py")
-        report_manual_sources(now_ts)
-        print("\n[dry-run] complete — no changes made.")
-        return 0
+    Cache clearing is NOT done here — it happens once, before the state loop, so
+    a multi-state refresh re-fetches each source once instead of once per state.
+    """
+    print("\n" + "-" * 60)
+    print(f"  State {state}")
+    print("-" * 60)
 
     # ── Prepare manual inputs BEFORE the pipeline ─────────────────────────
     # These parsers must run before run_forecast.py so their outputs are present
@@ -229,13 +317,17 @@ def main() -> int:
     # KDOL labor force export (KS-only). run_forecast.py does NOT regenerate the
     # KDOL labor-force outputs — the parser is standalone. A missing export is a
     # warning, not a failure (outputs persist from the prior run).
-    if args.state.zfill(2) == "20":
-        labforce_xls = DATA_DIR / "kdol_cache" / "labforce__99999999.xls"
-        if labforce_xls.exists():
-            print("\n=== Parsing KDOL labor force export ===")
+    if state.zfill(2) == "20":
+        # KLIC exports either HTML-as-.xls or a real .xlsx and the filename
+        # carries no vintage, so take whichever was downloaded most recently
+        # rather than pinning an extension. The parser detects the format by
+        # content, so either one is fine from here.
+        labforce_src = newest_by_mtime("kdol_cache/labforce__*.xls*")
+        if labforce_src is not None:
+            print(f"\n=== Parsing KDOL labor force export ({labforce_src.name}) ===")
             lf = subprocess.run(
                 [sys.executable, "scripts/parse_manual_kdol_labforce.py",
-                 "--state", args.state, "--input", str(labforce_xls)],
+                 "--state", state, "--input", str(labforce_src)],
                 cwd=str(BASE_DIR),
             )
             if lf.returncode != 0:
@@ -244,7 +336,7 @@ def main() -> int:
         else:
             print("\n=== KDOL labor force export MISSING — skipping parse ===")
             print(f"     Re-export from {MANUAL_SOURCES['KDOL labor force']['url']} "
-                  f"and save as {labforce_xls.relative_to(BASE_DIR)}")
+                  f"into data/kdol_cache/ (labforce__*.xls or .xlsx)")
 
         # KDOL industry + occupational projections (KS-only, same Telerik
         # HTML-as-.xls family as the labor force export). run_forecast.py does
@@ -279,7 +371,7 @@ def main() -> int:
             print(f"\n=== Parsing {label} ({src.name}) ===")
             proc = subprocess.run(
                 [sys.executable, script,
-                 "--state", args.state, "--input", str(src), *extra],
+                 "--state", state, "--input", str(src), *extra],
                 cwd=str(BASE_DIR),
             )
             if proc.returncode != 0:
@@ -295,7 +387,7 @@ def main() -> int:
     if ssa_workbooks:
         print("\n=== Parsing SSA disability workbook ===")
         ssa = subprocess.run(
-            [sys.executable, "scripts/parse_manual_ssa.py", "--state", args.state],
+            [sys.executable, "scripts/parse_manual_ssa.py", "--state", state],
             cwd=str(BASE_DIR),
         )
         if ssa.returncode != 0:
@@ -310,7 +402,7 @@ def main() -> int:
     print("\n=== Running run_forecast.py --all ===")
     run = subprocess.run(
         [sys.executable, "run_forecast.py", "--all",
-         "--state", args.state, "--sims", str(args.sims)],
+         "--state", state, "--sims", str(sims)],
         cwd=str(BASE_DIR),
     )
     if run.returncode != 0:
@@ -320,7 +412,7 @@ def main() -> int:
     # ── Validate ──────────────────────────────────────────────────────────
     print("\n=== Validating outputs ===")
     val = subprocess.run(
-        [sys.executable, "scripts/validate_outputs.py", "--state", args.state],
+        [sys.executable, "scripts/validate_outputs.py", "--state", state],
         cwd=str(BASE_DIR),
     )
     if val.returncode != 0:
@@ -328,11 +420,123 @@ def main() -> int:
               f"Do NOT commit — investigate above.")
         return val.returncode
 
+    return 0
+
+
+def resolve_states(spec: str) -> list[str]:
+    """Parse --states into a list of zero-padded FIPS codes.
+
+    "bloc" expands to BLOC_STATES (every state the deployed dashboard serves).
+    Anything else is a comma-separated list of FIPS codes.
+    """
+    if spec.strip().lower() == "bloc":
+        return list(BLOC_STATES)
+    states = [s.strip().zfill(2) for s in spec.split(",") if s.strip()]
+    if not states:
+        raise SystemExit("--states resolved to an empty list")
+    return states
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="KS Workforce Dashboard refresh driver")
+    parser.add_argument("--state", default="20", help="State FIPS (default 20 = Kansas)")
+    parser.add_argument("--states", default=None,
+                        help="Comma-separated FIPS list, or 'bloc' for every deployed "
+                             f"state ({','.join(BLOC_STATES)}). Overrides --state.")
+    parser.add_argument("--sources", default=None,
+                        help="Comma-separated source names to refresh; only their caches "
+                             "are cleared. 'none' clears nothing (manual-source runs). "
+                             "Omit for the full monthly refresh. "
+                             f"Valid: {','.join(SOURCE_CACHES)}")
+    parser.add_argument("--list-sources", action="store_true",
+                        help="Print the source -> cache map and exit")
+    parser.add_argument("--dry-run", action="store_true", help="Show actions, change nothing")
+    parser.add_argument("--keep-annual-cache", action="store_true",
+                        help="Only clear monthly series (LAUS/JOLTS); keep annual caches")
+    parser.add_argument("--sims", default=2000, type=int, help="Monte Carlo sims per county")
+    args = parser.parse_args()
+
+    if args.list_sources:
+        print("source           caches cleared")
+        print("-" * 48)
+        for name, caches in SOURCE_CACHES.items():
+            print(f"{name:<16} {', '.join(caches) if caches else '(manual — none)'}")
+        print(f"\nbloc states: {', '.join(BLOC_STATES)}")
+        return 0
+
+    # time.time() is the wall clock; staleness comparison only, fine for a driver.
+    import time
+    now_ts = time.time()
+
+    states = resolve_states(args.states) if args.states else [args.state.zfill(2)]
+
+    if args.sources:
+        source_names = [s.strip() for s in args.sources.split(",") if s.strip()]
+        caches = resolve_sources(source_names)
+        scope = f"sources={','.join(source_names)}"
+    else:
+        source_names = None
+        caches = list(MONTHLY_API_CACHES)
+        if not args.keep_annual_cache:
+            caches += ANNUAL_API_CACHES
+        scope = "full refresh"
+
+    print("=" * 60)
+    print(f"  KS Workforce Dashboard refresh — {scope}")
+    print(f"  States: {', '.join(states)}")
+    print("=" * 60)
+
+    print("\n=== Clearing API caches (forces live re-fetch) ===")
+    if caches:
+        clear_caches(caches, args.dry_run)
+    elif source_names:
+        print("  (no API caches for these sources — manual downloads only)")
+
+    if args.dry_run:
+        print(f"\n[dry-run] would run, for each of {len(states)} state(s): "
+              f"run_forecast.py --all and validate_outputs.py")
+        report_manual_sources(now_ts)
+        print("\n[dry-run] complete — no changes made.")
+        return 0
+
+    # ── Refresh each state ────────────────────────────────────────────────
+    # Caches were cleared once above, so the first state re-fetches live data and
+    # the rest reuse it. A failure on one state stops the run: a half-refreshed
+    # bloc is easier to reason about than one where an unknown state silently
+    # failed mid-loop.
+    #
+    # QCEW and IPEDS pull NATIONAL archives but cache only their per-state slice,
+    # so without a shared archive cache each state re-downloads the same ~140 MB
+    # QCEW ZIP per year — 7 GB of transfer across the bloc to produce 200 KB of
+    # parquet. Open a session cache so the states share one download each. It is
+    # session-scoped on purpose (see bulk_cache.py): persisting it would let a
+    # stale archive survive the cache clear this driver just performed.
+    bulk_dir = None
+    if len(states) > 1:
+        bulk_dir = Path(tempfile.mkdtemp(prefix="kswf-bulk-"))
+        os.environ[bulk_cache.ENV_VAR] = str(bulk_dir)
+        print(f"\n=== Sharing national bulk archives across {len(states)} states ===")
+        print(f"    Cache: {bulk_dir} (removed when this run finishes)")
+        print(f"    Expect ~1.4 GB transient disk use while QCEW years download.")
+
+    try:
+        for state in states:
+            rc = refresh_state(state, args.sims)
+            if rc != 0:
+                print(f"\n!! State {state} FAILED (exit {rc}) — stopping. "
+                      f"States already completed are refreshed and valid.")
+                return rc
+    finally:
+        if bulk_dir is not None:
+            os.environ.pop(bulk_cache.ENV_VAR, None)
+            shutil.rmtree(bulk_dir, ignore_errors=True)
+            print(f"\n=== Removed shared bulk-archive cache ===")
+
     # ── Manual-source staleness report ────────────────────────────────────
     stale = report_manual_sources(now_ts)
 
     print("\n" + "=" * 60)
-    print("  REFRESH COMPLETE — outputs regenerated and validated.")
+    print(f"  REFRESH COMPLETE — {len(states)} state(s) regenerated and validated.")
     if stale:
         print("  Manual sources needing a download before next run:")
         for s in stale:

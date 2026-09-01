@@ -11,11 +11,15 @@ Data sources:
   National (BLS Employment Projections program, free):
     https://www.bls.gov/emp/ind-occ-matrix/occ_xls.zip
     or specific table: https://www.bls.gov/emp/ep_table_102.xlsx
-    Published every 2 years. Current cycle: 2024–2034.
+    Published annually, on the last Thursday of August (2024–34 landed
+    2025-08-28; 2025–35 landed 2026-08-27). Current adopted cycle: 2025–2035.
+    bls.gov 403s scripted requests, so the workbook is placed by hand — see
+    _find_manual_workbook() for the accepted filenames.
 
-  Kansas state projections (KDOL LMIS, free):
-    https://www.dol.ks.gov/lmis/employment-projections
-    Biennial. Last published: 2020–2030 (note: KDOL download URLs not stable).
+  Kansas state projections: NOT fetched by this module. They come from the
+  adopted KDOL workbooks in data/kdol_proj/, parsed by
+  scripts/parse_manual_ks_proj.py (industry) and
+  scripts/parse_manual_ks_occproj.py (occupational). Current cycle 2024–2034.
 
 SOC major group → dashboard sector mapping:
   15-xxxx Computer/mathematical      → IT/Computer Services
@@ -39,6 +43,7 @@ Output from sector_demand_outlook():
 """
 
 import io
+import re
 import time
 import zipfile
 import warnings
@@ -56,13 +61,10 @@ _BLS_PROJ_CANDIDATES: list[str] = [
     "https://www.bls.gov/emp/tables/occupational-projections-and-characteristics.htm",
 ]
 
-# Kansas state projection candidates (KDOL LMIS — URLs not stable)
-_KS_PROJ_CANDIDATES: list[str] = [
-    "https://www.dol.ks.gov/docs/default-source/lmis-library/"
-    "employment-projections/ks-long-term-projections.xlsx",
-    "https://www.dol.ks.gov/docs/default-source/lmis-library/"
-    "employment-projections/kansas-long-term-occupational-projections.xlsx",
-]
+# NOTE: _KS_PROJ_CANDIDATES and fetch_ks_state_projections() were removed
+# 2026-08-27. Kansas projections come from the adopted KDOL 2024-2034 workbooks
+# in data/kdol_proj/ via scripts/parse_manual_ks_proj.py (industry) and
+# scripts/parse_manual_ks_occproj.py (occupational) — not from this module.
 
 # SOC major group (first 2 digits) → dashboard sector
 SOC2_TO_SECTOR: dict[str, str] = {
@@ -165,14 +167,27 @@ _OCC_CODE_HINTS  = ["matrix code", "occ_code", "soc_code", "soc",
                     "occupation code", "2024 soc code", "2022 soc code"]
 _OCC_TITLE_HINTS = ["matrix title", "occ_title", "occupation title",
                     "occupation", "title"]
-_BASE_EMP_HINTS  = [
-    "employment, 2024", "employment 2024", "employed 2024",
-    "employment, 2022", "employment 2022", "base year employment", "employed 2022",
-]
-_PROJ_EMP_HINTS  = [
-    "employment, 2034", "employment 2034", "employed 2034",
-    "employment, 2032", "employment 2032", "projected employment", "employed 2032",
-]
+
+# The employment columns are detected by PATTERN, not by year literal.
+#
+# These hints used to name the years outright ("employment, 2024" /
+# "employment, 2034"). That silently broke on every new cycle: a 2025-35
+# workbook labels the columns "Employment, 2025" / "Employment, 2035", so
+# neither hint matched, _parse_proj_df returned an empty frame, and the caller
+# printed a warning rather than raising. The 2025-35 cycle published 2026-08-27
+# and hit exactly that. Matching "Employment, <4 digits>" instead means the next
+# cycle needs no edit here.
+#
+# Anchored on the full column name so it cannot match the neighbouring
+# "Employment distribution, percent, 2025" or "Employment change, numeric,
+# 2025-35" columns, which also begin with "Employment".
+_EMP_YEAR_RE = re.compile(r"^employment,?\s+(\d{4})$")
+
+# Kept only as a fallback for workbooks that do not use the National Employment
+# Matrix column naming (e.g. an older zip layout). The year literals below are
+# deliberately generic.
+_BASE_EMP_HINTS  = ["base year employment", "base employment"]
+_PROJ_EMP_HINTS  = ["projected employment", "proj employment"]
 # Order matters: most specific first so "employment change, percent" wins
 # over generic "percent" columns like "Employment distribution, percent, 2024".
 _PCT_CHG_HINTS   = [
@@ -194,6 +209,28 @@ def _find_col(cols: list[str], hints: list[str]) -> str | None:
     return None
 
 
+def detect_cycle(cols: list[str]) -> tuple[int | None, int | None, str | None, str | None]:
+    """Detect the projection cycle from "Employment, <year>" column names.
+
+    Returns (base_year, proj_year, base_col, proj_col). The earliest year is the
+    base and the latest is the projection target, which is how every National
+    Employment Matrix table is laid out. Any element is None when it cannot be
+    determined; the caller decides whether that is fatal.
+    """
+    found: dict[int, str] = {}
+    for c in cols:
+        m = _EMP_YEAR_RE.match(str(c).lower().strip())
+        if m:
+            found[int(m.group(1))] = c
+
+    if not found:
+        return None, None, None, None
+
+    years = sorted(found)
+    base, proj = years[0], (years[-1] if len(years) > 1 else None)
+    return base, proj, found[base], (found[proj] if proj else None)
+
+
 def _parse_proj_df(raw: pd.DataFrame) -> pd.DataFrame:
     """
     Parse a raw projection DataFrame into a normalised output table.
@@ -202,8 +239,14 @@ def _parse_proj_df(raw: pd.DataFrame) -> pd.DataFrame:
     cols = list(raw.columns)
     occ_code_col  = _find_col(cols, _OCC_CODE_HINTS)
     occ_title_col = _find_col(cols, _OCC_TITLE_HINTS)
-    base_emp_col  = _find_col(cols, _BASE_EMP_HINTS)
-    proj_emp_col  = _find_col(cols, _PROJ_EMP_HINTS)
+
+    # Pattern detection first; the generic hints are only a fallback for
+    # workbooks that do not use National Employment Matrix column naming.
+    _, _, base_emp_col, proj_emp_col = detect_cycle(cols)
+    if base_emp_col is None:
+        base_emp_col = _find_col(cols, _BASE_EMP_HINTS)
+    if proj_emp_col is None:
+        proj_emp_col = _find_col(cols, _PROJ_EMP_HINTS)
     pct_chg_col   = _find_col(cols, _PCT_CHG_HINTS)
     openings_col  = _find_col(cols, _OPENINGS_HINTS)
     wage_col      = _find_col(cols, _WAGE_HINTS)
@@ -245,19 +288,49 @@ def _parse_proj_df(raw: pd.DataFrame) -> pd.DataFrame:
 
 # ── Public entry points ───────────────────────────────────────────────────────
 
+def _find_manual_workbook(cache_dir: Path, base_year: int, proj_year: int) -> Path | None:
+    """Locate the manually-downloaded projections workbook.
+
+    Priority, most specific first:
+      1. bls_proj_national_{base}_{proj}.xlsx — names the cycle explicitly
+      2. newest bls_proj_national_<digits>*.xlsx — any vintage-named workbook
+      3. bls_proj_national_manual.xlsx — the legacy vintage-less name
+
+    The glob in (2) requires a leading digit so it cannot match "manual" itself;
+    without that, lexical sort would rank "manual" above "2025_2035" ("m" > "2")
+    and the legacy file would win forever.
+    """
+    exact = cache_dir / f"bls_proj_national_{base_year}_{proj_year}.xlsx"
+    if exact.exists():
+        return exact
+
+    vintaged = sorted(cache_dir.glob("bls_proj_national_[0-9]*.xlsx"))
+    if vintaged:
+        return vintaged[-1]
+
+    legacy = cache_dir / "bls_proj_national_manual.xlsx"
+    return legacy if legacy.exists() else None
+
+
 def fetch_national_projections(
     cache_dir: Path | None = None,
-    base_year: int = 2024,
-    proj_year: int = 2034,
+    base_year: int = 2025,
+    proj_year: int = 2035,
 ) -> pd.DataFrame:
     """
-    Fetch BLS National Employment Projections (2024–2034 cycle by default).
+    Fetch BLS National Employment Projections (2025–2035 cycle by default).
+
+    The defaults name the cycle and are part of the cache key
+    (bls_proj_national_{base}_{proj}.parquet), so bumping them is what forces a
+    newly-downloaded workbook to be reread. Leaving them stale means the old
+    parquet is served on sight and the new workbook is never opened — that is
+    how the 2025-35 cycle sat unadopted after publishing 2026-08-27.
 
     Parameters
     ----------
     cache_dir : parquet cache directory
-    base_year : projection base year (default 2024)
-    proj_year : projection target year (default 2034)
+    base_year : projection base year (default 2025)
+    proj_year : projection target year (default 2035)
 
     Returns
     -------
@@ -276,24 +349,32 @@ def fetch_national_projections(
     content, url = _try_download(_BLS_PROJ_CANDIDATES)
 
     if content is None:
-        warnings.warn(
-            "\n\nBLS National Employment Projections could not be downloaded.\n"
-            "Place the file manually at:\n"
-            f"  {cache_dir / 'bls_proj_national_manual.xlsx'}\n"
-            "Source: https://www.bls.gov/emp/tables/occupational-projections-and-characteristics.htm\n"
-            "Required columns: occ_code (SOC), occ_title, base employment,\n"
-            "                  projected employment, % change\n",
-            UserWarning,
-            stacklevel=2,
-        )
-        manual = cache_dir / "bls_proj_national_manual.xlsx"
-        if manual.exists():
-            print(f"    Loading manual BLS national projections file")
+        # bls.gov 403s scripted requests, so the manual workbook is the NORMAL
+        # path here, not an error. Warn only when it is actually missing — the
+        # warning used to fire on every refresh even with the file sitting in
+        # place, which trains the operator to ignore it.
+        manual = _find_manual_workbook(cache_dir, base_year, proj_year)
+        if manual is not None:
+            print(f"    BLS download unavailable (expected); loading manual "
+                  f"workbook: {manual.name}")
             raw = _read_excel_bytes(manual.read_bytes())
             if raw is None or raw.empty:
                 print("  Warning: manual BLS file could not be parsed")
                 return pd.DataFrame()
         else:
+            warnings.warn(
+                "\n\nBLS National Employment Projections could not be downloaded "
+                "and no manual workbook was found.\n"
+                "Place the workbook manually at:\n"
+                f"  {cache_dir / f'bls_proj_national_{base_year}_{proj_year}.xlsx'}\n"
+                "(a vintage-named bls_proj_national_<base>_<proj>.xlsx is preferred; "
+                "the legacy\n bls_proj_national_manual.xlsx is still accepted)\n"
+                "Source: https://www.bls.gov/emp/tables/occupational-projections-and-characteristics.htm\n"
+                "Required columns: occ_code (SOC), occ_title, base employment,\n"
+                "                  projected employment, % change\n",
+                UserWarning,
+                stacklevel=2,
+            )
             return pd.DataFrame(columns=[
                 "projection_source", "base_year", "proj_year", "occ_code",
                 "occ_title", "sector", "base_emp", "proj_emp",
@@ -308,6 +389,24 @@ def fetch_national_projections(
 
         if raw is None or raw.empty:
             return pd.DataFrame()
+
+    # Guard against labelling a workbook with a cycle it does not contain. The
+    # years are a caller argument but the workbook is the authority, and a
+    # mismatch means the cache key, the dashboard's cycle label, and the actual
+    # numbers have diverged. Refuse rather than write a mislabelled parquet.
+    found_base, found_proj, _, _ = detect_cycle(list(raw.columns))
+    if found_base is not None:
+        requested = (base_year, proj_year)
+        found = (found_base, found_proj)
+        if found_proj is not None and found != requested:
+            raise ValueError(
+                f"BLS projections cycle mismatch: the workbook holds "
+                f"{found_base}–{found_proj} but this call requested "
+                f"{base_year}–{proj_year}. Pass base_year/proj_year matching the "
+                f"workbook, or update the defaults in fetch_national_projections(). "
+                f"Refusing to write bls_proj_national_{base_year}_{proj_year}.parquet "
+                f"from {found_base}–{found_proj} data."
+            )
 
     df = _parse_proj_df(raw)
     if df.empty:
@@ -327,59 +426,17 @@ def fetch_national_projections(
     return df
 
 
-def fetch_ks_state_projections(
-    cache_dir: Path | None = None,
-) -> pd.DataFrame:
-    """
-    Fetch Kansas state-level occupational employment projections from KDOL LMIS.
-    Falls back to manual file if KDOL download URL is unavailable.
-
-    Returns same schema as fetch_national_projections() with
-    projection_source = "KS_State".
-    """
-    if cache_dir is None:
-        raise ValueError("cache_dir is required")
-    cache_dir.mkdir(parents=True, exist_ok=True)
-
-    cache_file = cache_dir / "bls_proj_ks_state.parquet"
-    if cache_file.exists():
-        print(f"  [cache] KS state projections")
-        return pd.read_parquet(cache_file)
-
-    content, _ = _try_download(_KS_PROJ_CANDIDATES)
-
-    if content is None:
-        manual = cache_dir / "ks_proj_manual.xlsx"
-        if manual.exists():
-            print(f"    Loading manual KS projections file")
-            content = manual.read_bytes()
-        else:
-            warnings.warn(
-                "\n\nKansas state projections not available.\n"
-                "Place the file manually at:\n"
-                f"  {cache_dir / 'ks_proj_manual.xlsx'}\n"
-                "Source: https://www.dol.ks.gov/lmis/employment-projections\n",
-                UserWarning,
-                stacklevel=2,
-            )
-            return pd.DataFrame()
-
-    raw = _read_excel_bytes(content)
-    if raw is None:
-        return pd.DataFrame()
-
-    df = _parse_proj_df(raw)
-    if df.empty:
-        return df
-
-    df["projection_source"] = "KS_State"
-    # Infer base/proj year from column names if possible
-    df["base_year"] = 2020
-    df["proj_year"] = 2030
-
-    df.to_parquet(cache_file, index=False)
-    print(f"  [saved] bls_proj_ks_state.parquet  ({len(df)} occupations)")
-    return df
+# fetch_ks_state_projections() lived here until 2026-08-27. It was a dead path:
+# it downloaded from two KDOL URLs that no longer resolve, fell back to
+# bls_proj_cache/ks_proj_manual.xlsx (a file that never existed — the real legacy
+# export is .xls, an HTML <table> that pd.ExcelFile cannot open), and hardcoded
+# base_year=2020 / proj_year=2030, which the adopted 2024-2034 cycle contradicts.
+# Its only observable effect was a UserWarning on every refresh telling the
+# operator to place a file that would not have worked anyway. It contributed zero
+# rows: bls_proj_occupations.parquet has never contained a KS_State row.
+#
+# Kansas projections are parsed from the KDOL workbooks in data/kdol_proj/ by
+# scripts/parse_manual_ks_proj.py and scripts/parse_manual_ks_occproj.py.
 
 
 def sector_demand_outlook(proj_df: pd.DataFrame) -> pd.DataFrame:

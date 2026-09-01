@@ -71,10 +71,10 @@ moves year to year, the window carries an extra fire or two to absorb the slip.
 | 3 | LAUS (county) | Monthly | County/metro: Jun 2026 → **2026-07-29**; Jul 2026 → **2026-09-02**. (State-level lands earlier, ~3rd Friday.) | `ks-refresh-laus` | `0 7 4 * *` | 4th monthly |
 | 4 | JOLTS | Monthly | Jul 2026 → **2026-09-01** 10:00 ET. Dec 2025 data slipped 2026-02-03 → 2026-02-05 (appropriations lapse). | `ks-refresh-jolts` | `0 7 2 * *` | 2nd monthly |
 | 5 | IPEDS completions | Annual (provisional) | Provisional ≈9 months after the fall collection closes (collection closes mid-October). | `ks-refresh-ipeds` | `0 7 15 8,9,10 *` | Aug/Sep/Oct 15 |
-| 6 | CBP | Annual (~18 mo lag) | 2023 CBP released **2025-06-26**. 2024 CBP not yet out as of 2026-08-20. | `ks-refresh-cbp` | `0 7 27 6,7,8 *` | Jun/Jul/Aug 27 |
+| 6 | CBP | Annual (~18 mo lag) | 2023 CBP released **2025-06-26** (adopted 2026-08-27). 2024 CBP **not out as of 2026-08-27** — confirmed twice that day: the census.gov CBP updates page advertises 2023 as newest, and `api.census.gov/data.json` lists vintages 1986…2023 with no 2024 endpoint. | `ks-refresh-cbp` | `0 7 27 6,7,8 *` | Jun/Jul/Aug 27 |
 | 7 | LODES | Annual | LODES 8.3 (2022 data) released **2024-11-19**. Tech doc rev 8.4 dated 2025-12-03. | `ks-refresh-lodes` | `0 7 20 11,12 *` | Nov 20, Dec 20 |
 | 8 | OES/OEWS | Annual | May 2025 estimates released **2026-05-15** (delayed by the 2025-10-01→11-12 shutdown). Normal cadence is early April. | `ks-refresh-oes` | `0 7 4,16 4,5,6 *` | 4th + 16th of Apr/May/Jun |
-| 9 | SSA OASDI-SC | Annual — **manual** | 2024 edition released **August 2025**; each edition reports data as of December of its reference year. | `ks-refresh-ssa` | `0 8 15 8,9 *` | Aug 15, Sep 15 |
+| 9 | SSA OASDI-SC | Annual — **manual** | 2024 edition released **August 2025**; 2025 edition in hand **2026-09-01** (release date itself unconfirmed). Each edition reports data as of December of its reference year, so the 2025 edition is data year 2024. **Adopted 2026-09-01.** | `ks-refresh-ssa` | `0 8 15 8,9 *` | Aug 15, Sep 15 |
 | 10 | KDOL labor force | Monthly — **manual** | Jul 2026 KS labor report → **2026-08-21** (3rd Friday, same day as the BLS state release). Annual benchmark revision released 2026-05-22. | `ks-refresh-kdol-labforce` | `0 8 22 * *` | 22nd monthly |
 
 ### KDOL labor force vs. LAUS — these are the same program, not duplicates
@@ -99,7 +99,7 @@ Two consequences worth knowing:
   strings (`"04"`). The driver picks whichever file was downloaded most recently,
   since the filename carries a fixed `99999999` sentinel instead of a vintage.
 | 11 | KSDE / CCD | Annual | Via the Urban Institute Education Data API, which lags the NCES CCD collection. Release date unconfirmed. | `ks-refresh-ksde` | `0 7 18 2 *` | Feb 18 |
-| 12 | BLS national projections | Annual — **manual** | 2024–34 released **2025-08-28**. 2025–35 not yet out as of 2026-08-20 — expected imminently. | `ks-refresh-bls-projections` | `0 8 29 8,9 *` | Aug 29, Sep 29 |
+| 12 | BLS national projections | Annual — **manual** | 2024–34 released **2025-08-28**; **2025–35 released 2026-08-27** (both the last Thursday of August). **2025–35 adopted 2026-09-01.** | `ks-refresh-bls-projections` | `0 8 29 8,9 *` | Aug 29, Sep 29 |
 | 13 | KDOL KS projections | Biennial cycle — **manual** | 2024–2034 workbooks currently adopted (industry, occupational, and the companion demand book). Next cycle date unconfirmed. | `ks-refresh-kdol-projections` | `0 8 15 9,10,11 *` | Sep/Oct/Nov 15 |
 | 14 | Projections Central | Annual, rolling by state | States publish their long-term cycle on their own timetables, so there is no single national date. | `ks-refresh-projections-central` | `0 7 10 2,5,8,11 *` | Feb/May/Aug/Nov 10 |
 
@@ -113,15 +113,48 @@ Two consequences worth knowing:
   edit.
 - **CBP (#6)** is the same shape as ACS and was **missing from this list until
   2026-08-27**, which is how the 2023 vintage (published 2025-06-26) sat unadopted
-  for over a year. `fetch_cbp.py` reads a hardcoded `CBP_YEARS` list, currently
-  `range(2015, 2023)`, so `--sources cbp` re-downloads the same 2015–2022 years no
-  matter what Census has published. Bump `CBP_YEARS` first, then refresh.
-  `_NAICS_VAR` needs no edit for 2023 (CBP 2023 still uses NAICS2017).
+  for over a year. `fetch_cbp.py` reads a hardcoded `CBP_YEARS` list — bumped to
+  `range(2015, 2024)` on 2026-08-27 to adopt 2023 — so `--sources cbp`
+  re-downloads only the years that list names. Before the bump it re-pulled 2015–2022 years no
+  matter what Census had published. Bump `CBP_YEARS` first, then refresh.
+  `_NAICS_VAR` needed no edit for 2023 (CBP 2023 still uses NAICS2017); re-check
+  it when 2024 lands. Since 2026-08-27 a cache missing a requested year
+  self-invalidates instead of being served short, so the bump alone now forces
+  the re-fetch.
 
   The lesson generalises: **compare the newest published year against the vintage
   actually in `data/outputs/`, never against what the fetcher is configured to
   want.** A hardcoded year list makes those two silently diverge, and only the
   first check catches it.
+
+- **BLS national projections (#12)** was the third instance, found 2026-08-29 when
+  the 2025–35 cycle published. It had two hardcodings and neither errored. **One
+  is fixed permanently; one remains by design.**
+
+  1. *Fixed 2026-09-01 — year-literal column hints.* `_BASE_EMP_HINTS` /
+     `_PROJ_EMP_HINTS` matched "employment, 2024" / "employment, 2034" as literal
+     strings, so a 2025–35 workbook matched neither, `_parse_proj_df` returned an
+     empty frame, and the caller printed a warning rather than raising. Replaced
+     with `_EMP_YEAR_RE` (matches "Employment, &lt;4 digits&gt;", anchored to the whole
+     column name) plus `detect_cycle()`, which takes the earliest matching year as
+     base and the latest as projection target. **No edit is needed here for future
+     cycles.** The anchor is load-bearing: unanchored, it would also match the
+     adjacent "Employment distribution, percent, YYYY" and "Employment change,
+     numeric, YYYY–YY" columns.
+  2. *Still required each cycle — the year defaults.*
+     `fetch_national_projections()` defaults `base_year` / `proj_year` (currently
+     2025 / 2035) and `run_forecast.py` passes no years. The cache filename is
+     cycle-keyed (`bls_proj_national_{base}_{proj}.parquet`), so the held parquet
+     is served on sight and a freshly downloaded workbook is never opened until
+     those defaults move. Bumping them changes the cache key, and that is what
+     forces the reread. Deleting the parquet without bumping just reparses the old
+     cycle under the old label.
+
+  So the order is now: bump the two defaults, drop the workbook in as
+  `bls_proj_national_{base}_{proj}.xlsx`, then refresh. A **cycle-mismatch guard**
+  added 2026-09-01 makes the remaining failure mode loud: if the workbook's
+  detected years disagree with the requested ones, the fetch raises rather than
+  writing a parquet labelled with a cycle it does not contain.
 
 - **KSDE (#11)** is likewise conservative: `ksde_cache` is preserved by the
   monthly refresh on purpose.
@@ -136,9 +169,23 @@ download URL and stop.
 | Source | Place the file at | From |
 |--------|-------------------|------|
 | KDOL labor force | `data/kdol_cache/labforce__*.xls` **or** `.xlsx` | `klic.dol.ks.gov` → LAUS labor force report |
-| SSA disability | `data/ssa_cache/oasdi_sc{YY}.xlsx` | SSA Policy Statistics (OASDI-SC) |
-| BLS national projections | `data/bls_proj_cache/bls_proj_national_manual.xlsx` | BLS Employment Projections |
+| SSA disability | `data/ssa_cache/oasdi_sc{YY}.xlsx` (e.g. `oasdi_sc25.xlsx`) | SSA Policy Statistics (OASDI-SC) |
+| BLS national projections | `data/bls_proj_cache/bls_proj_national_{base}_{proj}.xlsx` (e.g. `bls_proj_national_2025_2035.xlsx`) | BLS Employment Projections |
 | KDOL KS projections | `data/kdol_proj/*.xlsx` (published filename is fine) | KDOL LMIS employment projections |
+
+**Name each file for its vintage, and leave the old one in place.** Every one of
+these is selected by a glob that takes the newest match, so a new edition
+dropped in beside the old one wins automatically — and the year in the filename
+is what the parser reads the vintage from. `oasdi_sc25.xlsx` is parsed as the
+2025 edition (data year 2024); `bls_proj_national_2025_2035.xlsx` as the 2025–35
+cycle. Two consequences, both learned the hard way on 2026-09-01:
+
+- **Do not overwrite an old edition with a new one under the old name.** The
+  glob would still pick it, but it would be labelled with the wrong year.
+- **Do not use the legacy vintage-less `bls_proj_national_manual.xlsx` for new
+  downloads.** It is still accepted as a last-resort fallback, but a
+  vintage-named workbook always wins over it, and a file under the legacy name
+  cannot say which cycle it holds.
 
 ---
 
@@ -161,11 +208,10 @@ confirming.
 
 | Item | What needs confirming | Suggested source |
 |------|----------------------|------------------|
-| CBP 2024 vintage | Whether 2024 CBP has published, and its date. As of 2026-08-20 the newest confirmed vintage is 2023 (released 2025-06-26). | `census.gov/programs-surveys/cbp/news-updates.html` |
+| CBP 2024 vintage | Whether 2024 CBP has published, and its date. **Checked 2026-08-27: not out.** Newest published vintage is 2023 (released 2025-06-26), now adopted. The API catalog is the cheaper of the two checks. | `api.census.gov/data.json` (vintage list) / `census.gov/programs-surveys/cbp/news-updates.html` |
 | LODES post-8.3 release | Whether a 2023-data LODES release shipped after 8.3 (2024-11-19). Tech doc rev 8.4 is dated 2025-12-03, which hints at a release but does not confirm one. | `lehd.ces.census.gov/data/` |
 | IPEDS provisional date | The exact 2024-25 completions provisional release date. Only the ≈9-month-after-collection rule was confirmed. | `nces.ed.gov/ipeds/survey-components/data-release-schedule` |
-| SSA OASDI-SC 2025 edition | The 2025 edition's release date. Only "2024 edition → August 2025" was confirmed. | `ssa.gov/policy/docs/statcomps/oasdi_sc/` |
-| BLS 2025–35 projections | Whether the 2025–35 cycle has published and on what date. 2024–34 was 2025-08-28. | `bls.gov/emp/` |
+| SSA OASDI-SC 2025 edition | Its **release date** only. The edition itself is confirmed to exist and was adopted 2026-09-01 (data year 2024), but it was downloaded by hand without recording a publication date, so the August cadence is still inferred from the 2024 edition alone. | `ssa.gov/policy/docs/statcomps/oasdi_sc/` |
 | KDOL next projections cycle | When KDOL publishes the cycle following 2024–2034. | `dol.ks.gov/lmis/employment-projections` |
 | Projections Central cadence | Whether Kansas and the neighbour states publish their long-term cycle on a predictable month. | `projectionscentral.org` |
 | KSDE / CCD via Urban Institute | When the Urban Institute Education Data API refreshes CCD enrollment each year. | `educationdata.urban.org` |

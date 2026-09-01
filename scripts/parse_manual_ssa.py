@@ -25,10 +25,40 @@ Usage:
 """
 
 import argparse
+import re
 import sys
 from pathlib import Path
 
 import pandas as pd
+
+# SSA names the workbook for its PUBLICATION year: oasdi_sc25.xlsx is the 2025
+# edition, reporting data as of December 2024. Deriving the year from the
+# filename keeps the parser from mislabelling a new edition with the previous
+# cycle's year — the failure this replaced, where --pub-year defaulted to 2024
+# and refresh_dashboard.py never passed the flag, so a 2025 workbook would have
+# been stamped year=2023.
+_PUB_YEAR_RE = re.compile(r"oasdi_sc(\d{2})", re.IGNORECASE)
+
+
+def pub_year_from_name(path: Path) -> int | None:
+    """Publication year encoded in an oasdi_sc{YY} filename, or None."""
+    m = _PUB_YEAR_RE.search(path.name)
+    return 2000 + int(m.group(1)) if m else None
+
+
+def newest_workbook(cache: Path) -> Path | None:
+    """Newest SSA workbook in `cache` by filename.
+
+    Editions sort chronologically (oasdi_sc24 < oasdi_sc25), so the last match
+    is the newest. Prefer the oasdi_sc* naming over the looser oasdi_* fallback,
+    because a legacy name like oasdi_2024.xlsx would otherwise sort ahead of
+    every sc-named edition ("2" < "s") and win.
+    """
+    for pattern in ("oasdi_sc*.xlsx", "oasdi_*.xlsx"):
+        matches = sorted(cache.glob(pattern))
+        if matches:
+            return matches[-1]
+    return None
 
 # State FIPS → SSA sheet name suffix (the part after "Table 4 - ")
 _STATE_FIPS_TO_NAME = {
@@ -100,8 +130,9 @@ def parse_state(xlsx_path: Path, state_fips: str, pub_year: int) -> pd.DataFrame
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--state", default="20", help="State FIPS (default 20=KS)")
-    ap.add_argument("--pub-year", type=int, default=2024,
-                    help="SSA publication year (data year = pub_year - 1)")
+    ap.add_argument("--pub-year", type=int, default=None,
+                    help="SSA publication year (data year = pub_year - 1). "
+                         "Default: inferred from the workbook filename.")
     ap.add_argument("--cache-dir", default="data/ssa_cache")
     ap.add_argument("--output-dir", default="data/outputs")
     args = ap.parse_args()
@@ -110,14 +141,21 @@ def main():
     out   = Path(args.output_dir)
     out.mkdir(parents=True, exist_ok=True)
 
-    candidates = list(cache.glob("oasdi_sc*.xlsx")) + list(cache.glob("oasdi_*.xlsx"))
-    if not candidates:
+    xlsx = newest_workbook(cache)
+    if xlsx is None:
         print(f"No oasdi_sc*.xlsx found in {cache}", file=sys.stderr)
         sys.exit(1)
-    xlsx = candidates[0]
-    print(f"Parsing {xlsx.name}, state={args.state}, pub_year={args.pub_year}")
 
-    df = parse_state(xlsx, args.state, args.pub_year)
+    pub_year = args.pub_year or pub_year_from_name(xlsx)
+    if pub_year is None:
+        print(f"Could not infer the publication year from {xlsx.name!r}. "
+              f"Re-run with an explicit --pub-year.", file=sys.stderr)
+        sys.exit(1)
+
+    print(f"Parsing {xlsx.name}, state={args.state}, pub_year={pub_year} "
+          f"(data year {pub_year - 1})")
+
+    df = parse_state(xlsx, args.state, pub_year)
     print(f"Parsed {len(df)} counties for state {args.state}")
     print(df.head(5).to_string())
 

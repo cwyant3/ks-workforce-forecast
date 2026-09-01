@@ -294,3 +294,165 @@ Notes:          Three changes to fetch_cbp.py, all aimed at the same failure mod
                 worse than a failed run — but it means a genuinely retired upstream
                 year will now block the refresh until someone passes explicit `years=`
                 or `allow_partial=True`.
+
+## [2026-08-29] BLS national projections | blocked
+Vintage before: 2024–2034 cycle (base_year=2024, proj_year=2034 in both
+                bls_proj_sector_outlook.parquet — 5 sectors — and
+                bls_proj_occupations.parquet — 1,113 occupations)
+Vintage after:  unchanged
+Checked:        WebSearch (bls.gov 403s WebFetch). The **2025–2035 cycle published
+                2026-08-27** at 10:00 ET — confirmed by two independent searches
+                landing on bls.gov/news.release/ecopro.nr0.htm ("Employment
+                Projections: 2025-2035 Summary", 2025 A01 Results) and reported
+                headline figures: total employment 170.3M -> 176.2M, +5.9M jobs,
+                +3.5% over the decade vs +10.9% for 2015–25, growth led by private
+                healthcare and social assistance. Date is consistent with cadence
+                (2024–34 landed 2025-08-28; both are the last Thursday of August).
+                Held workbook data/bls_proj_cache/bls_proj_national_manual.xlsx is
+                dated 2026-05-21 — the 2024–34 cycle. Outputs (2026-08-27 10:08)
+                are newer than the workbook, so the held cycle was already parsed.
+Outputs changed: none. `git status --short` shows only the three pre-existing
+                uncommitted files unrelated to this run (fetch_bls_proj.py,
+                refresh_dashboard.py, run_forecast.py — the 2026-08-27 CBP/refresh
+                work). No data/ path touched.
+Validation:     n/a — no pipeline run.
+Notes:          ACTION REQUIRED, and it is NOT just a download. Two blockers, both
+                in fetch_bls_proj.py:
+
+                1. Download the 2025–35 workbook to
+                   data/bls_proj_cache/bls_proj_national_manual.xlsx from
+                   https://www.bls.gov/emp/tables/occupational-projections-and-characteristics.htm
+
+                2. **This source belongs in the calendar's "need a code change, not
+                   just a cache clear" list** alongside ACS and CBP. Dropping the new
+                   workbook in place alone changes nothing, and would then parse to
+                   nothing:
+
+                   - `fetch_national_projections()` (fetch_bls_proj.py:247-248)
+                     defaults `base_year=2024, proj_year=2034`, and run_forecast.py:385
+                     calls it with no year arguments. The cache filename is
+                     cycle-keyed — `bls_proj_national_{base}_{proj}.parquet` — so the
+                     existing bls_proj_national_2024_2034.parquet is served on sight
+                     and the manual workbook is never opened. Bumping the defaults to
+                     2025/2035 changes the cache key, which is what forces the reread;
+                     deleting the old parquet without bumping would just reparse the
+                     old cycle under the old label.
+                   - The column hints are **year-literal**: `_BASE_EMP_HINTS`
+                     (:165) matches "employment, 2024"/"2022" and `_PROJ_EMP_HINTS`
+                     (:169) "employment, 2034"/"2032". A 2025–35 workbook labels those
+                     columns "Employment, 2025" / "Employment, 2035", so neither
+                     matches. `_parse_proj_df` returns an empty frame when
+                     base_emp_col is None (:208-209) and the caller only prints
+                     "Warning: could not parse BLS projections file" (:308) — a
+                     non-fatal warning. Add the 2025/2035 hints, or make the hints
+                     year-agnostic.
+
+                Failure mode if step 2 is skipped: no exception, just a warning in
+                the log and an empty projections frame — the same silent-emptiness
+                class of bug as the KDOL Areatype int/str issue on 2026-08-20.
+
+                When the cycle does advance, check the display labels by hand: the
+                dashboard labels this layer by cycle, and Executive Narrative mode
+                suppresses unvalidated demand claims. Display layer only — no effect
+                on the cohort population model.
+
+                One-state note for the eventual refresh run: this layer writes only
+                national files (no _s{fips} suffix) that every state reads, so
+                `--states 20` regenerates them for all five deployed states.
+
+## [2026-09-01] BLS national projections + SSA disability | refreshed
+Vintage before: BLS national 2024–2034 (bls_proj_occupations.parquet, 1,113 occupations);
+                SSA data year 2023 (oasdi_sc24.xlsx, downloaded 2026-05-21)
+Vintage after:  BLS national **2025–2035** (1,112 occupations);
+                SSA data year **2024** (oasdi_sc25.xlsx, downloaded 2026-09-01)
+Checked:        Both workbooks were placed by hand by Chris on 2026-09-01, closing the
+                two STALE-103d flags from that morning's supervisor sweep. Cycle read
+                from the workbooks themselves, not assumed: Table 1.2 of the BLS book
+                carries "Employment, 2025" / "Employment, 2035" columns, and the SSA
+                book is named for its publication year (2025 edition = data year 2024).
+Outputs changed: 17 files, and — unusually — all 17 are genuinely attributable.
+                  - bls_proj_occupations.parquet, bls_proj_sector_outlook.parquet
+                    (national, no _s{fips} suffix; every state reads them)
+                  - ssa_disability_s{08,20,29,31,40}.parquet
+                  - participation_s*, projections_effective_s* (5 each) — downstream
+                    of the disability decrement
+                No unrelated drift this run, unlike the 2026-08-27 CBP refresh which
+                rewrote 111 parquets for 10 CBP files. The difference is that
+                `--sources ssa,bls-proj` cleared no API cache at all, so every other
+                layer was served from cache and rewrote identically.
+Validation:     8/8 per state, all five states pass. Content-diffed against HEAD rather
+                than trusting `git status`:
+                  - BLS cycle label 2024–2034 -> 2025–2035 in both national files.
+                    Sector growth: Healthcare 9.2%->10.1%, Hospitality 3.8%->4.6%,
+                    Manufacturing 0.3%->1.2%, Skilled Trades 4.9%->5.2%, and
+                    IT/Computer Services 7.2%->**6.3%** — the one sector BLS revised
+                    DOWN this cycle. Worth knowing before anyone quotes the IT number.
+                  - SSA year 2023 -> 2024 with county counts unchanged (105/64/115/93/77)
+                    and SSDI totals down 0.7%–2.6% per state.
+                  - projections_effective eff_p50 moved +11 on average and is positive
+                    in 63.8% of county-years — the right direction for a shrinking
+                    disability decrement. Max delta 314 people; no row-count changes.
+Notes:          THREE code changes were required first. Dropping the files in place
+                alone would have adopted neither, and would have failed silently in
+                both cases — the same class of bug as the 2026-08-20 KDOL Areatype
+                int/str issue.
+
+                1. fetch_bls_proj.py — the year-literal column hints are GONE. The
+                   old _BASE_EMP_HINTS/_PROJ_EMP_HINTS matched "employment, 2024" /
+                   "employment, 2034" literally, so a 2025–35 workbook matched
+                   neither, _parse_proj_df returned empty, and the caller printed a
+                   warning instead of raising. Replaced with `_EMP_YEAR_RE` matching
+                   "Employment, <4 digits>" anchored to the full column name, plus
+                   `detect_cycle()`, which takes the earliest year as base and the
+                   latest as projection target. The next cycle needs no edit here.
+                   The anchor matters: without it the regex would also swallow
+                   "Employment distribution, percent, 2025" and "Employment change,
+                   numeric, 2025–35", which sit adjacent in the same table.
+                2. fetch_bls_proj.py — defaults bumped 2024/2034 -> 2025/2035, which
+                   is what changes the cache key and forces the reread, and
+                   `_find_manual_workbook()` now accepts a vintage-named workbook
+                   (bls_proj_national_2025_2035.xlsx) in preference to the legacy
+                   vintage-less bls_proj_national_manual.xlsx. The vintage glob
+                   requires a leading digit — a bare `bls_proj_national_*.xlsx` would
+                   sort "manual" above "2025_2035" ("m" > "2") and pin the legacy file
+                   forever.
+                   Added a **cycle-mismatch guard**: if the workbook's detected years
+                   disagree with the requested ones, it raises instead of writing a
+                   mislabelled parquet. Verified by simulation — requesting 2024–34
+                   against the 2025–35 workbook now raises ValueError; requesting the
+                   defaults parses 1,112 occupations; a second call hits the parquet
+                   cache and returns an identical frame.
+                3. scripts/parse_manual_ssa.py — two hardcodings, both silent.
+                   `candidates[0]` took whichever workbook the glob listed first, which
+                   with oasdi_sc24 and oasdi_sc25 side by side is the OLD one; now
+                   `newest_workbook()` sorts and takes the last, preferring the
+                   oasdi_sc* naming so a legacy `oasdi_2024.xlsx` cannot sort ahead of
+                   it ("2" < "s"). And `--pub-year` defaulted to 2024 while
+                   refresh_dashboard.py never passes the flag, so the 2025 edition
+                   would have been stamped year=2023 — the previous vintage's label on
+                   the new numbers. It is now inferred from the filename, with the flag
+                   kept as an override.
+
+                Also fixed, smaller: the BLS UserWarning fired on EVERY refresh telling
+                the operator to place a file that was already sitting there, because it
+                was emitted before the manual-file lookup. It now fires only when no
+                workbook is found. This is the third "warning that cries wolf" removed
+                from this pipeline in two weeks; the pattern to watch is a warning
+                emitted on the *expected* path rather than the failure path.
+
+                Staleness reporting fixed too: refresh_dashboard.py pinned
+                `ssa_cache/oasdi_sc24.xlsx` and `bls_proj_national_manual.xlsx` by exact
+                filename, so once the new editions landed beside the old ones the report
+                would have kept measuring the age of the SUPERSEDED file and read STALE
+                forever. Both are now globs that take the newest match. All six manual
+                sources currently report ok.
+
+                NOT COMMITTED, per routine rules. The Streamlit dashboard still serves
+                2024–34 BLS and 2023 SSA until someone reviews and pushes. Note the
+                dashboard's cycle captions are data-driven (`vintage_label()` reads
+                base_year/proj_year off the frame), so they will follow the new vintage
+                with no display-layer edit.
+
+                Kansas state projections are unaffected and remain on the KDOL 2024–2034
+                cycle — a different source from the BLS national book. README §5 row 12
+                now records both cycles separately so the two are not confused.

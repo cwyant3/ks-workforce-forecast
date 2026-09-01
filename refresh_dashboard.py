@@ -61,6 +61,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 import bulk_cache
@@ -143,22 +144,32 @@ MANUAL_SOURCES = {
     # the real input is this workbook parsed by parse_manual_ssa.py. SSA renamed
     # the publication from /oasdi_county/ to /oasdi_sc/ and publishes annually
     # with ~18mo lag, so this only needs re-downloading once a year.
+    # Globbed, not pinned: the filename carries the publication year
+    # (oasdi_sc24 -> oasdi_sc25), and editions sort chronologically, so the
+    # newest match wins. Pinning the 2024 filename made this report STALE
+    # forever once the 2025 edition landed beside it, because it kept measuring
+    # the age of the superseded file.
     "SSA disability": {
-        "files": ["ssa_cache/oasdi_sc24.xlsx"],
+        "glob": "ssa_cache/oasdi_sc*.xlsx",
         "url": "https://www.ssa.gov/policy/docs/statcomps/oasdi_sc/index.html",
     },
+    # Same fix, same reason. The glob requires a leading digit after the prefix
+    # so it matches vintage-named workbooks (bls_proj_national_2025_2035.xlsx)
+    # and never the legacy vintage-less bls_proj_national_manual.xlsx, which
+    # would otherwise sort last ("m" > "2") and win permanently.
     "BLS national projections": {
-        "files": ["bls_proj_cache/bls_proj_national_manual.xlsx"],
+        "glob": "bls_proj_cache/bls_proj_national_[0-9]*.xlsx",
         "url": "https://www.bls.gov/emp/tables/occupational-projections-and-characteristics.htm",
     },
     # KDOL industry projections (KLIC Telerik report builder, HTML-as-.xls).
     # NOTE: This REPLACES the abandoned "KS state projections" source, which
     # pointed at bls_proj_cache/ks_proj_manual.xlsx — a file that never existed.
-    # fetch_bls_proj.fetch_ks_state_projections() is a dead path: it calls
-    # pd.ExcelFile() on what is actually an HTML <table>, so it raises
-    # "Excel file format cannot be determined" no matter what the file is
-    # renamed to. The real input is the .xls below, parsed by
-    # scripts/parse_manual_ks_proj.py into ks_proj_industry.parquet.
+    # fetch_bls_proj.fetch_ks_state_projections() was that dead path: it called
+    # pd.ExcelFile() on what is actually an HTML <table>, so it raised
+    # "Excel file format cannot be determined" no matter what the file was
+    # renamed to. It was DELETED 2026-08-27 — it had been warning on every
+    # refresh while contributing zero rows. The real input is the .xls below,
+    # parsed by scripts/parse_manual_ks_proj.py into ks_proj_industry.parquet.
     # Since the 2024-2034 cycle KDOL publishes clean .xlsx workbooks whose names
     # lead with the vintage ("2024-2034 KS Industry Projections.xlsx"), so a
     # lexical sort of the glob picks the newest cycle. Drop them in data/kdol_proj/
@@ -235,17 +246,62 @@ def newest_by_mtime(pattern: str) -> Path | None:
     return matches[-1] if matches else None
 
 
+def _reads_as_absent(path: Path, probes: int = 3, delay: float = 0.4) -> bool:
+    """True only if `path` reads as absent on every probe.
+
+    The vault lives under OneDrive, where a stat can transiently fail on a
+    directory that is really there. On 2026-08-27 a CBP refresh printed
+    "[skip] cbp_cache (not present)" for a cache that demonstrably existed; the
+    fetch layer then also read it as absent and re-downloaded, so the outcome
+    was right by luck rather than by design. Probing more than once keeps a sync
+    hiccup from being reported — or acted on — as a missing cache.
+    """
+    for attempt in range(probes):
+        if path.exists():
+            return False
+        if attempt < probes - 1:
+            time.sleep(delay)
+    return True
+
+
 def clear_caches(cache_names: list[str], dry_run: bool) -> list[str]:
+    """Clear the named caches, reporting what actually happened.
+
+    Every message below follows the action rather than a separate pre-check, so
+    "[skip]" can never be printed for a cache that was in fact removed.
+    """
     cleared = []
     for name in cache_names:
         cache = DATA_DIR / name
-        if cache.exists():
-            print(f"  {'[dry-run] would clear' if dry_run else '[clear]'} {name}")
-            if not dry_run:
-                shutil.rmtree(cache)
-            cleared.append(name)
-        else:
+
+        if _reads_as_absent(cache):
             print(f"  [skip] {name} (not present)")
+            continue
+
+        if dry_run:
+            print(f"  [dry-run] would clear {name}")
+            cleared.append(name)
+            continue
+
+        try:
+            shutil.rmtree(cache)
+        except FileNotFoundError:
+            print(f"  [skip] {name} (vanished before it could be cleared)")
+            continue
+        except OSError as exc:
+            # A locked or partially-removed cache is worse than an untouched one:
+            # the fetch layer may serve half a vintage. Say so loudly.
+            print(f"  [WARN] {name} — could not clear: {exc}")
+            continue
+
+        if cache.exists():
+            print(f"  [WARN] {name} — rmtree returned but the path still exists; "
+                  f"treat this cache as suspect")
+            continue
+
+        print(f"  [clear] {name}")
+        cleared.append(name)
+
     return cleared
 
 

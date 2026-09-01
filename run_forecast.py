@@ -61,7 +61,7 @@ from fetch_jolts         import fetch_jolts, compute_vacancy_rates
 from fetch_kdol_ui       import fetch_kdol_ui, sector_pulse
 from fetch_ksde          import fetch_ksde, apply_ksde_override
 from fetch_ssa_disability import fetch_ssa_disability, compute_disability_rate
-from fetch_bls_proj      import (fetch_national_projections, fetch_ks_state_projections,
+from fetch_bls_proj      import (fetch_national_projections,
                                   sector_demand_outlook)
 from fetch_projections_central import fetch_pc_longterm, pc_sector_outlook
 from participation_model import (build_participation_table, participation_summary,
@@ -374,13 +374,16 @@ def main(state_fips: str = "20", api_key: str | None = None,
     # ── 16. Fetch BLS Employment Projections (optional) ───────────────────
     if run_bls_proj:
         print("\n=== STEP 16: Fetching BLS Employment Projections ===")
+        # Kansas projections do NOT come from here. fetch_ks_state_projections()
+        # was removed 2026-08-27: it pointed at bls_proj_cache/ks_proj_manual.xlsx,
+        # a file that never existed, and hardcoded a 2020-2030 cycle. It emitted a
+        # UserWarning on every single refresh while contributing zero rows — the
+        # committed bls_proj_occupations.parquet has never held a KS_State row.
+        # The real Kansas layers are the adopted KDOL 2024-2034 workbooks in
+        # data/kdol_proj/, parsed by scripts/parse_manual_ks_proj.py (industry) and
+        # scripts/parse_manual_ks_occproj.py (occupational).
         natl_proj_df = fetch_national_projections(cache_dir=BLS_PROJ_CACHE)
-        ks_proj_df   = pd.DataFrame()
-        if state_fips.zfill(2) == "20":
-            ks_proj_df = fetch_ks_state_projections(cache_dir=BLS_PROJ_CACHE)
-
-        _proj_frames = [df for df in [natl_proj_df, ks_proj_df] if not df.empty]
-        all_proj = pd.concat(_proj_frames, ignore_index=True) if _proj_frames else pd.DataFrame()
+        all_proj = natl_proj_df if not natl_proj_df.empty else pd.DataFrame()
         if not all_proj.empty:
             outlook_df  = sector_demand_outlook(all_proj)
             proj_raw_out = OUTPUT_DIR / "bls_proj_occupations.parquet"

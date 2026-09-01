@@ -266,10 +266,10 @@ by hand (see [§8.4](#84-monthly-refresh-and-manual-sources)).
 | 6 | **CBP** | Census County Business Patterns | County×NAICS, 2015–2023 | Establishment/firm-formation trend | API (key) |
 | 7 | **LODES** | Census LEHD LODES8 origin-destination | County-to-county, 2015–2021 | Commute flows | Bulk CSV |
 | 8 | **OES/OEWS** | BLS Occupational Employment & Wages | State + national industry | Occupation wage benchmarks | Bulk ZIP |
-| 9 | **SSA** | SSA OASDI (SSDI+SSI), 18–64 | County | Disability decrement (participation) | **Manual** |
+| 9 | **SSA** | SSA OASDI (SSDI+SSI), 18–64 | County, data year 2024 | Disability decrement (participation) | **Manual** |
 | 10 | **KDOL labor force** | Kansas Dept. of Labor / KLIC (LMIS) | County, monthly | Current KS labor-market pulse | **Manual** (KS only) |
 | 11 | **KSDE / CCD** | K-12 enrollment via Urban Institute API | District→county | Youth-cohort override | API (KS only) |
-| 12 | **BLS Projections** | BLS national + KS employment projections | Sector | Demand outlook (display only) | **Manual** |
+| 12 | **BLS Projections** | BLS national + KS employment projections | Sector; national 2025–35, KS 2024–34 | Demand outlook (display only) | **Manual** |
 | 13 | **Projections Central** | DOL/ETA state occupation projections | State | Multi-state demand outlook | API |
 
 > **Note:** JOLTS is **national only** — there is no sub-state JOLTS series, so
@@ -448,10 +448,18 @@ hand into the right cache folder, then parsed by the scripts in `scripts/`:
 
 | Source | Place the file at | From |
 |--------|-------------------|------|
-| KDOL labor force | `data/kdol_cache/labforce__99999999.xls` | KLIC report builder (`klic.dol.ks.gov`) |
-| SSA disability | `data/ssa_cache/oasdi_sc24.xlsx` | SSA Policy Statistics (OASDI-SC) |
-| BLS national projections | `data/bls_proj_cache/bls_proj_national_manual.xlsx` | BLS Employment Projections |
+| KDOL labor force | `data/kdol_cache/labforce__99999999.xls` or `.xlsx` | KLIC report builder (`klic.dol.ks.gov`) |
+| SSA disability | `data/ssa_cache/oasdi_sc{YY}.xlsx` (e.g. `oasdi_sc25.xlsx`) | SSA Policy Statistics (OASDI-SC) |
+| BLS national projections | `data/bls_proj_cache/bls_proj_national_{base}_{proj}.xlsx` (e.g. `bls_proj_national_2025_2035.xlsx`) | BLS Employment Projections |
 | KS projections (3 workbooks) | `data/kdol_proj/*.xlsx` (published filenames) | KDOL LMIS |
+
+**Name these files for their vintage, not generically.** Both the SSA and BLS
+inputs are picked by a glob that takes the newest match, and the year in the
+filename is what the parser reads the vintage from — `oasdi_sc25.xlsx` is parsed
+as the 2025 edition (data year 2024), and `bls_proj_national_2025_2035.xlsx` as
+the 2025–35 cycle. Dropping a new edition in under an old name, or under the
+legacy vintage-less `bls_proj_national_manual.xlsx`, means the newest data gets
+labelled with the wrong cycle or ignored entirely.
 
 Caches **preserved** by refresh (never auto-cleared): `acs_cache`, `kdol_cache`,
 `ssa_cache`, `bls_proj_cache`, `ksde_cache`.

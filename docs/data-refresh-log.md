@@ -456,3 +456,208 @@ Notes:          THREE code changes were required first. Dropping the files in pl
                 Kansas state projections are unaffected and remain on the KDOL 2024–2034
                 cycle — a different source from the BLS national book. README §5 row 12
                 now records both cycles separately so the two are not confused.
+
+## [2026-09-02] JOLTS | refreshed
+Vintage before: monthly through 2023-12; annual vacancy rates 2015–2023
+Vintage after:  monthly through 2026-07; annual vacancy rates 2015–2025
+Checked:        WebSearch (bls.gov returns 403 to WebFetch) — JOLTS news release
+                "Job Openings and Labor Turnover — July 2026" (2026 M07 results),
+                published 2026-09-01, job openings 7.3M / openings rate 4.4%.
+                Matches the calendar's expected 2026-09-01 date for Jul 2026.
+Outputs changed: data/outputs/jolts.parquet (3,348 -> 4,309 rows),
+                data/outputs/jolts_vacancy_rates.parquet (54 -> 66 rows),
+                fetch_jolts.py (code change, see Notes).
+                No per-state parquets moved — unusually clean for a run that
+                invokes run_forecast.py --all. git status --short showed exactly
+                those three paths.
+Validation:     pass ("Output validation passed"). Content diff confirms no
+                historical revision: all 2015–2023 vacancy_rate_pct values are
+                bit-identical across the overlap (0 of 54 rows changed), so the
+                new years are additive rather than a restatement.
+Notes:          THIS WAS NOT A MISSED REFRESH — it was the fourth instance of the
+                hardcoded-vintage pattern, and the routine as written could never
+                have advanced it. `fetch_jolts.py` had `JOLTS_YEARS =
+                list(range(2015, 2024))` and `run_forecast.py` passes no `years`,
+                so `--sources jolts` re-downloaded the same nine years every month.
+                A monthly source sat 31 months behind while every fire reported
+                success. Per the calendar's own lesson (§"Sources that need a code
+                change"): compare the newest PUBLISHED vintage against what is in
+                data/outputs/, never against what the fetcher is configured to want.
+
+                Two fixes, both permanent — no year bump will be needed next cycle:
+
+                1. `JOLTS_YEARS` replaced with `default_jolts_years()`, computing
+                   2015 -> current calendar year. Requesting a partly-published
+                   year is harmless (the API returns the months that exist).
+                2. Cache self-invalidation. The cache filename `jolts_{seasonal}
+                   .parquet` carries NO vintage, and the old code returned it on
+                   sight if it existed. That is what made the staleness silent and
+                   survivable. It now compares the held years against the requested
+                   ones and re-fetches when short — the same guard CBP received
+                   2026-08-27. It earned itself immediately on this run: the cache
+                   clear FAILED (`[WARN] jolts_cache — could not clear: [WinError 5]
+                   Access is denied`, a OneDrive lock), so the refresh advanced only
+                   because the guard invalidated the stale parquet. Without it this
+                   run would have reported success and changed nothing.
+
+                Third change, methodological — incomplete years are now excluded
+                from the annual averages. JOLTS 2026 has 7 of 12 months, and
+                `compute_annual_averages` took a plain mean over whatever was
+                present. Unguarded, a Jan–Jul mean would have been published as
+                "2026", and the dashboard takes `year.max()` as its HEADLINE
+                vacancy rate and feeds each year to the trend-slope regression as
+                an equally-weighted point. `complete_years()` now gates it (12
+                months required) and prints what it dropped. This changes nothing
+                for 2015–2025, which are all complete. The monthly jolts.parquet
+                still carries all of 2026 — nothing is discarded, it just does not
+                masquerade as an annual figure.
+
+                FOR THE REVIEWER — the forecast-relevant part. Trend slopes roughly
+                halved in every sector, because the old series ended at the tail of
+                the 2021–22 vacancy spike and the model was extrapolating a rising
+                trend from it. 2024–25 unwind most of that:
+
+                  Healthcare                  0.457 -> 0.247
+                  Hospitality & Entertainment  0.525 -> 0.233
+                  IT/Computer Services         0.425 -> 0.236
+                  Manufacturing                0.406 -> 0.174
+                  Skilled Trades               0.312 -> 0.129
+
+                Headline vacancy rates fall correspondingly (Healthcare 7.5% in
+                2023 -> 5.7% in 2025; Hospitality 7.1% -> 5.6%). The dashboard's
+                demand-pressure signal will read materially cooler after this is
+                pushed. That is the data, not a modelling change — but it is a
+                visible shift in the public forecast and worth a look before it
+                ships.
+
+                NOT COMMITTED, per routine rules.
+
+                Follow-ups for a human, not done here:
+                - The calendar's §"Sources that need a code change" list should
+                  gain JOLTS as instance #4 (now self-healing, so it belongs as a
+                  resolved note rather than a standing warning). Not edited: that
+                  file is the routines' shared authority and a data-refresh run
+                  should not rewrite it unreviewed.
+                - `scripts/validate_outputs.py` checks nothing about JOLTS at all.
+                  A vintage-recency assertion there (newest month within ~90 days
+                  of run date) would have caught this in month two instead of
+                  month 31. This is the class of defect no amount of scheduling
+                  fixes.
+                - The failed cache clear is a real operational hazard beyond JOLTS:
+                  `--sources X` silently degrades to "serve from cache" for any
+                  source whose cache is locked by OneDrive and whose fetcher lacks
+                  a freshness guard. Worth auditing which other fetchers return an
+                  unvalidated cache on sight.
+
+## [2026-09-02] JOLTS follow-up | tooling
+Vintage before: n/a — no data refresh in this entry
+Vintage after:  unchanged (data outputs untouched since the entry above)
+Checked:        n/a
+Outputs changed: docs/data-source-release-calendar.md,
+                scripts/validate_outputs.py,
+                scripts/audit_cache_freshness.py (new)
+Validation:     pass — validate_outputs.py --state 20 passes on current outputs;
+                JOLTS guards individually exercised against synthetic bad data
+                (see Notes)
+Notes:          Closes the three follow-ups left open by the JOLTS entry above.
+
+                1. RELEASE CALENDAR. JOLTS recorded as instance #4 of the
+                   hardcoded-vintage class, marked resolved. Two additions beyond
+                   the bare record: the note that JOLTS is the only MONTHLY source
+                   in that list (which is why 31 months elapsed rather than one
+                   annual cycle), and the generalised operational lesson — that
+                   `--sources X` silently degrades to "serve from cache" for any
+                   source whose cache directory is OneDrive-locked and whose
+                   fetcher lacks a freshness guard. A cache clear is best-effort
+                   on this machine and cannot be the only thing between a refresh
+                   and stale output. §1 now warns that its own "check before
+                   working" step is weaker than it appears, since it compares
+                   outputs against what the FETCHER wants.
+
+                2. VALIDATOR. `_failures_for_jolts()` added to
+                   scripts/validate_outputs.py, wired into validate() as a
+                   national check that runs regardless of --state (every state
+                   reads the same two files). Asserts: newest reference month
+                   within JOLTS_MAX_STALE_DAYS (120); annual file holds only
+                   12-month-complete years; no complete year present monthly is
+                   absent from the annual averages; all five dashboard sectors
+                   present; rates non-null and within 0-25%. Absence of both files
+                   is NOT a failure — run_forecast.py writes them only under
+                   --jolts and the dashboard degrades to "not loaded".
+
+                   Each guard was exercised against synthetic bad data rather than
+                   assumed: the historical bug (frozen at 2023-12) now fails with
+                   "976d old (limit 120d)"; a partial 2026 leaked into the annual
+                   file fails; a dropped complete year fails; a missing sector, a
+                   x100 unit error, an empty frame, and one file present without
+                   the other all fail; both-absent correctly passes.
+
+                   One real quirk found while testing, worth knowing before
+                   anyone extends this: the annual frame carries a "Total" row
+                   whose vacancy_rate_pct is legitimately NULL. _build_series_ids
+                   requests only the total-nonfarm openings LEVEL (…JOL) as a
+                   scale reference and no matching rate series. The first version
+                   of the check failed on it. Null-rate and trend-slope checks are
+                   therefore scoped to the five mapped supersectors, and the
+                   reason is commented in place so it is not "fixed" back.
+
+                3. CACHE AUDIT — scripts/audit_cache_freshness.py (new).
+                   Classifies every .exists()-guarded cache read in every
+                   fetch_*.py as VINTAGE-KEYED (filename carries a year, so a new
+                   vintage misses the cache — safe by construction), VALIDATED
+                   (fixed name but contents checked against requested years), or
+                   UNVALIDATED (fixed name returned on sight — the defect). Then
+                   cross-checks requested years against years in data/outputs/.
+                   --strict exits 1 on any UNVALIDATED read, for CI.
+
+                   THE AUDIT'S FINDING IS THAT JOLTS WAS NOT ISOLATED. 9
+                   UNVALIDATED cache reads across 8 modules. Five sources have
+                   BOTH halves of the bug in place today — an unvalidated cache
+                   AND a year list ending well before the present:
+
+                     laus    year list ends 2023 (3y behind) — fetch_laus.py:156
+                     oes     year list ends 2023 (3y behind) — fetch_oes.py:233,336
+                     lodes   year list ends 2021 (5y behind) — fetch_lodes.py:144
+                     ipeds   year list ends 2023 (3y behind) — fetch_ipeds.py:304
+                     ksde    year list ends 2023 (3y behind) — fetch_ksde.py:262
+
+                   Two of those are confirmed unadopted from this calendar's own
+                   records, with no further research needed: OEWS May 2025
+                   estimates released 2026-05-15, and LODES 8.3 (2022 data)
+                   released 2024-11-19. LAUS is the highest priority of the five
+                   because its routine fires MONTHLY, so it looks the most
+                   actively maintained while being three years behind.
+
+                   Note the counter-intuitive part, called out in the tool's own
+                   output because the intuitive reading is backwards: these five
+                   show NO shortfall between requested and output years. Both
+                   numbers agree precisely BECAUSE both are frozen. A matching
+                   pair is not evidence of currency, which is why the contract
+                   column exists alongside the year columns.
+
+                   LODES is the instructive case: its per-year sub-caches ARE
+                   correctly vintage-keyed, and a combined-cache shortcut checked
+                   before the loop bypasses them entirely. Getting the sub-caches
+                   right does not help if a fixed-name aggregate short-circuits
+                   ahead of them.
+
+                   Registry modelling note: SSA is marked manual: True. Its live
+                   path is scripts/parse_manual_ssa.py reading a hand-placed
+                   workbook, so SSA_YEARS is vestigial for the API path and
+                   comparing it against the single-data-year output produced a
+                   false STALE flag in the first run. Contract is still audited;
+                   year math is skipped.
+
+                NOT COMMITTED, per routine rules. No data outputs were touched by
+                this entry — the diff is one doc, one validator, one new script.
+
+                DELIBERATELY NOT DONE: the five flagged sources were not fixed.
+                Each needs its vintage confirmed against its agency first (this
+                routine's remit is JOLTS, and three of the five have no confirmed
+                published-vintage evidence yet), and each is a separate forecast
+                diff a human should review on its own. They are now recorded as
+                rows in the calendar's "Items Requiring Verification" table rather
+                than left as a paragraph in a log entry. Extending
+                validate_outputs.py's recency assertion to those layers is the
+                cheapest next step — the machinery is in _failures_for_jolts() and
+                per-source thresholds are the only new input needed.

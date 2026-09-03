@@ -37,8 +37,16 @@ import requests
 import pandas as pd
 from pathlib import Path
 
-# LODES8 years currently published (lag ~2 years from reference year)
-LODES_YEARS = list(range(2015, 2022))   # 2015–2021
+from cache_freshness import load_fresh_cache, save_if_complete
+
+# LODES8 years currently published (lag ~2-3 years from reference year).
+# 2022 AND 2023 confirmed present 2026-09-02 by requesting
+# LODES8/ks/od/ks_od_main_JT00_{year}.csv.gz directly: 2021 (6.23 MB),
+# 2022 (6.42 MB) and 2023 (6.57 MB) all returned HTTP 200 with plausible
+# sizes; 2024 returned 404. The release calendar had this layer recorded as
+# newest-published 2022 (LODES 8.3), so 2023 was published and unnoticed —
+# rev 8.4 of the tech doc, dated 2025-12-03, was the hint.
+LODES_YEARS = list(range(2015, 2024))   # 2015–2023
 
 LODES_BASE  = "https://lehd.ces.census.gov/data/lodes/LODES8"
 
@@ -140,10 +148,14 @@ def fetch_lodes(
         raise ValueError("cache_dir is required")
     cache_dir.mkdir(parents=True, exist_ok=True)
 
+    # The per-year sub-caches below ARE correctly vintage-keyed, but this
+    # combined shortcut is checked first and bypassed them entirely — which
+    # is why getting the sub-caches right did not prevent this layer sitting
+    # five years behind. Guard the shortcut, not just the parts.
     combined_cache = cache_dir / f"lodes_s{sf}_all.parquet"
-    if combined_cache.exists():
-        print(f"  [cache] LODES {sf} (combined)")
-        return pd.read_parquet(combined_cache)
+    cached = load_fresh_cache(combined_cache, years, f"LODES {sf} (combined)")
+    if cached is not None:
+        return cached
 
     frames = []
     for year in years:
@@ -174,8 +186,8 @@ def fetch_lodes(
 
     df = pd.concat(frames, ignore_index=True)
     df = df.sort_values(["year", "w_county_fips"]).reset_index(drop=True)
-    df.to_parquet(combined_cache, index=False)
-    print(f"  [saved] lodes_s{sf}_all.parquet  ({len(df)} rows, {df['year'].nunique()} years)")
+    save_if_complete(df, combined_cache, years,
+                     sorted(df["year"].unique()), f"LODES {sf} (combined)")
     return df
 
 

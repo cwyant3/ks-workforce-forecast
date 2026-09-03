@@ -10,7 +10,11 @@ Data sources (no API key required):
   Industry: https://www.bls.gov/oes/special.requests/oesm{YY}in4.zip
 
 OES reference period is May of each year.
-Years available: 2015–2023 (no 2020 — BLS suspended May 2020 OES due to COVID).
+Years in use: 2015–2023 (no 2020 — BLS suspended May 2020 OES due to COVID).
+
+NOTE: May 2024 and May 2025 are PUBLISHED but not adopted — the state-file
+URL above returns HTTP 403 for both while older vintages still return 200.
+See the BLOCKER note on OES_YEARS below before attempting to bump the list.
 
 Output from fetch_oes_state():
   state_fips, year, occ_code, occ_title, tot_emp,
@@ -31,7 +35,40 @@ import requests
 import pandas as pd
 from pathlib import Path
 
-# May 2020 OES was suspended; 2019 is the prior comparable data point
+from cache_freshness import load_fresh_cache, save_if_complete
+
+# May 2020 OES was suspended, so 2019 is the prior comparable data point and
+# the gap in this list is intentional.
+#
+# DELIBERATELY NOT BUMPED PAST 2023 — see the BLOCKER note below. May 2024
+# and May 2025 estimates are both published, but neither is reachable at the
+# URL this module uses. Adding them here would make every run attempt a
+# download that 403s, and because save_if_complete refuses to cache a partial
+# pull, each run would re-download the whole series and still land on 2023.
+# That is worse than the honest short list: the config would claim 2025 while
+# the data stayed at 2023, which is the exact silent-divergence this codebase
+# has now been bitten by four times.
+#
+# BLOCKER (found 2026-09-02) — the state-file URL pattern is dead for 2024+:
+#   oesm23st.zip   -> 200, 7,445,440 bytes, valid ZIP
+#   oesm24st.zip   -> 403, 1,325-byte HTML error page
+#   oesm25st.zip   -> 403
+#   oesm24all.zip  -> 200, 79,846,301 bytes, valid ZIP   <-- 2024 IS available
+#   oesm25all.zip  -> 403
+# Older vintages in the same directory (2019, 2021, 2022, 2023) all return
+# 200, so this is neither a bot block nor an age gate — it is per-file. A
+# browser User-Agent gets 403 for every year including 2023, so the
+# pipeline's own UA is the one that works; do not "fix" this by spoofing a
+# browser.
+#
+# Adopting 2024 therefore needs a real code change, not a year bump:
+# _download_zip must point at oesm{yy}all.zip, and _parse_state_oes must
+# gain an AREA_TYPE == 2 filter. Its current mask keeps rows whose AREA
+# starts with the state FIPS, which is correct for a state-only file but
+# admits MSA rows from the all-data file — CBSA codes such as 20020 begin
+# "20" and would be silently counted as Kansas. May 2025 needs its URL
+# located separately; it is published (released 2026-05-15) but absent from
+# every path probed.
 OES_YEARS      = [2015, 2016, 2017, 2018, 2019, 2021, 2022, 2023]
 OES_STATE_URL  = "https://www.bls.gov/oes/special.requests/oesm{yy}st.zip"
 OES_INDUS_URL  = "https://www.bls.gov/oes/special.requests/oesm{yy}in4.zip"
@@ -229,10 +266,12 @@ def fetch_oes_state(
         raise ValueError("cache_dir is required")
     cache_dir.mkdir(parents=True, exist_ok=True)
 
+    # Per-year sub-caches are vintage-keyed; this combined shortcut is not,
+    # and it is checked first — so it was the thing serving 2023 forever.
     combined_cache = cache_dir / f"oes_state_s{sf}.parquet"
-    if combined_cache.exists():
-        print(f"  [cache] OES state {sf}")
-        return pd.read_parquet(combined_cache)
+    cached = load_fresh_cache(combined_cache, years, f"OES state {sf}")
+    if cached is not None:
+        return cached
 
     frames = []
     for year in years:
@@ -262,8 +301,8 @@ def fetch_oes_state(
 
     df = pd.concat(frames, ignore_index=True)
     df = df.sort_values(["year", "occ_code"]).reset_index(drop=True)
-    df.to_parquet(combined_cache, index=False)
-    print(f"  [saved] oes_state_s{sf}.parquet  ({len(df)} rows)")
+    save_if_complete(df, combined_cache, years,
+                     sorted(df["year"].unique()), f"OES state {sf}")
     return df
 
 
@@ -333,9 +372,9 @@ def fetch_oes_by_sector(
     cache_dir.mkdir(parents=True, exist_ok=True)
 
     combined_cache = cache_dir / "oes_by_sector.parquet"
-    if combined_cache.exists():
-        print(f"  [cache] OES by sector (combined)")
-        return pd.read_parquet(combined_cache)
+    cached = load_fresh_cache(combined_cache, years, "OES by sector (combined)")
+    if cached is not None:
+        return cached
 
     frames = []
     for year in years:
@@ -367,8 +406,8 @@ def fetch_oes_by_sector(
 
     df = pd.concat(frames, ignore_index=True)
     df = df.sort_values(["year", "sector", "occ_code"]).reset_index(drop=True)
-    df.to_parquet(combined_cache, index=False)
-    print(f"  [saved] oes_by_sector.parquet  ({len(df)} rows)")
+    save_if_complete(df, combined_cache, years,
+                     sorted(df["year"].unique()), "OES by sector (combined)")
     return df
 
 

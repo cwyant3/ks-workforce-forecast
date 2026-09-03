@@ -35,8 +35,14 @@ import pandas as pd
 from pathlib import Path
 
 import bulk_cache
+from cache_freshness import load_fresh_cache, save_if_complete
 
-IPEDS_YEARS = list(range(2015, 2024))   # 2014–15 through 2022–23 academic years
+# Collection years; year N is the N-1/N academic year. 2024 confirmed
+# present 2026-09-02 by requesting the NCES bulk files directly:
+# C2024_A.zip (4.68 MB) and HD2024.zip (1.09 MB) both returned HTTP 200,
+# while C2025_A.zip and HD2025.zip returned 404. Both files are required —
+# HD supplies the institution-to-county map that completions are joined to.
+IPEDS_YEARS = list(range(2015, 2025))   # 2014–15 through 2023–24 academic years
 
 IPEDS_BASE         = "https://nces.ed.gov/ipeds/datacenter/data"
 COMPLETIONS_URL    = IPEDS_BASE + "/C{year}_A.zip"
@@ -300,10 +306,12 @@ def fetch_ipeds(
         raise ValueError("cache_dir is required")
     cache_dir.mkdir(parents=True, exist_ok=True)
 
+    # As with LODES, the per-year HD/completions sub-caches are vintage-keyed
+    # but this combined shortcut short-circuits ahead of them.
     combined_cache = cache_dir / f"ipeds_s{sf}_all.parquet"
-    if combined_cache.exists():
-        print(f"  [cache] IPEDS {sf} (combined)")
-        return pd.read_parquet(combined_cache)
+    cached = load_fresh_cache(combined_cache, years, f"IPEDS {sf} (combined)")
+    if cached is not None:
+        return cached
 
     frames = []
     for year in years:
@@ -327,10 +335,10 @@ def fetch_ipeds(
     df = pd.concat(frames, ignore_index=True)
     df = df.sort_values(["county_fips", "year", "sector"]).reset_index(drop=True)
 
-    df.to_parquet(combined_cache, index=False)
-    print(f"  [saved] ipeds_s{sf}_all.parquet  ({len(df)} rows, "
-          f"{df['unitid'].nunique()} institutions, "
-          f"{df['year'].nunique()} years)")
+    save_if_complete(df, combined_cache, years,
+                     sorted(df["year"].unique()), f"IPEDS {sf} (combined)")
+    print(f"  IPEDS {sf}: {len(df)} rows, {df['unitid'].nunique()} institutions, "
+          f"{df['year'].nunique()} years")
 
     return df
 

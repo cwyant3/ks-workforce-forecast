@@ -40,6 +40,8 @@ import pandas as pd
 import numpy as np
 from pathlib import Path
 
+from cache_freshness import load_fresh_cache, save_if_complete
+
 _KS_FIPS   = "20"
 _ENROLL_BASE = "https://educationdata.urban.org/api/v1/school-districts/ccd/enrollment"
 _DIR_BASE    = "https://educationdata.urban.org/api/v1/school-districts/ccd/directory"
@@ -54,7 +56,14 @@ _GRADE_GROUPS: dict[str, list[int]] = {
 
 _HTTP_HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; workforce-forecast/1.0)"}
 
-KSDE_YEARS = list(range(2010, 2024))
+# CCD collection years via the Urban Institute Education Data API. 2024
+# confirmed present 2026-09-02 by querying the API directly for Kansas
+# (fips=20): ccd/enrollment/{year}/grade-9/ returned HTTP 200 for 2022
+# (count 320), 2023 (286) and 2024 (290), while 2025 returned HTTP 500.
+# ccd/directory — the leaid-to-county map — returned 337 districts for
+# 2024 and count=0 for 2025, so 2025 exists as an endpoint but carries no
+# data. 2024 is therefore the newest usable collection year.
+KSDE_YEARS = list(range(2010, 2025))
 
 _MAX_RETRIES = 3
 _RETRY_DELAY = 2.0
@@ -259,9 +268,15 @@ def fetch_ksde(
     cache_dir.mkdir(parents=True, exist_ok=True)
 
     cache_file = cache_dir / "ksde.parquet"
-    if cache_file.exists():
-        print(f"  [cache] KSDE enrollment")
-        return pd.read_parquet(cache_file)
+    cached = load_fresh_cache(cache_file, years, "KSDE enrollment")
+    if cached is not None:
+        return cached
+
+    # A manual CSV is a legitimate fallback whose year coverage is whatever
+    # the operator placed on disk, so completeness against KSDE_YEARS must
+    # NOT be enforced on that path — doing so would refuse to cache it
+    # forever. Tracked here and consulted at the save site below.
+    used_manual = False
 
     # Build leaid → county_fips map from the most recent available year
     print(f"  KSDE/CCD: fetching district-to-county map for {max(years)}...")
@@ -287,6 +302,7 @@ def fetch_ksde(
                 "enrollment_trend_slope", "pct_change_5yr", "pipeline_alert",
             ])
         frames = [manual]
+        used_manual = True
     else:
         print(f"  KSDE/CCD: {len(leaid_county)} districts mapped to counties")
         frames = []
@@ -318,6 +334,7 @@ def fetch_ksde(
                     "enrollment_trend_slope", "pct_change_5yr", "pipeline_alert",
                 ])
             frames = [manual]
+        used_manual = True
 
     df = pd.concat(frames, ignore_index=True)
     df["enrollment"]  = pd.to_numeric(df["enrollment"],  errors="coerce").fillna(0).astype(int)
@@ -327,10 +344,10 @@ def fetch_ksde(
     df = _compute_trends(df)
     df = df.sort_values(["county_fips", "grade_group", "year"]).reset_index(drop=True)
 
-    df.to_parquet(cache_file, index=False)
-    print(f"  [saved] ksde.parquet  ({len(df)} rows, "
-          f"{df['county_fips'].nunique()} counties, "
-          f"{df['year'].nunique()} years)")
+    save_if_complete(df, cache_file, None if used_manual else years,
+                     sorted(df["year"].unique()), "KSDE enrollment")
+    print(f"  KSDE: {len(df)} rows, {df['county_fips'].nunique()} counties, "
+          f"{df['year'].nunique()} years")
     return df
 
 

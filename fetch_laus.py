@@ -30,7 +30,22 @@ import requests
 import pandas as pd
 from pathlib import Path
 
-LAUS_YEARS   = list(range(2015, 2024))       # 2015–2023 annual averages
+from cache_freshness import load_fresh_cache, save_if_complete
+
+# Annual averages (BLS period M13). 2024 and 2025 confirmed present
+# 2026-09-02 by querying LAUCN201730000000003 (Sedgwick County) over
+# 2022–2026: M13 returned for 2022–2025, and 2026 had 7 monthly
+# observations with no annual average yet — as expected, since the annual
+# average only publishes once the year closes.
+#
+# Deliberately an explicit end year rather than a computed one. A dynamic
+# "current year" would request a year whose M13 does not exist yet, which
+# save_if_complete treats as a partial pull and refuses to cache — turning
+# every run into a fresh 420-series re-download for the months before the
+# annual average lands. Bump this after confirming M13 exists for the new
+# year; the cache guard below catches the case where this list moves and a
+# stale cache is still on disk.
+LAUS_YEARS   = list(range(2015, 2026))       # 2015–2025 annual averages
 BLS_API_URL  = "https://api.bls.gov/publicAPI/v2/timeseries/data/"
 
 # Measure suffix → output column name
@@ -153,9 +168,9 @@ def fetch_laus(
     sf = state_fips.zfill(2)
 
     cache_file = (cache_dir / f"laus_s{sf}.parquet") if cache_dir else None
-    if cache_file and cache_file.exists():
-        print(f"  [cache] LAUS {sf}")
-        return pd.read_parquet(cache_file)
+    cached = load_fresh_cache(cache_file, years, f"LAUS {sf}")
+    if cached is not None:
+        return cached
 
     if county_fips3_list is None:
         raise ValueError("county_fips3_list required when no cache exists")
@@ -226,10 +241,8 @@ def fetch_laus(
     df = df[df["year"].isin(years)].copy()
     df = df.sort_values(["county_fips", "year"]).reset_index(drop=True)
 
-    if cache_file:
-        cache_dir.mkdir(parents=True, exist_ok=True)
-        df.to_parquet(cache_file, index=False)
-        print(f"  [saved] {cache_file.name}  ({len(df)} rows)")
+    save_if_complete(df, cache_file, years,
+                     sorted(df["year"].unique()), f"LAUS {sf}")
 
     return df
 

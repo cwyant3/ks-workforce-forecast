@@ -46,6 +46,15 @@ Each source has one scheduled Claude Code routine under
    The routine appends an entry to `docs/data-refresh-log.md` and leaves the
    changes **uncommitted** for review.
 
+> **Step 1 is doing less work than it looks like it is.** Establishing "the
+> vintage currently in `data/outputs/`" only catches a stale source if the
+> fetcher can actually advance past it. Twice now — CBP, then JOLTS — the
+> vintage in outputs matched what the fetcher was configured to want, so
+> nothing looked wrong while the source sat years behind the agency. Run
+> `python scripts/audit_cache_freshness.py` to see which sources currently
+> have that failure mode available to them; see "Two checks that make this
+> class of defect loud" below.
+
 > **Routines never commit or push.** The Streamlit Cloud deployment builds from
 > git, so new data does not reach the public dashboard until a human reviews the
 > diff and pushes. This is deliberate: an automated push would publish a revised
@@ -68,12 +77,12 @@ moves year to year, the window carries an extra fire or two to absorb the slip.
 |--:|--------|---------|---------------------------|---------|------|-------|
 | 1 | ACS 5-year | Annual | 2020–2024 released **2026-01-29**; PUMS 2026-03-05. Historically mid-December. | `ks-refresh-acs` | `0 7 12 12,1,2 *` | Dec 12, Jan 12, Feb 12 |
 | 2 | QCEW | Quarterly (~5 mo lag) | Q1 2026 → **2026-08-28**; Q2 2026 → **2026-12-02**. News release and full data same date since Q4 2024. | `ks-refresh-qcew` | `0 7 3,29 3,6,9,12 *` | 3rd + 29th of Mar/Jun/Sep/Dec |
-| 3 | LAUS (county) | Monthly | County/metro: Jun 2026 → **2026-07-29**; Jul 2026 → **2026-09-02**. (State-level lands earlier, ~3rd Friday.) | `ks-refresh-laus` | `0 7 4 * *` | 4th monthly |
+| 3 | LAUS (county) | Monthly | County/metro: Jun 2026 → **2026-07-29**; Jul 2026 → **2026-09-02**. (State-level lands earlier, ~3rd Friday.) The layer uses **annual averages** (period M13), so the usable vintage lags a full year behind the monthly release. **2024 + 2025 adopted 2026-09-02.** | `ks-refresh-laus` | `0 7 4 * *` | 4th monthly |
 | 4 | JOLTS | Monthly | Jul 2026 → **2026-09-01** 10:00 ET. Dec 2025 data slipped 2026-02-03 → 2026-02-05 (appropriations lapse). | `ks-refresh-jolts` | `0 7 2 * *` | 2nd monthly |
-| 5 | IPEDS completions | Annual (provisional) | Provisional ≈9 months after the fall collection closes (collection closes mid-October). | `ks-refresh-ipeds` | `0 7 15 8,9,10 *` | Aug/Sep/Oct 15 |
+| 5 | IPEDS completions | Annual (provisional) | Provisional ≈9 months after the fall collection closes (collection closes mid-October). **Collection year 2024 adopted 2026-09-02** (`C2024_A.zip` + `HD2024.zip` both live; 2025 still 404). | `ks-refresh-ipeds` | `0 7 15 8,9,10 *` | Aug/Sep/Oct 15 |
 | 6 | CBP | Annual (~18 mo lag) | 2023 CBP released **2025-06-26** (adopted 2026-08-27). 2024 CBP **not out as of 2026-08-27** — confirmed twice that day: the census.gov CBP updates page advertises 2023 as newest, and `api.census.gov/data.json` lists vintages 1986…2023 with no 2024 endpoint. | `ks-refresh-cbp` | `0 7 27 6,7,8 *` | Jun/Jul/Aug 27 |
-| 7 | LODES | Annual | LODES 8.3 (2022 data) released **2024-11-19**. Tech doc rev 8.4 dated 2025-12-03. | `ks-refresh-lodes` | `0 7 20 11,12 *` | Nov 20, Dec 20 |
-| 8 | OES/OEWS | Annual | May 2025 estimates released **2026-05-15** (delayed by the 2025-10-01→11-12 shutdown). Normal cadence is early April. | `ks-refresh-oes` | `0 7 4,16 4,5,6 *` | 4th + 16th of Apr/May/Jun |
+| 7 | LODES | Annual | LODES 8.3 (2022 data) released **2024-11-19**. Tech doc rev 8.4 dated 2025-12-03 — and **2023 data is in fact published**, confirmed by direct request 2026-09-02. **2022 + 2023 adopted 2026-09-02**; 2024 returns 404. | `ks-refresh-lodes` | `0 7 20 11,12 *` | Nov 20, Dec 20 |
+| 8 | OES/OEWS | Annual | May 2025 estimates released **2026-05-15** (delayed by the 2025-10-01→11-12 shutdown). Normal cadence is early April. **⚠ BLOCKED — still on 2023.** May 2024 and May 2025 are published but unreachable at this module's URL (`oesm{yy}st.zip` → 403 for 2024+ while 2023 and older → 200). Needs a code change, not a refresh: see the OES row in §4. | `ks-refresh-oes` | `0 7 4,16 4,5,6 *` | 4th + 16th of Apr/May/Jun |
 | 9 | SSA OASDI-SC | Annual — **manual** | 2024 edition released **August 2025**; 2025 edition in hand **2026-09-01** (release date itself unconfirmed). Each edition reports data as of December of its reference year, so the 2025 edition is data year 2024. **Adopted 2026-09-01.** | `ks-refresh-ssa` | `0 8 15 8,9 *` | Aug 15, Sep 15 |
 | 10 | KDOL labor force | Monthly — **manual** | Jul 2026 KS labor report → **2026-08-21** (3rd Friday, same day as the BLS state release). Annual benchmark revision released 2026-05-22. | `ks-refresh-kdol-labforce` | `0 8 22 * *` | 22nd monthly |
 
@@ -98,7 +107,7 @@ Two consequences worth knowing:
   the `.xlsx` path types `Areatype` as integers (`4`) where the HTML path gives
   strings (`"04"`). The driver picks whichever file was downloaded most recently,
   since the filename carries a fixed `99999999` sentinel instead of a vintage.
-| 11 | KSDE / CCD | Annual | Via the Urban Institute Education Data API, which lags the NCES CCD collection. Release date unconfirmed. | `ks-refresh-ksde` | `0 7 18 2 *` | Feb 18 |
+| 11 | KSDE / CCD | Annual | Via the Urban Institute Education Data API, which lags the NCES CCD collection. Release date unconfirmed. **Collection year 2024 adopted 2026-09-02.** Note the 2025 `directory` endpoint answers 200 with **count=0** — endpoint existence is not publication here, so check row counts before bumping. | `ks-refresh-ksde` | `0 7 18 2 *` | Feb 18 |
 | 12 | BLS national projections | Annual — **manual** | 2024–34 released **2025-08-28**; **2025–35 released 2026-08-27** (both the last Thursday of August). **2025–35 adopted 2026-09-01.** | `ks-refresh-bls-projections` | `0 8 29 8,9 *` | Aug 29, Sep 29 |
 | 13 | KDOL KS projections | Biennial cycle — **manual** | 2024–2034 workbooks currently adopted (industry, occupational, and the companion demand book). Next cycle date unconfirmed. | `ks-refresh-kdol-projections` | `0 8 15 9,10,11 *` | Sep/Oct/Nov 15 |
 | 14 | Projections Central | Annual, rolling by state | States publish their long-term cycle on their own timetables, so there is no single national date. | `ks-refresh-projections-central` | `0 7 10 2,5,8,11 *` | Feb/May/Aug/Nov 10 |
@@ -156,8 +165,109 @@ Two consequences worth knowing:
   detected years disagree with the requested ones, the fetch raises rather than
   writing a parquet labelled with a cycle it does not contain.
 
+- **JOLTS (#4)** was the fourth instance, found 2026-09-02 — and the worst of
+  them, because it is the only **monthly** source in this list. It sat at
+  reference month **2023-12 for 31 months** while the routine fired on the 2nd
+  of every month and reported success each time. **Both halves are now fixed
+  permanently; no year bump is needed next cycle.**
+
+  1. *Fixed — the frozen year list.* `JOLTS_YEARS = list(range(2015, 2024))`,
+     and `run_forecast.py` passes no `years`, so `--sources jolts` re-requested
+     the same nine years forever. Replaced with `default_jolts_years()`, which
+     computes 2015 → current calendar year. Asking for a partly-published year
+     is harmless: the API returns the months that exist.
+  2. *Fixed — the cache served on sight.* This is the half that made the
+     staleness **silent**, and it is the more dangerous of the two. The cache
+     filename `jolts_{seasonal}.parquet` carries **no vintage**, and the code
+     returned that parquet whenever the file merely existed, without asking
+     whether it held the requested years. It now compares held years against
+     requested years and re-fetches when short — the same guard CBP received
+     2026-08-27.
+
+  **The guard earned itself on the very first run.** The cache clear *failed*
+  (`[WARN] jolts_cache — could not clear: [WinError 5] Access is denied`, a
+  OneDrive lock), so `--sources jolts` fell back to serving cache. The refresh
+  advanced only because the new freshness check invalidated the stale parquet.
+  Without it that run would have reported success and changed nothing — which
+  is precisely what the previous 31 runs did.
+
+  **The operational lesson generalises past JOLTS:** `--sources X` silently
+  degrades to "serve from cache" for **any** source whose cache directory is
+  locked by OneDrive and whose fetcher lacks a freshness guard. A cache clear
+  is a best-effort operation on this machine, so it cannot be the only thing
+  standing between a refresh and stale output.
+
+  A third change, methodological: incomplete years are now excluded from the
+  annual averages. JOLTS 2026 had 7 of 12 months and `compute_annual_averages`
+  took a plain mean over whatever was present, so a Jan–Jul mean would have
+  published as "2026" — and the dashboard takes `year.max()` as its **headline**
+  vacancy rate and feeds each year to the trend-slope regression as an
+  equally-weighted point. `complete_years()` now gates it and prints what it
+  dropped. The monthly `jolts.parquet` still carries every month; nothing is
+  discarded, it just cannot masquerade as an annual figure.
+
 - **KSDE (#11)** is likewise conservative: `ksde_cache` is preserved by the
   monthly refresh on purpose.
+
+### Two checks that make this class of defect loud (added 2026-09-02)
+
+Four instances of the same defect in three weeks — ACS, CBP, BLS projections,
+JOLTS — is a pattern, not a run of bad luck. Both halves are invisible from the
+outside: the fetch succeeds, the pipeline succeeds, validation passes, and the
+dashboard serves years-old numbers under a current timestamp. Two checks now
+exist so the fifth instance is found by running a command rather than by
+someone noticing a suspicious chart.
+
+**1. `scripts/audit_cache_freshness.py` — audits the cache contract.**
+
+```bash
+python scripts/audit_cache_freshness.py            # human-readable
+python scripts/audit_cache_freshness.py --json     # machine-readable
+python scripts/audit_cache_freshness.py --strict   # exit 1 on UNVALIDATED
+```
+
+It classifies every `.exists()`-guarded cache read in every `fetch_*.py`:
+
+| Verdict | Meaning |
+|---|---|
+| `VINTAGE-KEYED` | Filename interpolates a year, so a new vintage is a new filename and therefore a cache miss. Safe by construction. |
+| `VALIDATED` | Fixed filename, but contents are checked against the requested years and re-fetched when short. |
+| `UNVALIDATED` | Fixed filename returned on sight. **Can serve stale data indefinitely.** |
+
+It then cross-checks the years each fetcher *requests* against the years
+actually in `data/outputs/`, and flags any source where **both halves are
+present** — an `UNVALIDATED` cache *and* a year list ending well before the
+present.
+
+**Read the flag logic carefully, because the intuitive reading is backwards.**
+For a frozen source, requested years and output years *agree perfectly* — both
+are stuck at the same place. A matching pair is therefore **not** evidence of
+currency, and the absence of a shortfall proves nothing. That is why the
+contract column exists alongside the year columns.
+
+**What a clean run does and does not mean.** It means the *cache* cannot hide
+staleness. It says nothing about whether the data is current, because a frozen
+year list still can — that was the ACS and CBP failure exactly. The tool reads
+the fetcher's own defaults, which is the thing that was wrong in all four
+instances, so **only the agency's release page settles the vintage question.**
+It is also a heuristic AST scan, not a proof: it recognises the cache-read
+shapes this codebase uses today, and a novel shape may be missed.
+
+**2. `scripts/validate_outputs.py` now checks JOLTS.** Nothing in the validator
+looked at JOLTS at all, which is why nothing failed for 31 months. It now
+asserts, on each run: the newest monthly reference month is within
+`JOLTS_MAX_STALE_DAYS` (120 — loose enough to absorb a release slip, tight
+enough that a layer frozen for *years* fails immediately); the annual file
+contains only 12-month-complete years; no complete year present monthly is
+missing from the annual averages; all five dashboard sectors are present; and
+rates are non-null and within 0–25%. Absence of the files is **not** a failure,
+since `run_forecast.py` writes them only under `--jolts` and the dashboard
+degrades to "not loaded".
+
+A recency assertion of this shape would have caught JOLTS in month two instead
+of month 31. **It is the cheapest check in this repo and it is worth extending
+to the other layers** — the machinery is in `_failures_for_jolts()` and the
+per-source thresholds are the only new input required.
 
 ### Manual sources
 
@@ -216,6 +326,11 @@ confirming.
 | Projections Central cadence | Whether Kansas and the neighbour states publish their long-term cycle on a predictable month. | `projectionscentral.org` |
 | KSDE / CCD via Urban Institute | When the Urban Institute Education Data API refreshes CCD enrollment each year. | `educationdata.urban.org` |
 | QCEW Q3/Q4 dates | BLS lists Q3 and Q4 2026 releases as "to be determined in 2027". The two-fire cron window is a hedge against that. | `bls.gov/cew/release-calendar.htm` |
+| **OES/OEWS (#8) — BLOCKED, needs a code change** | **The one unresolved item from the 2026-09-02 sweep.** May 2024 and May 2025 are both published; neither is reachable at the URL `fetch_oes.py` uses. Probed that day: `oesm23st.zip` → 200 (7,445,440 B, valid ZIP), `oesm24st.zip` → **403**, `oesm25st.zip` → **403**, but `oesm24all.zip` → **200 (79,846,301 B, valid ZIP)**. Older vintages in the same directory (2019, 2021, 2022, 2023) all return 200, so it is per-file, not a bot block or an age gate — and a *browser* UA gets 403 for every year including 2023, so the pipeline's own UA is the working one (do not "fix" this by spoofing a browser). **Adopting 2024 needs two edits, not a year bump:** point the download at `oesm{yy}all.zip`, and add an `AREA_TYPE == 2` filter to `_parse_state_oes` — its current AREA-prefix mask is correct for a state-only file but would admit MSA rows from the all-data file, since CBSA codes like 20020 begin "20" and would be silently counted as Kansas. **May 2025 has no located URL at all** and needs one found. `OES_YEARS` is deliberately left at 2023 meanwhile, so the config does not claim a vintage the data lacks. | `bls.gov/oes/tables.htm`; `bls.gov/oes/special.requests/` |
+| ~~LAUS (#3) vintage~~ | **Resolved 2026-09-02 — adopted through 2025.** Verified by querying `LAUCN201730000000003` (Sedgwick County) over 2022–2026: annual averages (M13) returned for 2022–2025; 2026 had 7 monthly observations and no annual average yet, as expected. | `bls.gov/lau/` |
+| ~~LODES (#7) post-8.3 release~~ | **Resolved 2026-09-02 — adopted through 2023, and 2023 turned out to exist.** Requesting `LODES8/ks/od/ks_od_main_JT00_{year}.csv.gz` returned 200 for 2021 (6.23 MB), 2022 (6.42 MB) **and 2023 (6.57 MB)**; 2024 returned 404. This calendar had recorded 2022 (LODES 8.3) as newest, so **two** vintages were unadopted, not one — tech-doc rev 8.4 dated 2025-12-03 was the hint, and it was right. Supersedes the old "post-8.3 release" question. | `lehd.ces.census.gov/data/` |
+| ~~IPEDS (#5) vintage~~ | **Resolved 2026-09-02 — adopted through collection year 2024.** `C2024_A.zip` (4.68 MB) and `HD2024.zip` (1.09 MB) both returned 200; `C2025_A.zip` and `HD2025.zip` both 404. Both files are required — HD supplies the institution-to-county map. Does not answer the provisional-release-*date* question below, only which vintage is downloadable now. | `nces.ed.gov/ipeds/` |
+| ~~KSDE (#11) vintage~~ | **Resolved 2026-09-02 — adopted through collection year 2024.** `ccd/enrollment/{year}/grade-9/?fips=20` returned 200 for 2022 (count 320), 2023 (286) and 2024 (290); 2025 returned **HTTP 500**. `ccd/directory` returned 337 Kansas districts for 2024 and **count=0** for 2025 — so 2025 exists as an endpoint but carries no data, which is a trap for anyone bumping the list on endpoint existence alone. | `educationdata.urban.org` |
 
 Note that several 2026 dates above reflect the **2025-10-01 → 2025-11-12
 appropriations lapse**, which pushed OEWS from April to May and ACS from

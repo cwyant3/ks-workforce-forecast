@@ -53,8 +53,29 @@ import pandas as pd
 import numpy as np
 from pathlib import Path
 
-JOLTS_YEARS  = list(range(2015, 2024))   # 2015–2023
+JOLTS_START_YEAR = 2015
 BLS_API_URL  = "https://api.bls.gov/publicAPI/v2/timeseries/data/"
+
+
+def default_jolts_years() -> list[int]:
+    """
+    Years to request: 2015 through the current calendar year.
+
+    JOLTS is monthly with a ~1-month lag, so the current year always has
+    published months by the time a refresh runs. Requesting a year that is
+    only partly published is harmless — the API returns the months that
+    exist — and `compute_annual_averages` drops any year that is not yet
+    complete, so a partial year never reaches the annual outputs.
+
+    This is deliberately computed rather than a literal list. A frozen
+    `JOLTS_YEARS` held the dashboard at 2023 for 31 months: the cache file
+    is not year-keyed, so the stale parquet was served on sight and the
+    refresh routine re-downloaded the same nine years every month without
+    erroring. See docs/data-source-release-calendar.md §"Sources that need
+    a code change" for the ACS / CBP / BLS-projections instances of the
+    same pattern.
+    """
+    return list(range(JOLTS_START_YEAR, pd.Timestamp.today().year + 1))
 
 # JOLTS 15-digit industry codes → dashboard sector
 # BLS JOLTS series ID format: JT{S/U}{15-digit-industry}{2-char-element}{L/R}
@@ -174,7 +195,7 @@ def fetch_jolts(
 
     Parameters
     ----------
-    years     : list of years to fetch (default 2015–2023)
+    years     : list of years to fetch (default 2015 → current year)
     api_key   : BLS API key (optional; raises rate limit without one)
     cache_dir : parquet cache directory
     seasonal  : "U" = not seasonally adjusted, "S" = seasonally adjusted
@@ -185,12 +206,22 @@ def fetch_jolts(
     data_element, measure ("level"|"rate"), value, seasonal
     """
     if years is None:
-        years = JOLTS_YEARS
+        years = default_jolts_years()
 
     cache_file = (cache_dir / f"jolts_{seasonal}.parquet") if cache_dir else None
     if cache_file and cache_file.exists():
-        print(f"  [cache] JOLTS ({seasonal})")
-        return pd.read_parquet(cache_file)
+        cached = pd.read_parquet(cache_file)
+        # The cache filename carries no vintage, so a held parquet can be
+        # short of the requested range. Serving it silently is how this layer
+        # sat at 2023 for 31 months; self-invalidate instead of being served
+        # short (same guard CBP got on 2026-08-27).
+        cached_years = set(cached["year"].unique()) if not cached.empty else set()
+        missing = [y for y in years if y not in cached_years]
+        if missing:
+            print(f"  [cache stale] JOLTS ({seasonal}) missing {missing} — re-fetching")
+        else:
+            print(f"  [cache] JOLTS ({seasonal})")
+            return cached
 
     all_ids     = _build_series_ids(seasonal)
     batch_size  = 50 if api_key else 25
@@ -235,12 +266,42 @@ def fetch_jolts(
     return df
 
 
-def compute_annual_averages(jolts_df: pd.DataFrame) -> pd.DataFrame:
+def complete_years(jolts_df: pd.DataFrame) -> list[int]:
+    """Years with all 12 reference months present in the monthly frame."""
+    if jolts_df.empty:
+        return []
+    months = jolts_df.groupby("year")["month"].nunique()
+    return sorted(int(y) for y in months[months >= 12].index)
+
+
+def compute_annual_averages(
+    jolts_df: pd.DataFrame,
+    drop_incomplete: bool = True,
+) -> pd.DataFrame:
     """
     Collapse monthly JOLTS to annual averages by (year, sector, data_element, measure).
+
+    Incomplete years are dropped by default. An annual average is only an
+    annual average if all twelve months are in hand: the current year is
+    always partly published, and letting it through would publish (say) a
+    Jan–Jul mean as "2026" — which the dashboard would then show as its
+    headline vacancy rate and feed to the trend-slope regression as an
+    equally-weighted year point. Pass drop_incomplete=False to inspect the
+    partial year deliberately.
     """
+    df = jolts_df[jolts_df["sector"].notna()]
+
+    if drop_incomplete and not df.empty:
+        keep = complete_years(jolts_df)
+        dropped = sorted(set(int(y) for y in df["year"].unique()) - set(keep))
+        if dropped:
+            counts = jolts_df.groupby("year")["month"].nunique()
+            detail = ", ".join(f"{y} ({counts.get(y, 0)}/12 months)" for y in dropped)
+            print(f"  [JOLTS] excluded from annual averages — incomplete: {detail}")
+        df = df[df["year"].isin(keep)]
+
     return (
-        jolts_df[jolts_df["sector"].notna()]
+        df
         .groupby(["year", "sector", "data_element", "measure"], as_index=False)["value"]
         .mean()
         .round(3)

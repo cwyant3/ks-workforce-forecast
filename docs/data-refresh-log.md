@@ -661,3 +661,116 @@ Notes:          Closes the three follow-ups left open by the JOLTS entry above.
                 validate_outputs.py's recency assertion to those layers is the
                 cheapest next step — the machinery is in _failures_for_jolts() and
                 per-source thresholds are the only new input needed.
+
+## [2026-09-03] QCEW | refreshed
+Vintage before: annual averages 2015-2024; sector base_year 2024 in all five
+                sector_projections_s{08,20,29,31,40}.parquet; qcew_cache held
+                s{fips}_2015..2024.parquet (50 files)
+Vintage after:  annual averages 2015-2025; sector base_year **2025** in all five
+                states; qcew_cache holds s{fips}_2015..2025.parquet (55 files)
+Checked:        Two things, and only the second one mattered.
+                (1) Quarterly release, per the routine's remit: Q1 2026 published
+                **2026-08-28** 10:00 ET, confirmed via WebSearch against the BLS
+                release archive (bls.gov/news.release/archives/cewqtr_08282026.pdf,
+                USDL-26-1424) and the BLS August 2026 schedule list. Matches the
+                date this calendar already predicted.
+                (2) **The release that actually moved this layer is the ANNUAL
+                file, not the quarterly one.** This module consumes
+                {year}_annual_by_area.zip, so a new quarter does not advance it.
+                Direct probe of data.bls.gov with the pipeline's own UA:
+                2024 -> 200 (136,138,122 B, ZIP magic PK/x03/x04),
+                2025 -> **200 (114,997,862 B, valid ZIP)**,
+                2026 -> 404 (193 B text/html).
+                So 2025 annual averages were published (they land with the Q4 2025
+                release, ~June 2026) and had been sitting unadopted.
+Outputs changed: 57 genuine content changes vs HEAD out of 57 modified data files
+                — 0 byte-identical rewrites, which is the reverse of the
+                2026-08-27 CBP run and is explained below.
+                **The tree was already dirty when this run started**: 43 data
+                files carried the uncommitted 2026-09-02 LAUS/LODES/IPEDS/KSDE/
+                JOLTS adoptions. So "57 changes vs HEAD" conflates two sessions
+                and is NOT this run's footprint.
+                This run's own footprint is the 14 paths newly appearing in
+                git status between session start and now, and they are exactly
+                the QCEW-driven sector layer and nothing else:
+                  sector_projections_s{08,29,31,40}         (4)
+                  state_sector_projection_s{08,20,29,31,40} (5)
+                  state_total_projection_s{08,20,29,31,40}  (5)
+                sector_projections_s20 was already dirty, but it did change here —
+                its base_year read 2024 at session start and reads 2025 now.
+                Note mtime cannot separate the two sessions: --sources qcew still
+                invokes run_forecast.py --all, so ~140 outputs carry today's
+                timestamp regardless of whether their content moved.
+Validation:     pass. scripts/validate_outputs.py passed inline for all five
+                states during the run, and was re-run standalone for KS
+                afterwards. scripts/audit_cache_freshness.py now reports qcew as
+                VINTAGE-KEYED, requested 2015-2025.
+Notes:          **SECTOR BASELINE YEAR ADVANCED 2024 -> 2025 IN ALL FIVE STATES.**
+                Flagged per routine because the dashboard's baseline labels are
+                dynamic — a human should eyeball them. The label plumbing is
+                already correct and needs no edit: dashboard/app.py:1023-1029
+                reads sec_base_year from the sector outputs' own base_year column
+                (falling back to the ACS base_year), deliberately separate from
+                the ACS cohort baseline, and sector_model.py:321 derives base_year
+                from the QCEW data's max year rather than a literal. Note the ACS
+                cohort baseline did NOT move; the two baselines legitimately
+                differ now and the UI shows both.
+
+                **FIFTH INSTANCE OF THE FROZEN-YEAR-LIST DEFECT — fixed
+                permanently, no bump needed next cycle.** fetch_qcew.py:34 held
+                QCEW_YEARS = list(range(2015, 2025)) and run_forecast.py:159
+                passes no years, so the request set could never advance past 2024
+                no matter what BLS published. Same shape as ACS, CBP, the BLS
+                projections cycle, and JOLTS. It is now:
+                  - default_qcew_years() computes QCEW_START_YEAR -> last calendar
+                    year. Deliberately optimistic: a year's annual averages land
+                    ~5 months after its Q4 closes, so asking for last calendar
+                    year is right most of the year and merely early in Q1.
+                  - _in_publication_window() plus a requests.HTTPError catch at
+                    the download call site make that early ask safe: a 404 on one
+                    of the two most recent calendar years prints "not published
+                    yet" and skips the year; a 404 on anything OLDER re-raises.
+                    That asymmetry is deliberate — OES lost its 2024+ files to
+                    exactly that kind of silent per-file 403/404, and quietly
+                    shrinking the history the trend regression fits on would be
+                    worse than failing loudly.
+                  - QCEW_YEARS is retained as a module attribute because
+                    scripts/audit_cache_freshness.py:98 reads it by name.
+                Verified by construction: as of 2027-01-15 the list ends 2026, as
+                of 2030-07-01 it ends 2029.
+
+                **The cache clear FAILED and the refresh advanced anyway** —
+                the same OneDrive lock JOLTS hit on 2026-09-02:
+                  [WARN] qcew_cache - could not clear: [WinError 5] Access is
+                  denied: ...\data\qcew_cache
+                It removed the files but could not remove the directory itself
+                (observed live: the file count fell from 50 to 10, then climbed
+                back to 55), so all 11 years did re-fetch and QCEW's routine
+                historical revisions were picked up. The refresh was safe
+                regardless because this cache is VINTAGE-KEYED —
+                s{fips}_{year}.parquet means 2025 is a cache miss by
+                construction. Restating the standing lesson: a cache clear is
+                best-effort on this machine and must never be the only thing
+                standing between a refresh and stale output.
+
+                **Suppression rose 5-9 points in every state for 2025** — worth a
+                human look, though it is not a defect and not a blocker. Area and
+                sector coverage are identical year over year (KS 107 areas /
+                5 sectors in both) and row counts are within 4, but the suppressed
+                share moved KS 39.3->44.8, CO 23.6->31.2, MO 27.8->36.3,
+                NE 37.3->41.5, OK 25.8->34.9. That uniform jump is what accounts
+                for the 2025 archive being 21 MB smaller than 2024's. It is
+                concentrated in small rural counties: Kansas STATEWIDE (area
+                20000) is fully disclosed for 2025 with entirely plausible
+                year-over-year moves — Healthcare 196,320 -> 200,436 (+2.1%),
+                Manufacturing 174,495 -> 173,891 (-0.3%), Hospitality ~flat,
+                IT ~flat, Skilled Trades +2-3%, and wages +3-5% across all five.
+                The model absorbs the extra suppression without gaps: KS
+                sector_projections has 0 null emp_proj across 5,250 rows and all
+                105 counties retain a projection (method mix option_a 3,960 /
+                option_b 1,290). Expect newest-vintage suppression to relax when
+                BLS revises.
+
+                NOT COMMITTED, per routine rules. The diff a human is reviewing
+                spans two sessions: this QCEW adoption plus the uncommitted
+                2026-09-02 work. Worth committing them separately.

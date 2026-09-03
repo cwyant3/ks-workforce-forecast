@@ -17,6 +17,7 @@ Key design notes:
     requested state are extracted and cached as parquet.
 """
 
+import datetime as _dt
 import io
 import re
 import time
@@ -31,7 +32,33 @@ import bulk_cache
 ROOT          = Path(__file__).parent
 QCEW_CACHE    = ROOT / "data" / "qcew_cache"
 QCEW_BASE_URL = "https://data.bls.gov/cew/data/files"
-QCEW_YEARS    = list(range(2015, 2025))   # 2015–2024 annual averages
+
+QCEW_START_YEAR = 2015
+
+
+def default_qcew_years(today: _dt.date | None = None) -> list[int]:
+    """Annual-average years to request: QCEW_START_YEAR → last calendar year.
+
+    Deliberately optimistic. A year's annual averages publish alongside its Q4
+    file, roughly five months after the quarter closes (2025 annual landed with
+    the Q4 2025 release in June 2026), so asking for last calendar year is
+    right for most of the year and merely early for the first few months. The
+    early ask is safe because `_download_zip` treats a 404 inside the
+    publication window as "not out yet" and skips the year — see
+    `_in_publication_window`.
+
+    This replaces a hardcoded `list(range(2015, 2025))`, which is the same
+    frozen-year-list defect that froze ACS, CBP, the BLS projections cycle and
+    JOLTS. `run_forecast.py` passes no `years`, so this default is the only
+    thing that decides the sector layer's vintage.
+    """
+    year = (today or _dt.date.today()).year
+    return list(range(QCEW_START_YEAR, year))
+
+
+# Kept as a module attribute because scripts/audit_cache_freshness.py reads it
+# by name to cross-check requested years against the years in data/outputs/.
+QCEW_YEARS = default_qcew_years()
 
 # ── Sector → QCEW 2-digit NAICS codes ────────────────────────────────────────
 # Notes:
@@ -93,6 +120,17 @@ def _download_zip(year: int) -> bytes:
         f"qcew_{year}_annual_by_area.zip",
         lambda: _http_get_zip(year),
     )
+
+
+def _in_publication_window(year: int, today: _dt.date | None = None) -> bool:
+    """True if `year`'s annual file could legitimately be unpublished today.
+
+    Only the two most recent calendar years qualify. A 404 there means "not out
+    yet" and the year is skipped; a 404 on anything older is a real regression
+    (OES silently lost its 2024+ files exactly that way) and must raise rather
+    than quietly shrinking the history the trend regression fits on.
+    """
+    return year >= (today or _dt.date.today()).year - 1
 
 
 def _http_get_zip(year: int) -> bytes:
@@ -281,7 +319,8 @@ def fetch_state_qcew(
     ----------
     state_fips        : 2-digit state FIPS (e.g. "20" for Kansas)
     county_fips3_list : list of 3-digit county FIPS strings
-    years             : years to fetch (default 2015–2023)
+    years             : years to fetch (default `default_qcew_years()`,
+                        i.e. 2015 → last calendar year)
     cache_dir         : parquet cache directory (default data/qcew_cache/)
 
     Returns
@@ -310,7 +349,14 @@ def fetch_state_qcew(
             year_df = pd.read_parquet(year_cache)
         else:
             # Download full ZIP for this year and extract state files
-            zip_bytes  = _download_zip(year)
+            try:
+                zip_bytes = _download_zip(year)
+            except requests.HTTPError as exc:
+                status = getattr(exc.response, "status_code", None)
+                if status == 404 and _in_publication_window(year):
+                    print(f"    {year} annual file not published yet (404) — skipping")
+                    continue
+                raise
             area_dfs   = _extract_state_from_zip(zip_bytes, sfips2, year)
             del zip_bytes   # free memory
 

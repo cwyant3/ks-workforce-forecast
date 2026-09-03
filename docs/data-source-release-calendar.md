@@ -76,7 +76,7 @@ moves year to year, the window carries an extra fire or two to absorb the slip.
 | # | Source | Cadence | Observed release evidence | Routine | Cron | Fires |
 |--:|--------|---------|---------------------------|---------|------|-------|
 | 1 | ACS 5-year | Annual | 2020–2024 released **2026-01-29**; PUMS 2026-03-05. Historically mid-December. | `ks-refresh-acs` | `0 7 12 12,1,2 *` | Dec 12, Jan 12, Feb 12 |
-| 2 | QCEW | Quarterly (~5 mo lag) | Q1 2026 → **2026-08-28**; Q2 2026 → **2026-12-02**. News release and full data same date since Q4 2024. | `ks-refresh-qcew` | `0 7 3,29 3,6,9,12 *` | 3rd + 29th of Mar/Jun/Sep/Dec |
+| 2 | QCEW | Quarterly (~5 mo lag), but **this layer consumes the ANNUAL file** | Q1 2026 → **2026-08-28**; Q2 2026 → **2026-12-02**. News release and full data same date since Q4 2024. **Annual averages 2015–2025 adopted 2026-09-03**; `2025_annual_by_area.zip` → 200 (115 MB), `2026` → 404. | `ks-refresh-qcew` | `0 7 3,29 3,6,9,12 *` | 3rd + 29th of Mar/Jun/Sep/Dec |
 | 3 | LAUS (county) | Monthly | County/metro: Jun 2026 → **2026-07-29**; Jul 2026 → **2026-09-02**. (State-level lands earlier, ~3rd Friday.) The layer uses **annual averages** (period M13), so the usable vintage lags a full year behind the monthly release. **2024 + 2025 adopted 2026-09-02.** | `ks-refresh-laus` | `0 7 4 * *` | 4th monthly |
 | 4 | JOLTS | Monthly | Jul 2026 → **2026-09-01** 10:00 ET. Dec 2025 data slipped 2026-02-03 → 2026-02-05 (appropriations lapse). | `ks-refresh-jolts` | `0 7 2 * *` | 2nd monthly |
 | 5 | IPEDS completions | Annual (provisional) | Provisional ≈9 months after the fall collection closes (collection closes mid-October). **Collection year 2024 adopted 2026-09-02** (`C2024_A.zip` + `HD2024.zip` both live; 2025 still 404). | `ks-refresh-ipeds` | `0 7 15 8,9,10 *` | Aug/Sep/Oct 15 |
@@ -206,13 +206,37 @@ Two consequences worth knowing:
   dropped. The monthly `jolts.parquet` still carries every month; nothing is
   discarded, it just cannot masquerade as an annual figure.
 
+- **QCEW (#2)** was the fifth instance, found 2026-09-03. **Fixed permanently;
+  no year bump is needed next cycle.** `QCEW_YEARS = list(range(2015, 2025))`
+  with no `years` passed from `run_forecast.py`, so the request set could not
+  advance past 2024 while BLS had 2025 published. Replaced with
+  `default_qcew_years()` (2015 → last calendar year).
+
+  **The trap specific to this source: its routine watches the wrong release.**
+  QCEW's headline cadence is *quarterly*, and that is what the cron window and
+  the routine's own instructions track — but `fetch_qcew.py` downloads
+  `{year}_annual_by_area.zip`. A new quarter does not advance this layer at all.
+  The annual averages for year *Y* publish alongside the Q4 *Y* file (~June of
+  *Y+1*), so **the check that settles this source's vintage is a probe of the
+  annual ZIP, not the quarterly release date.** Confirming Q1 2026 shipped on
+  schedule told us nothing about the 2025 annual file that had been sitting
+  there since roughly June.
+
+  Because the year list is now computed, the fetcher asks for last calendar year
+  even early in Q1 when it may not exist yet. `_in_publication_window()` makes
+  that safe **asymmetrically**: a 404 on one of the two most recent calendar
+  years is "not out yet" and skips; a 404 on anything older re-raises. Do not
+  relax the older-year half into a blanket skip — OES lost its 2024+ files to a
+  silent per-file 403 exactly there, and a blanket skip would quietly shrink the
+  history the sector trend regression fits on instead of failing.
+
 - **KSDE (#11)** is likewise conservative: `ksde_cache` is preserved by the
   monthly refresh on purpose.
 
 ### Two checks that make this class of defect loud (added 2026-09-02)
 
-Four instances of the same defect in three weeks — ACS, CBP, BLS projections,
-JOLTS — is a pattern, not a run of bad luck. Both halves are invisible from the
+Five instances of the same defect in three weeks — ACS, CBP, BLS projections,
+JOLTS, QCEW — is a pattern, not a run of bad luck. Both halves are invisible from the
 outside: the fetch succeeds, the pipeline succeeds, validation passes, and the
 dashboard serves years-old numbers under a current timestamp. Two checks now
 exist so the fifth instance is found by running a command rather than by
@@ -325,7 +349,8 @@ confirming.
 | KDOL next projections cycle | When KDOL publishes the cycle following 2024–2034. | `dol.ks.gov/lmis/employment-projections` |
 | Projections Central cadence | Whether Kansas and the neighbour states publish their long-term cycle on a predictable month. | `projectionscentral.org` |
 | KSDE / CCD via Urban Institute | When the Urban Institute Education Data API refreshes CCD enrollment each year. | `educationdata.urban.org` |
-| QCEW Q3/Q4 dates | BLS lists Q3 and Q4 2026 releases as "to be determined in 2027". The two-fire cron window is a hedge against that. | `bls.gov/cew/release-calendar.htm` |
+| QCEW Q3/Q4 dates | BLS lists Q3 and Q4 2026 releases as "to be determined in 2027". The two-fire cron window is a hedge against that. **Note the quarterly date is not what gates this layer** — see the QCEW entry in §2's code-change list. The Q4 date is the one worth knowing, because the annual averages ride along with it. | `bls.gov/cew/release-calendar.htm` |
+| QCEW 2025 suppression jump | Whether the 5–9 point rise in suppressed county-sector records for 2025 (KS 39.3%→44.8%, CO 23.6%→31.2%, MO 27.8%→36.3%, NE 37.3%→41.5%, OK 25.8%→34.9%, observed 2026-09-03) is normal newest-vintage conservatism that relaxes on revision, or a standing BLS disclosure-methodology change. Statewide totals are fully disclosed and plausible, and the model fills every county, so this is a data-quality question rather than a defect. Re-check the same figures after the next annual revision. | `bls.gov/cew/questions-and-answers.htm` (disclosure methodology); re-probe `s{fips}_2025.parquet` suppression share after the next revision |
 | **OES/OEWS (#8) — BLOCKED, needs a code change** | **The one unresolved item from the 2026-09-02 sweep.** May 2024 and May 2025 are both published; neither is reachable at the URL `fetch_oes.py` uses. Probed that day: `oesm23st.zip` → 200 (7,445,440 B, valid ZIP), `oesm24st.zip` → **403**, `oesm25st.zip` → **403**, but `oesm24all.zip` → **200 (79,846,301 B, valid ZIP)**. Older vintages in the same directory (2019, 2021, 2022, 2023) all return 200, so it is per-file, not a bot block or an age gate — and a *browser* UA gets 403 for every year including 2023, so the pipeline's own UA is the working one (do not "fix" this by spoofing a browser). **Adopting 2024 needs two edits, not a year bump:** point the download at `oesm{yy}all.zip`, and add an `AREA_TYPE == 2` filter to `_parse_state_oes` — its current AREA-prefix mask is correct for a state-only file but would admit MSA rows from the all-data file, since CBSA codes like 20020 begin "20" and would be silently counted as Kansas. **May 2025 has no located URL at all** and needs one found. `OES_YEARS` is deliberately left at 2023 meanwhile, so the config does not claim a vintage the data lacks. | `bls.gov/oes/tables.htm`; `bls.gov/oes/special.requests/` |
 | ~~LAUS (#3) vintage~~ | **Resolved 2026-09-02 — adopted through 2025.** Verified by querying `LAUCN201730000000003` (Sedgwick County) over 2022–2026: annual averages (M13) returned for 2022–2025; 2026 had 7 monthly observations and no annual average yet, as expected. | `bls.gov/lau/` |
 | ~~LODES (#7) post-8.3 release~~ | **Resolved 2026-09-02 — adopted through 2023, and 2023 turned out to exist.** Requesting `LODES8/ks/od/ks_od_main_JT00_{year}.csv.gz` returned 200 for 2021 (6.23 MB), 2022 (6.42 MB) **and 2023 (6.57 MB)**; 2024 returned 404. This calendar had recorded 2022 (LODES 8.3) as newest, so **two** vintages were unadopted, not one — tech-doc rev 8.4 dated 2025-12-03 was the hint, and it was right. Supersedes the old "post-8.3 release" question. | `lehd.ces.census.gov/data/` |

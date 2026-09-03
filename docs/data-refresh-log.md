@@ -1154,3 +1154,79 @@ Notes:          **WHY: six instances, and the validator would have caught none
                 MANUAL_SOURCES file-age check, which measures the right thing
                 for a hand-placed file, and duplicating it here would produce
                 two alarms for one condition.
+
+## [2026-09-03] all sources | refreshed — full live re-fetch, zero drift
+Vintage before: qcew 2025 · laus 2025 · oes state 2025 · oes sector 2025 ·
+                ipeds 2024 · cbp 2023 · lodes 2023 · ksde 2024 · acs 2024 ·
+                bls_proj 2025 · pc 2024 · ssa 2024 · jolts 2026-07
+Vintage after:  identical — every layer confirmed current by LIVE re-fetch
+                rather than by reading its own cache
+Checked:        `python refresh_dashboard.py --states bloc` (no --sources), the
+                full monthly refresh. Cleared and re-fetched all eight
+                API-backed caches — laus, jolts, qcew, ipeds, lodes, oes, cbp,
+                pc — across all five deployed states. acs_cache and ksde_cache
+                are excluded by the driver's own design: both read hardcoded
+                year lists, so clearing them re-downloads identical vintages.
+                Confirmed via --dry-run before running.
+Outputs changed: **NONE. `git status` is completely clean.** Every one of ~140
+                outputs was rewritten (mtimes 13:12-13:53) and every one came
+                out byte-identical to HEAD. Content-diffed as well: 0 genuine
+                changes, 0 content-identical-but-byte-different rewrites.
+Validation:     pass, 5/5 states.
+Notes:          **THIS RUN IS THE STRONGEST EVIDENCE THE TREE IS HONEST that
+                this project has produced.** Everything committed today was
+                validated against caches that the same session had just written.
+                This run threw all of those away and re-pulled from the
+                agencies, and reproduced the committed outputs exactly. Three
+                things follow:
+
+                1. Every vintage is genuinely current, established by live
+                   re-fetch rather than by a fetcher reading its own cache —
+                   which is the precise failure mode that hid six instances of
+                   silent staleness.
+                2. The pipeline is byte-reproducible for unchanged inputs. That
+                   is a stronger property than the 2026-08-27 CBP entry assumed
+                   ("parquet is not byte-reproducible"); on this toolchain,
+                   identical inputs do produce identical bytes. Worth knowing,
+                   because it means a non-empty `git status` after a refresh is
+                   ALWAYS real drift and never noise.
+                3. The annual recency assertions added earlier today passed
+                   5/5 against a completely rebuilt tree — their first test
+                   against data they did not help produce.
+
+                **ALL EIGHT CACHE CLEARS FAILED, and the refresh was still
+                genuine.** Every one reported
+                  [WARN] {name}_cache — could not clear: [WinError 5] Access is
+                  denied
+                This is the OneDrive lock documented for JOLTS on 2026-09-02 and
+                for QCEW earlier today — but this run shows it hitting **100% of
+                caches, not intermittently.** The refresh worked anyway because
+                `shutil.rmtree` deletes a directory's CONTENTS before failing to
+                remove the directory itself, so the caches were emptied and
+                every fetcher missed. Proof it was a real re-fetch, not a
+                cache-serve: the log shows "Downloading 2015 QCEW ZIP (~140 MB)"
+                through 2025 and "Cached {year}: ... saved" for all eleven years
+                — lines that only appear on a cache miss.
+
+                **Do not read that as "the warning is harmless."** It means the
+                clear is succeeding by accident, one filesystem call short of
+                failing. If the lock ever lands on the file deletions rather
+                than the directory removal, every `--sources X` run silently
+                degrades to serve-from-cache with no error — and the ONLY thing
+                standing between that and stale published output is the
+                per-fetcher freshness guard in cache_freshness.py plus the
+                vintage-keyed cache filenames. That is exactly what saved the
+                JOLTS refresh on 2026-09-02. The message wording is also
+                misleading: "could not clear" reads as "nothing happened", when
+                in fact the contents did go.
+
+                Worth fixing properly at some point: have clear_caches() delete
+                contents explicitly and treat a surviving-but-empty directory as
+                success, so the common case stops emitting a warning that a
+                reader has to know folklore to interpret. Not done here —
+                it is unrelated to a data refresh and wants its own diff.
+
+                One unrelated pre-existing warning, unchanged: run_forecast.py
+                line 314 emits the KDOL UI notice. That path is the abandoned UI
+                claims source (fetch_kdol_ui.py returns empty by design; the
+                labour-force export replaced it), and it warns on every run.

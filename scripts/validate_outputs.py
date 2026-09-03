@@ -40,6 +40,143 @@ JOLTS_SECTORS = {
 }
 
 
+# ── Annual-layer vintage recency ──────────────────────────────────────────
+# JOLTS above is monthly and can be checked in days. Every other layer is
+# ANNUAL, so recency is measured in YEARS behind the current calendar year and
+# the best achievable detection latency is roughly one release cycle. That is
+# still worth having: this repo has now hit the same silent-staleness defect
+# SIX times (ACS, CBP, BLS projections, JOLTS, QCEW, OES), and in every case
+# the fetch succeeded, the pipeline succeeded, validation passed, and the
+# dashboard served years-old numbers under a current timestamp.
+#
+# HOW THE THRESHOLD WORKS. `normal_lag` is how many years behind the current
+# calendar year the newest vintage should be once that year's release has
+# landed. `released_month` is the month by which we expect it, with a couple of
+# months of grace already built in. Before that month the allowance is
+# normal_lag + 1, after it normal_lag. That two-tier shape is what lets the
+# check be tight enough to catch a freeze without failing every January.
+#
+# CALIBRATION. Every threshold below is set so that (a) the vintage actually in
+# data/outputs on 2026-09-03 passes, and (b) the frozen vintage each source was
+# ACTUALLY found at would have failed:
+#
+#   source  frozen at  lag  allowed  caught?     current  lag  allowed  passes?
+#   qcew    2024        2     1      yes         2025      1     1      yes
+#   laus    2023        3     2      yes         2025      1     2      yes
+#   oes     2023        3     1      yes         2025      1     1      yes
+#   ipeds   2023        3     2      yes         2024      2     2      yes
+#   cbp     2022        4     3      yes         2023      3     3      yes
+#   lodes   2021        5     4      yes         2023      3     4      yes
+#
+# WHEN THIS FIRES, IT MEANS ONE OF TWO THINGS and the message says so: the
+# layer is frozen (a hardcoded year list, or a cache served without a freshness
+# check), OR the agency's release genuinely slipped past the grace window. The
+# second is a real possibility and the correct response is to confirm against
+# the agency, then widen the threshold here WITH the evidence recorded in
+# docs/data-source-release-calendar.md — not to delete the check.
+#
+# Absence is never a failure, matching the JOLTS rule: not every layer is
+# written for every state, and run_forecast.py writes some only under flags.
+ANNUAL_VINTAGE_CHECKS: tuple[dict, ...] = (
+    # QCEW has no output file of its own; its vintage surfaces as the sector
+    # model's base_year. Annual averages for year Y publish alongside the Q4 Y
+    # file, ~June of Y+1.
+    {"label": "qcew (sector base_year)", "file": "sector_projections_s{state}.parquet",
+     "year_col": "base_year", "normal_lag": 1, "released_month": 9},
+    # LAUS county annual averages (period M13) for year Y land in the first
+    # half of Y+1; October is generous.
+    {"label": "laus", "file": "laus_s{state}.parquet",
+     "year_col": "year", "normal_lag": 1, "released_month": 10},
+    # OEWS May Y publishes ~April-May of Y+1 (2026 slipped to May 15 after the
+    # appropriations lapse). Both layers share the cadence.
+    {"label": "oes state", "file": "oes_state_s{state}.parquet",
+     "year_col": "year", "normal_lag": 1, "released_month": 8},
+    {"label": "oes sector", "file": "oes_by_sector.parquet", "national": True,
+     "year_col": "year", "normal_lag": 1, "released_month": 8},
+    # IPEDS provisional completions ≈9 months after the fall collection closes
+    # (collection year 2024 closed Oct 2025, provisional landed by Sep 2026).
+    # This is the tightest-calibrated entry: normal_lag 2 from September is
+    # exactly what separates the current 2024 from the frozen 2023 it was found
+    # at. If a future provisional slips past September this will fire; confirm
+    # against nces.ed.gov before widening it.
+    {"label": "ipeds", "file": "ipeds_s{state}.parquet",
+     "year_col": "year", "normal_lag": 2, "released_month": 9},
+    # CBP runs ~18 months behind: 2023 CBP released 2025-06-26.
+    {"label": "cbp", "file": "cbp_s{state}.parquet",
+     "year_col": "year", "normal_lag": 3, "released_month": 9},
+    # LODES is the most irregular publisher here — 8.3 (2022 data) shipped
+    # 2024-11-19 and 2023 appeared without an announcement anyone caught. Held
+    # deliberately loose at 4 year-round rather than pretending to know a month.
+    {"label": "lodes", "file": "lodes_s{state}.parquet",
+     "year_col": "year", "normal_lag": 4, "released_month": 1},
+    # KSDE/CCD via the Urban Institute API, which lags the NCES collection.
+    {"label": "ksde", "file": "ksde.parquet", "national": True,
+     "year_col": "year", "normal_lag": 2, "released_month": 6},
+    # ACS 5-year: the 2020-2024 vintage released 2026-01-29 (historically
+    # mid-December; the lapse pushed it late).
+    {"label": "acs", "file": "acs_combined_s{state}.parquet",
+     "year_col": "year", "normal_lag": 2, "released_month": 6},
+)
+
+
+def _failures_for_annual_vintages(
+    outputs: Path,
+    state: str | None = None,
+    today: _dt.date | None = None,
+) -> list[str]:
+    """Assert every annual layer's newest vintage is within its release cadence.
+
+    See ANNUAL_VINTAGE_CHECKS for the thresholds and how they were calibrated.
+    """
+    today = today or _dt.date.today()
+    failures: list[str] = []
+
+    for check in ANNUAL_VINTAGE_CHECKS:
+        national = check.get("national", False)
+        if national:
+            paths = [outputs / check["file"]]
+        elif state:
+            paths = [outputs / check["file"].format(state=state.zfill(2))]
+        else:
+            # Glob every state's copy so a full run checks the whole bloc.
+            paths = sorted(outputs.glob(check["file"].replace("{state}", "*")))
+
+        for path in paths:
+            if not path.exists():
+                continue        # absence is not a failure — see the note above
+            try:
+                df = pd.read_parquet(path, columns=[check["year_col"]])
+            except Exception as exc:
+                failures.append(f"{path.name}: could not read {check['year_col']} ({exc})")
+                continue
+
+            years = pd.to_numeric(df[check["year_col"]], errors="coerce").dropna()
+            if years.empty:
+                failures.append(f"{path.name}: no usable {check['year_col']} values")
+                continue
+
+            newest = int(years.max())
+            lag = today.year - newest
+            allowed = check["normal_lag"]
+            if today.month < check["released_month"]:
+                allowed += 1
+
+            if lag > allowed:
+                failures.append(
+                    f"{path.name}: newest {check['year_col']} is {newest}, "
+                    f"{lag} years behind {today.year} (limit {allowed} in "
+                    f"{today:%B}) — the {check['label']} layer looks frozen. "
+                    f"Either a hardcoded year list / a cache served without a "
+                    f"freshness check (run scripts/audit_cache_freshness.py), "
+                    f"or the release slipped past its grace window. Confirm "
+                    f"against the agency, then widen the threshold in "
+                    f"ANNUAL_VINTAGE_CHECKS with the evidence recorded in "
+                    f"docs/data-source-release-calendar.md."
+                )
+
+    return failures
+
+
 REQUIRED_SUMMARY_COLUMNS = {
     "county_fips",
     "county_name",
@@ -274,6 +411,9 @@ def validate(outputs: Path, state: str | None = None) -> list[str]:
     # National layers — checked once regardless of --state, since every
     # state's dashboard reads the same files.
     failures.extend(_failures_for_jolts(outputs))
+
+    # Annual-layer recency. Handles its own per-state vs national scoping.
+    failures.extend(_failures_for_annual_vintages(outputs, state))
     return failures
 
 

@@ -1050,3 +1050,107 @@ Notes:          **SIXTH INSTANCE OF THE YEAR-LIST DEFECT — but the honest one.
                 have caught either OES defect — the layer sat 2 vintages behind
                 with a 4x double-count and validation passed every run. That
                 remains the cheapest available guard against instance seven.
+
+## [2026-09-03] all layers | tooling — annual vintage-recency assertions
+Vintage before: n/a — no data changed
+Vintage after:  unchanged
+Checked:        n/a. This closes the "STILL OPEN" item carried in the
+                2026-09-02 JOLTS follow-up entry and repeated in today's QCEW
+                and OES entries: extending the recency assertion beyond JOLTS.
+Outputs changed: none. One file: scripts/validate_outputs.py (+ the calendar).
+Validation:     `validate_outputs.py --state 20` and the full-bloc run both
+                pass against current outputs.
+Notes:          **WHY: six instances, and the validator would have caught none
+                of them.** ACS, CBP, BLS projections, JOLTS, QCEW and OES all
+                failed the same way — fetch succeeded, pipeline succeeded,
+                validation passed, dashboard served years-old numbers under a
+                current timestamp. JOLTS got a recency assertion on 2026-09-02
+                and it is the only reason that layer is now honest. Nine more
+                layers now have the equivalent: QCEW (via the sector model's
+                base_year), LAUS, OES state, OES sector, IPEDS, CBP, LODES,
+                KSDE, ACS.
+
+                **DESIGN: years, not days, and two-tier.** JOLTS is monthly so
+                it can be checked in days. Everything else is annual, which
+                means the best achievable detection latency is about one release
+                cycle — you cannot distinguish "not published yet" from "frozen"
+                faster than the publication cadence. Each entry in
+                ANNUAL_VINTAGE_CHECKS carries a `normal_lag` (years behind the
+                current calendar year once that year's release has landed) and a
+                `released_month` (when we expect it, with a couple of months of
+                grace already built in). Before that month the allowance is
+                normal_lag + 1; after it, normal_lag.
+
+                That two-tier shape is the whole trick. A flat threshold cannot
+                work: tight enough to catch QCEW frozen one vintage back also
+                fails every January when last year's data legitimately is not
+                out yet. Making the allowance tighten once the release month
+                passes gives both properties.
+
+                **CALIBRATED AGAINST THIS REPO'S OWN HISTORY, not guessed.**
+                Every threshold is set so the vintage actually in data/outputs
+                today passes AND the frozen vintage each source was really found
+                at would have failed:
+
+                  source  frozen  lag  allowed  caught   now   lag  passes
+                  qcew    2024     2      1      yes    2025    1    yes
+                  laus    2023     3      2      yes    2025    1    yes
+                  oes     2023     3      1      yes    2025    1    yes
+                  ipeds   2023     3      2      yes    2024    2    yes
+                  cbp     2022     4      3      yes    2023    3    yes
+                  lodes   2021     5      4      yes    2023    3    yes
+                  ksde    2023     3      2      yes    2024    2    yes
+                  acs     2023     3      2      yes    2024    2    yes
+
+                Verified end-to-end rather than only on paper: rolling
+                oes_state_s20 back to 2023 and lodes_s20 back to 2021 in a
+                scratch copy of data/outputs/ makes the validator fail on
+                exactly those two layers and nothing else.
+
+                **A DELIBERATE SECOND EFFECT: it is also an "overdue for a
+                refresh" alarm.** Because the allowance tightens when a release
+                month passes, today's outputs begin failing through 2027 as each
+                agency's next vintage comes due — ACS and KSDE in June, OES in
+                August, CBP/IPEDS/QCEW in September. Confirmed by running the
+                check against every month of 2026 and 2027: zero failures for
+                the rest of 2026, then that staggered escalation. This is
+                intended. A layer nobody refreshed for a year should not
+                validate silently — that is the exact condition all six
+                instances shared.
+
+                **HOW TO READ A FAILURE — two possibilities, and the message
+                says both.** Either the layer is frozen (hardcoded year list, or
+                a cache served without a freshness check — run
+                audit_cache_freshness.py next), OR the agency's release slipped
+                past the grace window. The second is genuinely possible, and the
+                correct response is to confirm against the agency and widen the
+                threshold WITH the evidence recorded in the calendar — not to
+                delete the check. Written into the failure string so nobody has
+                to remember it.
+
+                **KNOWN TIGHT SPOT: IPEDS.** normal_lag 2 from September is
+                exactly what separates the current 2024 from the frozen 2023 it
+                was found at, so there is no slack there. IPEDS provisional
+                timing is also the least well established of the nine (the
+                calendar still lists its exact release date as unverified). If a
+                future provisional slips past September this will fire; confirm
+                against nces.ed.gov before widening. Flagged rather than
+                silently loosened, because loosening it to 3 would have made it
+                miss the real historical case.
+
+                LODES got the opposite treatment — held flat at 4 year-round
+                with no month tier, because its publisher is the most irregular
+                here (8.3 shipped 2024-11-19; the 2023 data appeared with no
+                announcement anyone caught). Better an honest loose threshold
+                than a precise-looking month that is fiction.
+
+                Absence is never a failure, matching the JOLTS rule: not every
+                layer is written for every state, and some are written only
+                under a flag.
+
+                NOT COVERED, deliberately: the manual sources (SSA, KDOL labour
+                force, KDOL/BLS projections, Projections Central). Their
+                staleness is already reported by refresh_dashboard's
+                MANUAL_SOURCES file-age check, which measures the right thing
+                for a hand-placed file, and duplicating it here would produce
+                two alarms for one condition.

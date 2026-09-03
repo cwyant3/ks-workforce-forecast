@@ -52,8 +52,10 @@ Each source has one scheduled Claude Code routine under
 > vintage in outputs matched what the fetcher was configured to want, so
 > nothing looked wrong while the source sat years behind the agency. Run
 > `python scripts/audit_cache_freshness.py` to see which sources currently
-> have that failure mode available to them; see "Two checks that make this
-> class of defect loud" below.
+> have that failure mode available to them, and note that
+> `scripts/validate_outputs.py` now fails a run whose vintages have fallen
+> behind their release cadence; see "Three checks that make this class of
+> defect loud" below.
 
 > **Routines never commit or push.** The Streamlit Cloud deployment builds from
 > git, so new data does not reach the public dashboard until a human reviews the
@@ -249,7 +251,8 @@ Two consequences worth knowing:
 - **KSDE (#11)** is likewise conservative: `ksde_cache` is preserved by the
   monthly refresh on purpose.
 
-### Two checks that make this class of defect loud (added 2026-09-02)
+### Three checks that make this class of defect loud (added 2026-09-02,
+### extended 2026-09-03)
 
 Six instances of the same defect in three weeks — ACS, CBP, BLS projections,
 JOLTS, QCEW, OES — is a pattern, not a run of bad luck. Both halves are invisible from the
@@ -305,9 +308,56 @@ since `run_forecast.py` writes them only under `--jolts` and the dashboard
 degrades to "not loaded".
 
 A recency assertion of this shape would have caught JOLTS in month two instead
-of month 31. **It is the cheapest check in this repo and it is worth extending
-to the other layers** — the machinery is in `_failures_for_jolts()` and the
-per-source thresholds are the only new input required.
+of month 31.
+
+**3. Annual-layer recency — `ANNUAL_VINTAGE_CHECKS` (added 2026-09-03).** The
+extension the JOLTS note above asked for, now done for the other nine layers:
+QCEW (via the sector model's `base_year`), LAUS, OES state, OES sector, IPEDS,
+CBP, LODES, KSDE and ACS.
+
+JOLTS is monthly and can be checked in days; everything else is annual, so
+recency is measured in **years behind the current calendar year** and the best
+achievable detection latency is about one release cycle. Each entry carries a
+`normal_lag` (how far behind the newest vintage should be once the year's
+release has landed) and a `released_month` (when we expect it, with a couple of
+months of grace). Before that month the allowance is `normal_lag + 1`; after it,
+`normal_lag`. That two-tier shape is what makes the check tight enough to catch
+a freeze without failing every January.
+
+**The thresholds are calibrated against this repo's own history, not guessed.**
+Every one is set so that the vintage actually in `data/outputs/` on 2026-09-03
+passes *and* the frozen vintage that source was really found at would have
+failed:
+
+| Source | Found frozen at | Lag | Allowed | Caught | Current | Lag | Passes |
+|---|--:|--:|--:|:--|--:|--:|:--|
+| QCEW | 2024 | 2 | 1 | yes | 2025 | 1 | yes |
+| LAUS | 2023 | 3 | 2 | yes | 2025 | 1 | yes |
+| OES (both layers) | 2023 | 3 | 1 | yes | 2025 | 1 | yes |
+| IPEDS | 2023 | 3 | 2 | yes | 2024 | 2 | yes |
+| CBP | 2022 | 4 | 3 | yes | 2023 | 3 | yes |
+| LODES | 2021 | 5 | 4 | yes | 2023 | 3 | yes |
+
+Verified end-to-end, not just arithmetically: rolling `oes_state_s20` back to
+2023 and `lodes_s20` back to 2021 in a scratch copy of `data/outputs/` makes the
+validator fail on exactly those two layers.
+
+**Read a failure correctly — it means one of two things.** Either the layer is
+frozen (a hardcoded year list, or a cache served without a freshness check —
+run `audit_cache_freshness.py` next), **or** the agency's release genuinely
+slipped past the grace window. The second is a real possibility. The correct
+response is to confirm against the agency and then widen the threshold *with the
+evidence recorded in this file* — not to delete the check. The failure message
+says all of this, so nobody has to remember it.
+
+**This doubles as a "you are overdue for a refresh" alarm.** Because the
+allowance tightens once a release month passes, the current outputs start
+failing through 2027 as each agency's next vintage comes due: ACS and KSDE in
+June, OES in August, CBP/IPEDS/QCEW in September. That is intended. A layer
+nobody refreshed for a year should not validate silently.
+
+Absence is never a failure, matching the JOLTS rule — not every layer is written
+for every state, and some are written only under a flag.
 
 ### Manual sources
 

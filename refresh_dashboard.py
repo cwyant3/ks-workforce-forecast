@@ -161,6 +161,23 @@ MANUAL_SOURCES = {
         "glob": "bls_proj_cache/bls_proj_national_[0-9]*.xlsx",
         "url": "https://www.bls.gov/emp/tables/occupational-projections-and-characteristics.htm",
     },
+    # OEWS all-data workbook, the ONLY route to May 2025 state estimates: every
+    # oesm25*.zip pattern returns 403 (see the URL notes in fetch_oes.py), so
+    # unlike the other manual sources this one is a partial fallback — the state
+    # layer fetches 2015-2024 live and needs a hand-placed file for 2025 alone.
+    # Lives in data/oes_manual/ rather than data/oes_cache/ because
+    # ANNUAL_API_CACHES rmtree's the latter, which would delete it.
+    #
+    # 400-day window, not the flat 100-day default: OEWS publishes annually, so
+    # a 100-day threshold would report this file stale within months of a
+    # correct download and stay that way until the next edition — the same
+    # false-alarm shape that made the KDOL labour-force file carry its own
+    # 40-day window for the opposite reason.
+    "OES state all-data workbook": {
+        "glob": "oes_manual/all_data_M_[0-9]*.xls*",
+        "url": "https://www.bls.gov/oes/tables.htm",
+        "stale_days": 400,
+    },
     # KDOL industry projections (KLIC Telerik report builder, HTML-as-.xls).
     # NOTE: This REPLACES the abandoned "KS state projections" source, which
     # pointed at bls_proj_cache/ks_proj_manual.xlsx — a file that never existed.

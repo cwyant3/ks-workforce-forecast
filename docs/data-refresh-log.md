@@ -882,3 +882,171 @@ Notes:          **WHY THIS ENTRY EXISTS: the log above it says this work was not
                 departs from the standing "routines never commit or push" rule at
                 explicit human instruction, not routine behaviour; the forecast
                 diff was reviewed first. Streamlit Cloud will rebuild from f3bb2d2.
+
+## [2026-09-03] OES/OEWS | refreshed
+Vintage before: state layer 2015-2023 (OES_YEARS capped, BLOCKER comment);
+                sector layer 2021-2023, and inflated 3-4x by a granularity
+                double-count (see below)
+Vintage after:  state layer **2015-2025** in all five states (s20 6,825 rows,
+                s08 7,437, s29 7,454, s31 6,645, s40 7,133);
+                sector layer **2021-2025** (oes_by_sector.parquet, 18,900 rows:
+                3,704 / 3,784 / 3,793 / 3,817 / 3,802 by year)
+Checked:        Re-probed every URL pattern with the pipeline's own UA. Results
+                identical to the 2026-09-02 sweep, so the 403s are stable and
+                were worked around rather than fixed:
+                  2021 all 200 (78,047,282 B)   2021 in4 200 (31,451,833 B)
+                  2022 all 200 (78,529,122 B)   2022 in4 200 (31,356,007 B)
+                  2023 all 200 (80,129,309 B)   2023 in4 200 (31,801,148 B)
+                  2023 st  200 (7,445,440 B)
+                  2024 all 200 (79,846,301 B)   2024 in4 403, st 403, nat 403
+                  2025 all 403                  2025 in4 403, st 403, nat 403
+                So 2025 has NO reachable URL under any probed pattern. It is
+                served by data/oes_manual/all_data_M_2025.xlsx (80,657,033 B),
+                which already existed in the vault's raw/ layer from a hand
+                download dated 2026-05-28; copied into the project so the
+                pipeline is self-contained. All three tiers were exercised live
+                for BOTH layers in this run.
+Outputs changed: exactly SIX files, all OES — oes_by_sector.parquet
+                (270,169 -> 18,900 rows, the granularity fix removing nested
+                rows) and oes_state_s{20,08,29,31,40}.parquet (each +2 years:
+                5,461->6,825, 5,945->7,437, 5,953->7,454, 5,301->6,645,
+                5,706->7,133). Verified by content diff against HEAD, all six
+                genuinely CHANGED, nothing else in data/outputs differs.
+                Notably the downstream ks_occ_by_sector_s20 and
+                pc_occ_by_sector_* layers did NOT change, so nothing consuming
+                oes_by_sector propagated the correction — worth knowing, since
+                it means those layers do not read the inflated employment
+                figures. --sources oes still invokes run_forecast.py --all and
+                rewrote ~140 outputs, so this tight diff is a content result,
+                not a git-status one.
+Validation:     pass — inline for all five states during the run, and re-run
+                standalone for KS afterwards. audit_cache_freshness now reports
+                oes VALIDATED, requested 2015-2025, output 2015-2025 (it had
+                correctly flagged "output SHORT of requested: 2024,2025" in
+                between the code change and the refresh). Independent checks:
+                0 duplicate (year, naics, occ_code) keys in oes_by_sector, and
+                exactly the 9 expected sector NAICS codes
+                (22, 23, 31-33, 51, 54, 62, 71, 72, 81).
+Notes:          **SIXTH INSTANCE OF THE YEAR-LIST DEFECT — but the honest one.**
+                OES_YEARS deliberately stopped at 2023 with a BLOCKER comment
+                explaining why, so unlike ACS/CBP/BLS-proj/JOLTS/QCEW the config
+                never claimed a vintage the data lacked. The fix was not a bump
+                but making acquisition fall through tiers instead of trusting a
+                single URL.
+
+                **STATE LAYER — three-tier acquisition.**
+                st ZIP -> all-areas ZIP -> hand-placed workbook. Observed in
+                this run: 2015-2023 state-only, 2024 all-areas, 2025 manual.
+
+                Four things the 2026-09-02 plan did not anticipate:
+
+                1. *The AREA convention was documented wrong.* The old comment
+                   claimed a 7-char "2000000" form and matched a 2-char PREFIX
+                   of the zero-stripped value. AREA for a state row is actually
+                   a bare 2-char FIPS in every tier, and all three tiers share
+                   an IDENTICAL 32-column schema. Replaced with exact FIPS
+                   equality. The AREA_TYPE==2 filter mattered exactly as
+                   predicted: 2,922 MSA rows in the 2024 file have CBSA codes
+                   starting "20" (Dothan AL 20020, Duluth MN-WI 20260, Dubuque
+                   IA 20220...) and the old mask would have counted them as
+                   Kansas.
+                2. *_read_oes_excel_from_zip never matched anything.* It
+                   compared candidates against the full member path, but every
+                   archive nests its payload ("oesm24all/all_data_M_2024.xlsx",
+                   "oesm23st/state_M2023_dl.xlsx"), so EVERY year silently fell
+                   through to the largest-xlsx fallback. It picked correctly by
+                   luck. Now matches on basename — which is what made the
+                   sector fix below possible at all.
+                3. *The manual workbook cannot live in data/oes_cache/.* That
+                   directory is in ANNUAL_API_CACHES and clear_caches() removes
+                   it with shutil.rmtree, so the first `--sources oes` refresh
+                   would have deleted the only copy of 2025. It lives in
+                   data/oes_manual/ (gitignored, 80 MB) and is registered in
+                   refresh_dashboard.MANUAL_SOURCES with a 400-day window
+                   rather than the flat 100-day default, which would false-alarm
+                   on an annual source within months of a correct download.
+                4. *run_forecast.py is a separate SUBPROCESS per state.* An
+                   in-process memo therefore buys nothing across a five-state
+                   refresh — the 80 MB workbook would be parsed 5x for 2024 and
+                   5x for 2025. The parsed AREA_TYPE slices are now cached to
+                   disk (vintage-keyed, ~1.6 MB each), so bulk_cache shares the
+                   download and these share the parse.
+
+                **SECTOR LAYER — the granularity double-count, fixed.** This was
+                the substantive find and it was worse than recorded. The
+                diagnosis "in4 mixes granularity in one file" was wrong:
+                oesm{yy}in4.zip ships EIGHT workbooks already split by level
+                (natsector, nat3d, nat4d, nat5d_6d, three *_owner_* variants,
+                file_descriptions) and the old reader concatenated ALL of them.
+                The nesting came from stitching together files BLS had
+                deliberately separated. The natsector member is now named
+                explicitly — and note that without fix #2 above, the
+                largest-xlsx fallback would have picked nat4d: 4-digit rows with
+                no sector totals at all.
+
+                THREE nesting axes had to be collapsed, not one:
+                  - *Industry* — I_GROUP=='sector'. Lands exactly one code set
+                    per dashboard sector. Manufacturing arrives as the combined
+                    "31-33", matching QCEW's convention, so the two layers agree.
+                  - *Occupation* — O_GROUP=='detailed'. **51.9% of rows were
+                    minor/broad/major group rows**, so the "top occupations"
+                    tables were ranking aggregates against their own children:
+                    Registered Nurses appeared twice, as broad 29-1140 and
+                    detailed 29-1141, with identical employment. The old regex
+                    (^\d{2}-\d{4}$ plus the 24 major codes in _GROUP_CODES)
+                    removes only MAJOR groups. That filter is harmless in the
+                    state file — KS 2024 gives 687 rows either way, because OEWS
+                    state output publishes no minor/broad rows — and badly wrong
+                    in the industry file. Same buggy filter, opposite
+                    consequences, purely from file contents.
+                  - *Ownership* — needs no filter, but is now ASSERTED. OWN_CODE
+                    values are overlapping aggregates rather than a partition
+                    (57 Private+Postal contains 5 Private; 123 Fed+State+Local
+                    contains 235 State+Local), so summing them would be a third
+                    double-count. It does not arise because BLS publishes
+                    exactly one aggregate per sector (62->58, 71/72->57, the
+                    rest->5), verified on 2023. _parse_industry_oes now raises
+                    if any (naics, occ_code) key repeats, so if the all-areas
+                    fallback ever differs a human decides rather than the sum
+                    silently inflating. **The guard held on the 2024 and 2025
+                    all-areas runs**, which is what proves the two tiers are
+                    equivalent.
+
+                Measured effect on 2023: electricians (47-2111) in Skilled
+                Trades went from 2,245,100 to 569,740; inflation ranged 3.0-4.4x
+                across sectors. Corrected Healthcare top 5 is now Home Health
+                and Personal Care Aides 3,575,980 / RNs 2,675,320 / Nursing
+                Assistants 1,231,380 / Medical Assistants 715,860 / Medical
+                Secretaries 675,060 — real occupations at levels that track
+                BLS's published national figures. Before, the top entry was the
+                aggregate group "Healthcare Diagnosing or Treating
+                Practitioners" at 20,631,030. Coverage cost is negligible: 0-7
+                occupations dropped per sector out of ~1,000, being ones that
+                exist in a sub-industry but are suppressed at sector level.
+
+                Row counts are smooth across BOTH source switches — 3,704 /
+                3,784 / 3,793 (in4 natsector) / 3,817 (all-areas) / 3,802
+                (manual) — which is the continuity check that the tiers are
+                interchangeable.
+
+                **Retired:** _read_oes_industry_excel_from_zip (the
+                concatenate-everything reader, now dead) and the ~900 MB of in4
+                downloads that a full sector refresh used to need; in4 is still
+                the preferred tier for 2021-2023 because it is smaller (~31 MB
+                vs ~79 MB), but one 80 MB all-areas file now serves both layers
+                for 2024-2025 and the opportunistic cross-slice cache means it
+                is read once, not twice.
+
+                **A WEIGHTED-vs-UNWEIGHTED TRAP worth knowing.** The KS "median
+                of the 687 occupation medians" jumped +9.7% from 2024 to 2025,
+                which looks alarming and is not the published statistic. The
+                official all-occupations median (the 00-0000 row this parser
+                filters out) moved 46,850 -> 48,010, **+2.5%**, with employment
+                1,431,180 -> 1,437,520 (+0.4%). The unweighted median is a
+                composition artifact. Do not quote it as wage growth.
+
+                STILL OPEN, deliberately: extending validate_outputs.py's
+                recency assertion beyond JOLTS. Nothing in the validator would
+                have caught either OES defect — the layer sat 2 vintages behind
+                with a 4x double-count and validation passed every run. That
+                remains the cheapest available guard against instance seven.

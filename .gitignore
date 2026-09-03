@@ -14,6 +14,9 @@ data/laus_cache/
 data/ipeds_cache/
 data/lodes_cache/
 data/oes_cache/
+# Hand-placed OEWS all-data workbook (~80 MB). Manual source; lives
+# outside oes_cache because refresh_dashboard rmtree's that one.
+data/oes_manual/
 data/cbp_cache/
 data/jolts_cache/
 data/kdol_cache/

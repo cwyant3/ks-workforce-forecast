@@ -82,7 +82,7 @@ moves year to year, the window carries an extra fire or two to absorb the slip.
 | 5 | IPEDS completions | Annual (provisional) | Provisional ≈9 months after the fall collection closes (collection closes mid-October). **Collection year 2024 adopted 2026-09-02** (`C2024_A.zip` + `HD2024.zip` both live; 2025 still 404). | `ks-refresh-ipeds` | `0 7 15 8,9,10 *` | Aug/Sep/Oct 15 |
 | 6 | CBP | Annual (~18 mo lag) | 2023 CBP released **2025-06-26** (adopted 2026-08-27). 2024 CBP **not out as of 2026-08-27** — confirmed twice that day: the census.gov CBP updates page advertises 2023 as newest, and `api.census.gov/data.json` lists vintages 1986…2023 with no 2024 endpoint. | `ks-refresh-cbp` | `0 7 27 6,7,8 *` | Jun/Jul/Aug 27 |
 | 7 | LODES | Annual | LODES 8.3 (2022 data) released **2024-11-19**. Tech doc rev 8.4 dated 2025-12-03 — and **2023 data is in fact published**, confirmed by direct request 2026-09-02. **2022 + 2023 adopted 2026-09-02**; 2024 returns 404. | `ks-refresh-lodes` | `0 7 20 11,12 *` | Nov 20, Dec 20 |
-| 8 | OES/OEWS | Annual | May 2025 estimates released **2026-05-15** (delayed by the 2025-10-01→11-12 shutdown). Normal cadence is early April. **⚠ BLOCKED — still on 2023.** May 2024 and May 2025 are published but unreachable at this module's URL (`oesm{yy}st.zip` → 403 for 2024+ while 2023 and older → 200). Needs a code change, not a refresh: see the OES row in §4. | `ks-refresh-oes` | `0 7 4,16 4,5,6 *` | 4th + 16th of Apr/May/Jun |
+| 8 | OES/OEWS | Annual — **part-manual** | May 2025 estimates released **2026-05-15** (delayed by the 2025-10-01→11-12 shutdown). Normal cadence is early April. **Fully unblocked 2026-09-03 — both layers adopted through 2025** (state 2015–2025, sector 2021–2025). Every `oesm25*` pattern 403s and `oesm24{st,in4,nat}` too, so each layer falls through its own three-tier chain ending at `data/oes_manual/all_data_M_{year}.xlsx`. The same change fixed a 3–4x aggregation double-count in the sector layer; see §4. | `ks-refresh-oes` | `0 7 4,16 4,5,6 *` | 4th + 16th of Apr/May/Jun |
 | 9 | SSA OASDI-SC | Annual — **manual** | 2024 edition released **August 2025**; 2025 edition in hand **2026-09-01** (release date itself unconfirmed). Each edition reports data as of December of its reference year, so the 2025 edition is data year 2024. **Adopted 2026-09-01.** | `ks-refresh-ssa` | `0 8 15 8,9 *` | Aug 15, Sep 15 |
 | 10 | KDOL labor force | Monthly — **manual** | Jul 2026 KS labor report → **2026-08-21** (3rd Friday, same day as the BLS state release). Annual benchmark revision released 2026-05-22. | `ks-refresh-kdol-labforce` | `0 8 22 * *` | 22nd monthly |
 
@@ -230,13 +230,29 @@ Two consequences worth knowing:
   silent per-file 403 exactly there, and a blanket skip would quietly shrink the
   history the sector trend regression fits on instead of failing.
 
+- **OES (#8)** was the sixth instance, found and fixed 2026-09-03 — and the only
+  one where the year list was *honestly* short rather than silently frozen.
+  `OES_YEARS` deliberately stopped at 2023 with a BLOCKER comment, because the
+  URL the module used had died and a bumped list would have re-downloaded the
+  whole series every run and still landed on 2023. So the config never claimed a
+  vintage the data lacked. Resolved by making acquisition fall through tiers
+  instead of trusting one URL.
+
+  **The generalisable lesson is about the manual tier.** OES is the first source
+  here where *some* years come from an API and one year cannot. The manual
+  workbook therefore had to live outside `data/oes_cache/`, because
+  `--sources oes` `rmtree`s that directory — storing it there would have made the
+  first refresh after the fix delete the only copy of 2025. Any future partial
+  fallback needs the same treatment: **a hand-placed file must never sit in a
+  directory the refresh driver clears.**
+
 - **KSDE (#11)** is likewise conservative: `ksde_cache` is preserved by the
   monthly refresh on purpose.
 
 ### Two checks that make this class of defect loud (added 2026-09-02)
 
-Five instances of the same defect in three weeks — ACS, CBP, BLS projections,
-JOLTS, QCEW — is a pattern, not a run of bad luck. Both halves are invisible from the
+Six instances of the same defect in three weeks — ACS, CBP, BLS projections,
+JOLTS, QCEW, OES — is a pattern, not a run of bad luck. Both halves are invisible from the
 outside: the fetch succeeds, the pipeline succeeds, validation passes, and the
 dashboard serves years-old numbers under a current timestamp. Two checks now
 exist so the fifth instance is found by running a command rather than by
@@ -306,6 +322,19 @@ download URL and stop.
 | SSA disability | `data/ssa_cache/oasdi_sc{YY}.xlsx` (e.g. `oasdi_sc25.xlsx`) | SSA Policy Statistics (OASDI-SC) |
 | BLS national projections | `data/bls_proj_cache/bls_proj_national_{base}_{proj}.xlsx` (e.g. `bls_proj_national_2025_2035.xlsx`) | BLS Employment Projections |
 | KDOL KS projections | `data/kdol_proj/*.xlsx` (published filename is fine) | KDOL LMIS employment projections |
+| OES/OEWS (2025 only) | `data/oes_manual/all_data_M_{year}.xlsx` (e.g. `all_data_M_2025.xlsx`) | `bls.gov/oes/tables.htm` → "All data" workbook |
+
+**OES is a PARTIAL fallback, unlike the four above.** Those sources have no
+public API at all; OES fetches 2015–2024 live and needs a hand-placed file only
+for years BLS will not serve (currently 2025 alone). Two consequences:
+
+- **The directory matters.** It is `data/oes_manual/`, *not* `data/oes_cache/`.
+  `oes_cache` is in `ANNUAL_API_CACHES`, which `clear_caches()` removes with
+  `shutil.rmtree` — a workbook stored there would be deleted by the first
+  `--sources oes` refresh, silently taking 2025 with it.
+- **It serves both layers.** One workbook supplies the state rows
+  (`AREA_TYPE 2`) and the national industry rows (`AREA_TYPE 1`), and the
+  parsed slices are cached separately, so the 80 MB file is read once.
 
 **Name each file for its vintage, and leave the old one in place.** Every one of
 these is selected by a glob that takes the newest match, so a new edition
@@ -351,7 +380,9 @@ confirming.
 | KSDE / CCD via Urban Institute | When the Urban Institute Education Data API refreshes CCD enrollment each year. | `educationdata.urban.org` |
 | QCEW Q3/Q4 dates | BLS lists Q3 and Q4 2026 releases as "to be determined in 2027". The two-fire cron window is a hedge against that. **Note the quarterly date is not what gates this layer** — see the QCEW entry in §2's code-change list. The Q4 date is the one worth knowing, because the annual averages ride along with it. | `bls.gov/cew/release-calendar.htm` |
 | QCEW 2025 suppression jump | Whether the 5–9 point rise in suppressed county-sector records for 2025 (KS 39.3%→44.8%, CO 23.6%→31.2%, MO 27.8%→36.3%, NE 37.3%→41.5%, OK 25.8%→34.9%, observed 2026-09-03) is normal newest-vintage conservatism that relaxes on revision, or a standing BLS disclosure-methodology change. Statewide totals are fully disclosed and plausible, and the model fills every county, so this is a data-quality question rather than a defect. Re-check the same figures after the next annual revision. | `bls.gov/cew/questions-and-answers.htm` (disclosure methodology); re-probe `s{fips}_2025.parquet` suppression share after the next revision |
-| **OES/OEWS (#8) — BLOCKED, needs a code change** | **The one unresolved item from the 2026-09-02 sweep.** May 2024 and May 2025 are both published; neither is reachable at the URL `fetch_oes.py` uses. Probed that day: `oesm23st.zip` → 200 (7,445,440 B, valid ZIP), `oesm24st.zip` → **403**, `oesm25st.zip` → **403**, but `oesm24all.zip` → **200 (79,846,301 B, valid ZIP)**. Older vintages in the same directory (2019, 2021, 2022, 2023) all return 200, so it is per-file, not a bot block or an age gate — and a *browser* UA gets 403 for every year including 2023, so the pipeline's own UA is the working one (do not "fix" this by spoofing a browser). **Adopting 2024 needs two edits, not a year bump:** point the download at `oesm{yy}all.zip`, and add an `AREA_TYPE == 2` filter to `_parse_state_oes` — its current AREA-prefix mask is correct for a state-only file but would admit MSA rows from the all-data file, since CBSA codes like 20020 begin "20" and would be silently counted as Kansas. **May 2025 has no located URL at all** and needs one found. `OES_YEARS` is deliberately left at 2023 meanwhile, so the config does not claim a vintage the data lacks. | `bls.gov/oes/tables.htm`; `bls.gov/oes/special.requests/` |
+| ~~**OES/OEWS (#8) state layer — BLOCKED**~~ | **Resolved 2026-09-03 — state layer adopted through 2025.** The 403 pattern is real and unchanged on re-probe, so it was worked around rather than fixed: acquisition is now three-tiered (state-only ZIP → all-areas ZIP → hand-placed workbook). 2024 comes from `oesm24all.zip`; 2025 comes from `data/oes_manual/all_data_M_2025.xlsx`, because **every** `oesm25*` pattern 403s (`st`, `all`, `in4`, `nat`) and no URL for it was found. The `AREA_TYPE == 2` fix mattered exactly as predicted — measured 2,922 MSA rows in the 2024 file whose CBSA codes begin "20" (Dothan AL, Duluth MN-WI, Dubuque IA…) that the old AREA-prefix mask would have counted as Kansas. One correction to the old note: all three tiers share an identical 32-column schema and AREA for a state row is a bare 2-char FIPS, **not** the 7-char `2000000` the code's comment claimed — so exact FIPS equality replaced the prefix match. Do not "fix" a 403 here by spoofing a browser UA; a browser UA gets 403 for every year including 2023. | `bls.gov/oes/tables.htm`; `bls.gov/oes/special.requests/` |
+| ~~**OES/OEWS (#8) sector layer — capped at 2023 + granularity double-count**~~ | **Resolved 2026-09-03 — sector layer adopted through 2025 and the double-count fixed.** Root cause was not "in4 mixes granularity in one file": `oesm{yy}in4.zip` ships **eight** workbooks pre-split by level (`natsector`, `nat3d`, `nat4d`, `nat5d_6d`, three `*_owner_*`, `file_descriptions`) and the old reader concatenated **all of them**, so the nesting came from stitching together files BLS had deliberately separated. Worse, the largest-xlsx fallback would have picked `nat4d` — 4-digit rows with no sector totals at all. Now the `natsector` member is named explicitly. Three axes had to be collapsed, not one: **industry** (`I_GROUP=='sector'`), **occupation** (`O_GROUP=='detailed'` — 52% of rows were minor/broad/major groups, and the top-N tables were ranking aggregates against their own children, with Registered Nurses appearing twice as broad 29-1140 and detailed 29-1141), and **ownership** (`OWN_CODE` values are overlapping aggregates — 57 ⊃ 5, 123 ⊃ 235 — so they must never be summed). Ownership needed no filter, because BLS publishes exactly one aggregate per sector (62→58, 71/72→57, rest→5), but that is now asserted rather than assumed. | resolved; see the `_parse_industry_oes` comments |
+| OES May 2026 vintage | Whether May 2026 estimates restore a working `oesm26st.zip`, or whether the 403 pattern persists and 2026 also needs a hand-placed workbook. The three-tier fetch will pick up a restored URL automatically — no code change needed if BLS starts serving it again. | `bls.gov/oes/special.requests/` (probe `oesm26st.zip` / `oesm26all.zip`) |
 | ~~LAUS (#3) vintage~~ | **Resolved 2026-09-02 — adopted through 2025.** Verified by querying `LAUCN201730000000003` (Sedgwick County) over 2022–2026: annual averages (M13) returned for 2022–2025; 2026 had 7 monthly observations and no annual average yet, as expected. | `bls.gov/lau/` |
 | ~~LODES (#7) post-8.3 release~~ | **Resolved 2026-09-02 — adopted through 2023, and 2023 turned out to exist.** Requesting `LODES8/ks/od/ks_od_main_JT00_{year}.csv.gz` returned 200 for 2021 (6.23 MB), 2022 (6.42 MB) **and 2023 (6.57 MB)**; 2024 returned 404. This calendar had recorded 2022 (LODES 8.3) as newest, so **two** vintages were unadopted, not one — tech-doc rev 8.4 dated 2025-12-03 was the hint, and it was right. Supersedes the old "post-8.3 release" question. | `lehd.ces.census.gov/data/` |
 | ~~IPEDS (#5) vintage~~ | **Resolved 2026-09-02 — adopted through collection year 2024.** `C2024_A.zip` (4.68 MB) and `HD2024.zip` (1.09 MB) both returned 200; `C2025_A.zip` and `HD2025.zip` both 404. Both files are required — HD supplies the institution-to-county map. Does not answer the provisional-release-*date* question below, only which vintage is downloadable now. | `nces.ed.gov/ipeds/` |

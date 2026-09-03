@@ -774,3 +774,111 @@ Notes:          **SECTOR BASELINE YEAR ADVANCED 2024 -> 2025 IN ALL FIVE STATES.
                 NOT COMMITTED, per routine rules. The diff a human is reviewing
                 spans two sessions: this QCEW adoption plus the uncommitted
                 2026-09-02 work. Worth committing them separately.
+
+## [2026-09-03] LAUS + LODES + IPEDS + KSDE | refreshed (BACKFILL for 2026-09-02)
+Vintage before: LAUS  annual averages through 2023 (LAUS_YEARS  = range(2015, 2024))
+                LODES through 2021                (LODES_YEARS = range(2015, 2022))
+                IPEDS collection year 2023        (IPEDS_YEARS = range(2015, 2024))
+                KSDE  collection year 2023        (KSDE_YEARS  = range(2010, 2024))
+Vintage after:  LAUS  2015-2025  (laus_s20.parquet,  1,199 rows)
+                LODES 2015-2023  (lodes_s20.parquet, 64,486 rows)
+                IPEDS 2015-2024  (ipeds_s20.parquet, 16,502 rows)
+                KSDE  2010-2024  (ksde.parquet,      6,300 rows)
+                OES   unchanged on 2023 — still BLOCKED
+Checked:        **Read this entry's provenance before trusting its detail.** The
+                work was done on 2026-09-02; this entry was reconstructed on
+                2026-09-03 from the diff of commit 9d29cdc, not written by the
+                session that did it. The per-source publication evidence is
+                therefore second-hand — it is recorded in the resolved rows of
+                the calendar's "Items Requiring Verification" table, which that
+                session did write and which carries the actual probe results
+                (LAUS via LAUCN201730000000003 over 2022-2026; LODES via
+                ks_od_main_JT00_{year}.csv.gz returning 200 for 2021/2022/2023
+                and 404 for 2024; IPEDS via C2024_A.zip + HD2024.zip at 200 and
+                C2025_A/HD2025 at 404; KSDE via ccd/enrollment counts for
+                2022/2023/2024 with 2025 at HTTP 500). What IS first-hand here
+                is the code and data diff, and every figure above was read back
+                out of the committed outputs on 2026-09-03.
+Outputs changed: 42 data files, committed as part of 9d29cdc:
+                  laus_s{08,20,29,31,40}, lodes_s{...}, ipeds_s{...},
+                  ipeds_by_sector_s{...}, participation_s{...},
+                  commute_metrics_s{...}, commute_snapshot_s{...} (5 each),
+                  ksde, jolts, jolts_vacancy_rates, county_summary_s20.csv,
+                  projections_s20, projections_effective_s20, state_projection_s20
+Validation:     pass — but re-established rather than observed. The original run's
+                validation result was not recorded. `scripts/validate_outputs.py`
+                passed for all five states during the 2026-09-03 QCEW refresh,
+                which regenerated every one of these outputs from the same caches,
+                and `scripts/audit_cache_freshness.py` reports all four sources
+                VALIDATED with requested years matching output years.
+Notes:          **WHY THIS ENTRY EXISTS: the log above it says this work was not
+                done.** The preceding entry, "[2026-09-02] JOLTS follow-up |
+                tooling", closes with "DELIBERATELY NOT DONE: the five flagged
+                sources were not fixed", and gives sound reasons — each needed its
+                vintage confirmed against its agency first, and each is a separate
+                forecast diff worth reviewing on its own. That was accurate when
+                written and was then superseded **later the same session**: four of
+                the five were confirmed, fixed, and adopted, and no entry was added
+                saying so. The result is that the log's own record contradicted the
+                working tree for a day, and a reader would have concluded these
+                four layers were still years stale. Found 2026-09-03 while
+                splitting the uncommitted tree into per-session commits.
+
+                The lesson is narrow and worth stating: **an entry that says
+                "deliberately not done" ages badly, because the natural next step
+                is to go do it.** When a session reverses one of its own decisions,
+                the reversal needs its own entry — editing the earlier one would
+                violate append-only, and leaving it alone makes the log actively
+                misleading rather than merely incomplete.
+
+                WHAT THE DIFF SHOWS WAS DONE (9d29cdc, 927 insertions across 9
+                Python files):
+
+                1. Four year lists advanced. LODES moved **two** vintages
+                   (2021 -> 2023), not one, which matches the calendar's finding
+                   that the 8.4 tech-doc hint was right and two vintages were
+                   unadopted. LAUS also moved two (2023 -> 2025).
+
+                2. New `cache_freshness.py` (129 lines) factoring out the guard CBP
+                   grew 2026-08-27 and JOLTS 2026-09-02, exporting
+                   `load_fresh_cache` / `save_if_complete`. All five fetchers had
+                   the pattern
+                       if cache_file.exists(): return pd.read_parquet(cache_file)
+                   replaced with a call that compares the cache's held years
+                   against the requested years and re-fetches when short. That
+                   pattern is the half that made JOLTS's 31-month staleness silent,
+                   and it was present in fetch_{laus,lodes,ipeds,ksde,oes} too.
+
+                3. `save_if_complete` also refuses to cache a **partial** pull, so
+                   a run that half-fails cannot poison the cache with a short
+                   parquet that later reads as complete. Called out in comments in
+                   fetch_laus.py and fetch_oes.py.
+
+                4. KSDE got a deliberate exemption: its cache may hold a file an
+                   operator placed by hand, so it passes `None if used_manual else
+                   years` and skips the completeness check in that case rather than
+                   judging a manual file against KSDE_YEARS.
+
+                5. **OES was fixed structurally but NOT advanced, on purpose.** It
+                   received the freshness guard and a BLOCKER note above
+                   `OES_YEARS`, but the list stays at 2023 so the config does not
+                   claim a vintage the data lacks. May 2024/2025 are published and
+                   403 at this module's `oesm{yy}st.zip`; adopting 2024 needs the
+                   URL moved to `oesm{yy}all.zip` plus an `AREA_TYPE == 2` filter
+                   in `_parse_state_oes`, because the existing AREA-prefix mask
+                   would otherwise admit CBSA codes like 20020 as Kansas. This
+                   remains the one unresolved source.
+
+                6. New `scripts/audit_cache_freshness.py` (433 lines) and +165 lines
+                   to `scripts/validate_outputs.py`. The validator additions are
+                   JOLTS-only (`JOLTS_MAX_STALE_DAYS = 120`, `_failures_for_jolts`,
+                   sector coverage, rate bounds), plus the hook that runs national
+                   layers once regardless of `--state`. Extending that recency
+                   assertion to LAUS/LODES/IPEDS/KSDE is still the cheapest
+                   available next check and is still not done.
+
+                COMMITTED AND PUSHED 2026-09-03 as 9d29cdc (this work) and f3bb2d2
+                (the QCEW adoption), d65d6c1..f3bb2d2 -> origin/master. This
+                departs from the standing "routines never commit or push" rule at
+                explicit human instruction, not routine behaviour; the forecast
+                diff was reviewed first. Streamlit Cloud will rebuild from f3bb2d2.

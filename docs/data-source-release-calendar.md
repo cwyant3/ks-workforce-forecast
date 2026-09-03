@@ -186,18 +186,53 @@ Two consequences worth knowing:
      requested years and re-fetches when short — the same guard CBP received
      2026-08-27.
 
-  **The guard earned itself on the very first run.** The cache clear *failed*
-  (`[WARN] jolts_cache — could not clear: [WinError 5] Access is denied`, a
-  OneDrive lock), so `--sources jolts` fell back to serving cache. The refresh
-  advanced only because the new freshness check invalidated the stale parquet.
-  Without it that run would have reported success and changed nothing — which
-  is precisely what the previous 31 runs did.
+  **The guard earned itself on the very first run** — or so it appeared. The
+  cache clear reported failure (`[WARN] jolts_cache — could not clear:
+  [WinError 5] Access is denied`, a OneDrive lock). See the correction below:
+  that message was misreporting, and the clear had in fact emptied the cache.
+  The freshness check was still the right fix and is still what makes the layer
+  honest; what changed is that the clear was not the thing that failed.
 
-  **The operational lesson generalises past JOLTS:** `--sources X` silently
-  degrades to "serve from cache" for **any** source whose cache directory is
-  locked by OneDrive and whose fetcher lacks a freshness guard. A cache clear
-  is a best-effort operation on this machine, so it cannot be the only thing
-  standing between a refresh and stale output.
+  **The operational lesson generalises past JOLTS:** a cache clear cannot be
+  the only thing standing between a refresh and stale output. A fetcher without
+  a freshness guard will serve whatever survives, and nothing upstream will say
+  so. That remains true regardless of the reporting fix.
+
+  > **CORRECTION (2026-09-03) — that warning was crying wolf.** `clear_caches()`
+  > called `shutil.rmtree(cache)`, which on this machine deletes the directory's
+  > CONTENTS and then raises WinError 5 removing the now-empty directory,
+  > because OneDrive holds a handle on the directory itself. The old code caught
+  > that `OSError` and printed "could not clear" — which reads as "nothing
+  > happened", when the cache had actually been emptied and every refresh that
+  > followed was completely genuine.
+  >
+  > Measured on the 2026-09-03 full refresh: **all eight** caches printed the
+  > warning, and QCEW still re-downloaded all eleven annual archives. The log's
+  > "Downloading 2015 QCEW ZIP (~140 MB)" / "Cached {year}" lines only appear on
+  > a cache miss, so the files really were gone.
+  >
+  > Fixed the same day. `clear_caches()` now empties the directory explicitly
+  > and treats **emptiness, not the directory's absence, as success** — which is
+  > the property the fetch layer actually depends on, since a surviving *empty*
+  > directory forces a cache miss just as a missing one does. The directory is
+  > still removed opportunistically, and a lock on that step is now silent
+  > because it is genuinely harmless.
+  >
+  > **Why this mattered even though it was crying wolf:** the old message was
+  > one filesystem call away from being wrong in the dangerous direction. Had
+  > the lock landed on the file deletions instead of the directory removal, the
+  > identical warning would have appeared over a cache that was still fully
+  > populated, and every fetcher would have served it. Those two cases were
+  > indistinguishable. Now a survivor is reported separately and loudly, naming
+  > the files and the OS error:
+  >
+  > ```
+  > [WARN] pc_cache — 1 entry SURVIVED the clear (LOCKED.parquet). The fetch
+  >        layer will serve them, so this refresh may publish a stale vintage…
+  > ```
+  >
+  > Both paths were verified against the real lock, the survivor case by holding
+  > a file handle open during a clear.
 
   A third change, methodological: incomplete years are now excluded from the
   annual averages. JOLTS 2026 had 7 of 12 months and `compute_annual_averages`

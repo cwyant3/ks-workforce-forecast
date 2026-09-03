@@ -281,11 +281,56 @@ def _reads_as_absent(path: Path, probes: int = 3, delay: float = 0.4) -> bool:
     return True
 
 
+def _empty_cache_dir(cache: Path) -> tuple[int, list[str]]:
+    """Delete everything inside `cache`. Returns (entries removed, errors).
+
+    Deliberately empties the directory rather than removing it, because
+    EMPTINESS IS WHAT THE FETCH LAYER CARES ABOUT. A surviving empty directory
+    forces a cache miss exactly as a missing one does; a surviving *file* does
+    not. Reporting on the directory instead of its contents is what made the
+    old implementation misreport (see clear_caches).
+    """
+    removed = 0
+    errors: list[str] = []
+    for child in sorted(cache.iterdir()):
+        try:
+            if child.is_dir() and not child.is_symlink():
+                shutil.rmtree(child)
+            else:
+                child.unlink()
+            removed += 1
+        except FileNotFoundError:
+            continue                      # already gone; that is the goal
+        except OSError as exc:
+            errors.append(f"{child.name} ({exc.strerror or exc})")
+    return removed, errors
+
+
 def clear_caches(cache_names: list[str], dry_run: bool) -> list[str]:
     """Clear the named caches, reporting what actually happened.
 
     Every message below follows the action rather than a separate pre-check, so
     "[skip]" can never be printed for a cache that was in fact removed.
+
+    SUCCESS MEANS "THE CACHE IS EMPTY", NOT "THE DIRECTORY IS GONE." That
+    distinction is the whole point of this function's shape, and getting it
+    wrong misreported every clear on this machine.
+
+    data/ lives under OneDrive, which holds a handle on the directory itself.
+    `shutil.rmtree(cache)` therefore deletes the CONTENTS and then raises
+    WinError 5 removing the now-empty directory. The old implementation caught
+    that OSError and printed "could not clear", which reads as "nothing
+    happened" — when in fact the cache had been emptied and the refresh that
+    followed was completely genuine. Measured on the 2026-09-03 full refresh:
+    all EIGHT caches reported that warning, and QCEW still re-downloaded all
+    eleven annual archives, because the files really were gone.
+
+    So the warning was wrong in the direction that matters least (crying wolf)
+    — but it was one filesystem call away from being wrong in the direction
+    that matters most. Had the lock landed on the file deletions instead, the
+    same message would have appeared over a cache that was still fully
+    populated, and every fetcher would have served it. Emptying explicitly and
+    reporting per-entry failures makes the two cases distinguishable.
     """
     cleared = []
     for name in cache_names:
@@ -301,22 +346,42 @@ def clear_caches(cache_names: list[str], dry_run: bool) -> list[str]:
             continue
 
         try:
-            shutil.rmtree(cache)
+            removed, errors = _empty_cache_dir(cache)
         except FileNotFoundError:
             print(f"  [skip] {name} (vanished before it could be cleared)")
             continue
         except OSError as exc:
-            # A locked or partially-removed cache is worse than an untouched one:
-            # the fetch layer may serve half a vintage. Say so loudly.
-            print(f"  [WARN] {name} — could not clear: {exc}")
+            print(f"  [WARN] {name} — could not read the cache to clear it: {exc}")
             continue
 
-        if cache.exists():
-            print(f"  [WARN] {name} — rmtree returned but the path still exists; "
-                  f"treat this cache as suspect")
+        # Survivors are the real failure: the fetch layer will serve them.
+        try:
+            leftovers = sorted(p.name for p in cache.iterdir())
+        except OSError:
+            leftovers = []
+
+        if leftovers:
+            detail = ", ".join(leftovers[:5]) + ("…" if len(leftovers) > 5 else "")
+            print(f"  [WARN] {name} — {len(leftovers)} entr"
+                  f"{'y' if len(leftovers) == 1 else 'ies'} SURVIVED the clear "
+                  f"({detail}). The fetch layer will serve them, so this "
+                  f"refresh may publish a stale vintage for this source. Only "
+                  f"a per-fetcher freshness guard can catch that — see "
+                  f"cache_freshness.py.")
+            if errors:
+                print(f"           delete errors: {'; '.join(errors[:5])}")
             continue
 
-        print(f"  [clear] {name}")
+        # Empty. Removing the directory is optional — fetchers mkdir(exist_ok)
+        # — so a lock on the directory itself is genuinely harmless and must
+        # NOT be reported as a failure. This is the case that used to warn.
+        try:
+            cache.rmdir()
+        except OSError:
+            pass
+
+        print(f"  [clear] {name} ({removed} entr"
+              f"{'y' if removed == 1 else 'ies'} removed)")
         cleared.append(name)
 
     return cleared

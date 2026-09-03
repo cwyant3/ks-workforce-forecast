@@ -1230,3 +1230,87 @@ Notes:          **THIS RUN IS THE STRONGEST EVIDENCE THE TREE IS HONEST that
                 line 314 emits the KDOL UI notice. That path is the abandoned UI
                 claims source (fetch_kdol_ui.py returns empty by design; the
                 labour-force export replaced it), and it warns on every run.
+
+## [2026-09-03] all sources | tooling — cache clear reports emptiness, not directory removal
+Vintage before: n/a — no data changed
+Vintage after:  unchanged
+Checked:        n/a. Follows directly from the full-refresh entry above, which
+                recorded all eight caches reporting "could not clear" while the
+                refresh was demonstrably genuine.
+Outputs changed: none. refresh_dashboard.py + the calendar.
+Validation:     pass 5/5 — verified end-to-end by running
+                `--sources pc --states bloc` through the real driver after the
+                change. pc_cache emptied, re-fetched live (5 files restored),
+                all five states regenerated and validated, and the data outputs
+                came back byte-identical again.
+Notes:          **THE BUG WAS IN THE REPORTING, NOT THE CLEARING.**
+                `clear_caches()` called `shutil.rmtree(cache)`. On this machine
+                that deletes the directory's CONTENTS and then raises WinError 5
+                removing the now-empty directory, because OneDrive holds a
+                handle on the directory itself. The old code caught that OSError
+                and printed "could not clear", which reads as "nothing
+                happened" — when in fact the cache had been emptied and the
+                refresh that followed was completely genuine.
+
+                Evidence it was misreporting rather than failing: on the
+                2026-09-03 full refresh all EIGHT caches printed the warning and
+                QCEW still re-downloaded all eleven annual archives. The
+                "Downloading 2015 QCEW ZIP (~140 MB)" / "Cached {year}" lines
+                only appear on a cache miss.
+
+                **THE FIX: success now means the cache is EMPTY, not that the
+                directory is gone.** That is the property the fetch layer
+                actually depends on — a surviving *empty* directory forces a
+                cache miss exactly as a missing one does, while a surviving
+                *file* does not. New `_empty_cache_dir()` deletes entries
+                individually and collects per-entry errors; `clear_caches()`
+                then checks for survivors, removes the directory
+                opportunistically, and stays silent when only that last step is
+                blocked.
+
+                **WHY IT WAS WORTH FIXING EVEN THOUGH IT WAS CRYING WOLF.** The
+                old message was one filesystem call away from being wrong in the
+                dangerous direction. Had the OneDrive lock landed on the file
+                deletions instead of the directory removal, the IDENTICAL
+                warning would have appeared over a cache that was still fully
+                populated, and every fetcher would have served it. The two cases
+                were indistinguishable from the output. They no longer are:
+
+                  benign (what actually happens here):
+                    [clear] pc_cache (5 entries removed)
+                  dangerous (previously looked the same):
+                    [WARN] pc_cache — 1 entry SURVIVED the clear
+                           (LOCKED.parquet). The fetch layer will serve them, so
+                           this refresh may publish a stale vintage for this
+                           source...
+                           delete errors: LOCKED.parquet (The process cannot
+                           access the file because it is being used by another
+                           process)
+
+                Both paths were tested against the real lock — the survivor case
+                by holding a file handle open during a clear, which also
+                confirmed that the three deletable files in the same directory
+                were still removed. Partial failure is now visible WITH the
+                filenames, where before it was invisible.
+
+                A secondary benefit: the eight spurious warnings are gone from
+                every future refresh log, so a warning in that section now means
+                something. Eight lines of routine noise is exactly how a real
+                one gets skimmed past.
+
+                **What has NOT changed, and should not be forgotten:** a cache
+                clear still cannot be the only thing standing between a refresh
+                and stale output. A fetcher without a freshness guard will serve
+                whatever survives, and clear_caches can only report the
+                survivors — not prevent them. cache_freshness.py and
+                vintage-keyed cache filenames remain the actual protection. The
+                correction here is that the JOLTS entry of 2026-09-02 credited
+                the guard with rescuing a run from a *failed* clear; the clear
+                had not failed. The guard was still the right fix for the right
+                reason.
+
+                Also corrected the calendar's JOLTS section, which stated the
+                clear failed and that `--sources X` "silently degrades to serve
+                from cache" whenever the directory is locked. The degradation
+                risk is real but was mis-attributed to a condition that does not
+                actually produce it here.

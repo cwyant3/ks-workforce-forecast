@@ -6,9 +6,39 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
+  patch-dashboard:
+    if: github.event_name == 'pull_request' && github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out QA branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+
+      - name: Apply dashboard QA fixes
+        run: python scripts/apply_dashboard_qa_fixes.py
+
+      - name: Compile patched dashboard
+        run: python -m compileall -q dashboard/app.py dashboard_logic.py
+
+      - name: Commit patch when needed
+        shell: bash
+        run: |
+          if git diff --quiet -- dashboard/app.py; then
+            echo "Dashboard is already patched."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add dashboard/app.py
+          git commit -m "fix: correct dashboard filters and labor-force labeling"
+          git push origin "HEAD:${{ github.event.pull_request.head.ref }}"
+
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 20

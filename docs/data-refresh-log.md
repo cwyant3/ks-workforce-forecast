@@ -1314,3 +1314,141 @@ Notes:          **THE BUG WAS IN THE REPORTING, NOT THE CLEARING.**
                 from cache" whenever the directory is locked. The degradation
                 risk is real but was mis-attributed to a condition that does not
                 actually produce it here.
+
+## [2026-09-04] LAUS (county) | no-op
+Vintage before: annual averages (M13) 2015-2025; newest year 2025
+Vintage after:  unchanged
+Checked:        BLS API v2 probe of LAUCN201730000000003 (Sedgwick County
+                unemployment rate) with `annualaverage: true`, 2024-2026:
+                M13 present for 2024 (3.9) and 2025 (4.1), ABSENT for 2026,
+                which returned 7 monthly observations (M01-M07) and no annual
+                average. Corroborated by WebSearch: the Metropolitan Area
+                Employment and Unemployment release of 2026-07-29 (USDL-26-1269)
+                carries June 2026, and the current release carries July 2026 --
+                so the MONTHLY county/metro series has advanced as the calendar
+                predicted, but this layer consumes M13 only.
+Outputs changed: none (`git status --short` empty; cache NOT cleared, per the
+                no-op rule)
+Validation:     not run -- no refresh performed. Spot-check of the held values
+                against the live API found zero drift: Sedgwick 2024 = 3.9 /
+                2025 = 4.1 in `laus_s20.parquet` match the API exactly, so the
+                2025 annual averages have not been revised since adoption on
+                2026-09-02.
+Notes:          Nothing was due, and nothing can be until roughly Feb-Mar 2027.
+                The 2026 annual average cannot exist until all twelve 2026
+                months publish, so the next nine fires of this routine are
+                expected no-ops. This is the lag the calendar already documents
+                ("the layer uses annual averages (period M13), so the usable
+                vintage lags a full year behind the monthly release") -- worth
+                restating because the monthly release DID advance this week,
+                which is exactly the signal that could be mistaken for a due
+                refresh.
+
+                **Unrelated pre-existing defect found while spot-checking, NOT
+                caused by this run and NOT fixed here.** `laus_s20.parquet`
+                holds 109 rows per year against 105 distinct Kansas counties.
+                Four counties are split across two rows in EVERY year 2015-2025:
+                039, 097, 175 and 177. One row carries `labor_force` with null
+                `unemployed`/`unemployment_rate`; the sibling row carries
+                `unemployed`/`unemployment_rate` with null `labor_force`. For
+                2025: 039 (1,434 LF | 46 unemp, 3.2%), 097 (1,211 | 40, 3.3%),
+                175 (11,095 | 354, 3.2%), 177 (93,752 | 3,603, 3.8%). County 177
+                is Shawnee -- Topeka -- so this is not a rounding-error county.
+                The shape (complementary nulls, stable count of exactly 4 across
+                eleven years) points at a pivot or merge key that fails to unify
+                the labor-force and unemployment series for these four, rather
+                than at anything vintage-related. Validation passes today
+                because no assertion covers per-county row uniqueness. Left for
+                a human: this routine's remit is the vintage check, and the
+                fix belongs with whoever owns the LAUS pivot.
+
+## [2026-09-04] LAUS (county) | refreshed
+Vintage before: annual averages 2015-2025 (unchanged by this run)
+Vintage after:  annual averages 2015-2025 -- VINTAGE UNCHANGED. This run fixed
+                the county-year GRAIN, not the vintage. Row counts fell to
+                exactly counties x 11 years in every state: KS 1199->1155,
+                CO 737->704, MO 1320->1265, NE 1067->1023, OK 880->847.
+Checked:        not a publication check -- this run was triggered by the defect
+                recorded in the no-op entry immediately above, at Chris's
+                request to fix it rather than defer it.
+Outputs changed: 5 files, all of them LAUS: data/outputs/laus_s{08,20,29,31,40}
+                .parquet. Content-diffed every changed file against HEAD:
+                5 genuine drift, 0 byte-differing-but-identical, 0 other layers
+                touched. Each delta equals dupes x 11 years exactly (-44, -33,
+                -55, -44, -33).
+Validation:     pass. `scripts/validate_outputs.py` exit 0 across all five
+                states, including the new grain assertion described below.
+Notes:          ROOT CAUSE -- `_parse_series` in fetch_laus.py was called once
+                per BLS request batch and the per-batch row dicts concatenated
+                via `all_rows.extend(...)`. A county contributes FOUR series
+                (labor_force, employed, unemployed, unemployment_rate) while the
+                batch size is 50, which is not a multiple of four, so every
+                batch boundary that is not a multiple of 4 splits one county's
+                measures across two batches -- yielding two half-populated rows.
+
+                This is arithmetic, not inference. Predicted split counts from
+                batch geometry match the observed duplicates in all five states
+                exactly: KS 105 counties/420 series -> 4; CO 64/256 -> 3;
+                MO 115/460 -> 5; NE 93/372 -> 4; OK 77/308 -> 3. Every splitting
+                boundary is congruent to 2 mod 4, which is why the break ALWAYS
+                fell after the second measure and the sibling rows always held
+                labor_force+employed vs unemployed+unemployment_rate.
+
+                CORRECTION TO THE ENTRY ABOVE, which overstated the impact.
+                The forecast was NOT corrupted and no published forecast number
+                moved. `participation_model.py` (~line 137) joins LAUS via
+                `groupby(...).agg("mean")`, and pandas' mean SKIPS nulls, so
+                mean([93752, NaN]) == 93752 -- the split rows collapsed
+                correctly by luck of the aggregation choice. The dashboard also
+                never reads laus_s*.parquet directly. Confirmed empirically:
+                zero non-LAUS outputs changed in this run, county_summary and
+                the participation table included. The real defect was therefore
+                (a) a wrong-grain published artifact that any future consumer
+                summing or joining on county-year would have gotten wrong, and
+                (b) inflated row counts in run_forecast.py's console output.
+                Worth stating plainly because "Shawnee County is broken" was the
+                wrong reading of it.
+
+                FIXES, all three permanent:
+                1. fetch_laus.py -- `_parse_series` now takes and mutates a
+                   shared accumulator across every batch. No year bump or
+                   per-cycle maintenance needed.
+                2. fetch_laus.py -- raises RuntimeError on any duplicate
+                   (county_fips, year) after parse, BEFORE save_if_complete, so
+                   a regression can never be cached or published.
+                3. scripts/validate_outputs.py -- new `_failures_for_laus_grain`
+                   asserts one row per county-year in every laus_s*.parquet.
+                   Verified it FAILS on the pre-fix outputs, naming exactly the
+                   right counties in all five states, and passes after.
+                   Absence-is-not-failure, matching the other layers.
+
+                A new internal-consistency identity is now checkable and holds:
+                labor_force == employed + unemployed on all 1,155 Kansas rows,
+                max absolute residual 0. That identity was IMPOSSIBLE to test
+                before, because the split rows carried complementary nulls --
+                which is the clearest evidence the merge is correct rather than
+                merely deduplicated. Values were preserved, not recomputed:
+                039/097/175/177 for 2025 hold identical LF, employed, unemployed
+                and rate to the pre-fix pair of rows.
+
+                THIS IS A DIFFERENT DEFECT CLASS from the six vintage freezes
+                the calendar catalogues. Those were "current pipeline, stale
+                input". This was "current input, wrong shape" -- and none of the
+                three existing checks could see it: audit_cache_freshness.py
+                asks about vintage, ANNUAL_VINTAGE_CHECKS asks about recency,
+                and both were satisfied. The general lesson is that vintage
+                checks do not imply grain checks, and every layer keyed by an
+                entity-period pair should assert that pair is unique.
+
+                Regression tests added to tests/test_calculations.py: one
+                reproducing the batch straddle, two covering the validator in
+                both directions. NOTE: pytest is NOT installed on this machine,
+                so they were executed via a direct harness (all pass) rather
+                than by installing a package unasked. Running the full file that
+                way surfaced ONE PRE-EXISTING failure unrelated to this work --
+                `test_acs_labor_force_status_uses_civilian_18_64_denominator`;
+                fetch_acs.py is untouched by this change (git diff confirms).
+                Left alone, but it needs somebody's attention and no scheduled
+                routine runs the test suite.
+
+                Uncommitted for review, per the never-commit rule.

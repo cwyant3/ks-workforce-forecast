@@ -287,7 +287,7 @@ Two consequences worth knowing:
   monthly refresh on purpose.
 
 ### Three checks that make this class of defect loud (added 2026-09-02,
-### extended 2026-09-03)
+### extended 2026-09-03; see also the fourth, grain, added 2026-09-04)
 
 Six instances of the same defect in three weeks — ACS, CBP, BLS projections,
 JOLTS, QCEW, OES — is a pattern, not a run of bad luck. Both halves are invisible from the
@@ -393,6 +393,65 @@ nobody refreshed for a year should not validate silently.
 
 Absence is never a failure, matching the JOLTS rule — not every layer is written
 for every state, and some are written only under a flag.
+
+### A fourth check, for a DIFFERENT defect class — grain (added 2026-09-04)
+
+Everything above asks **"is the input stale?"** On 2026-09-04 a defect turned up
+that all three checks were blind to, because the input was perfectly current and
+the *shape* of the output was wrong.
+
+`fetch_laus.py` published **two half-populated rows** for a handful of counties
+in every year 2015–2025, across all five deployed states. `_parse_series` was
+called once per BLS request batch and the per-batch dicts concatenated. A county
+contributes **four** series (labor_force, employed, unemployed,
+unemployment_rate) and the batch size is **50** — not a multiple of four — so
+every batch boundary not divisible by 4 split one county's measures across two
+batches. Predicted splits from that geometry matched the observed duplicates
+exactly in all five states (KS 4, CO 3, MO 5, NE 4, OK 3), and because every
+splitting boundary is ≡2 (mod 4), the break always landed after the second
+measure — so the sibling rows always held `labor_force`+`employed` versus
+`unemployed`+`unemployment_rate`.
+
+**Why nothing caught it for eleven vintages.** The split rows carried
+*complementary nulls* rather than wrong numbers, so no range check, null check
+or vintage check could see them: `audit_cache_freshness.py` asks about the cache
+contract, `ANNUAL_VINTAGE_CHECKS` asks about recency, and **both were satisfied
+the whole time.** Nothing anywhere required one row per county-year.
+
+**It did not corrupt the forecast, and that near-miss is the interesting part.**
+`participation_model.py` joins LAUS with `groupby(...).agg("mean")`, and pandas'
+mean skips nulls — so `mean([93752, NaN])` returned `93752` and the split
+collapsed correctly *by luck of an aggregation choice made for other reasons*.
+Had that been `sum`, or a plain row count, or a merge asserting uniqueness, the
+published forecast would have been wrong for years. Confirmed empirically: the
+fix changed only the five `laus_s*.parquet` files and no other layer.
+
+**The generalisable rule: a vintage check does not imply a grain check.** Any
+layer keyed by an entity-period pair should assert that pair is unique. Three
+guards now enforce it for LAUS, and the pattern is worth copying:
+
+1. `_parse_series` takes a **shared accumulator** across batches — the
+   root-cause fix, permanent, no per-cycle maintenance.
+2. `fetch_laus` **raises** on duplicate `(county_fips, year)` *before*
+   `save_if_complete`, so a regression can never be cached or published.
+3. `validate_outputs.py::_failures_for_laus_grain` asserts one row per
+   county-year in every `laus_s*.parquet`. Verified in both directions — it
+   fails on the pre-fix outputs naming exactly the right counties, and passes
+   after.
+
+A by-product worth keeping: `labor_force == employed + unemployed` now holds on
+all 1,155 Kansas rows with zero residual. That identity was **impossible to
+evaluate** while the rows were split, and it is stronger evidence of a correct
+merge than mere absence of duplicates. Consider asserting it too if this layer
+ever misbehaves again.
+
+> **The test suite is not run by any scheduled routine, and `pytest` is not
+> installed on JAB-EMPLAP-350.** Regression tests for this defect live in
+> `tests/test_calculations.py` but were executed through a direct harness. While
+> running them that way, one **pre-existing unrelated failure** surfaced:
+> `test_acs_labor_force_status_uses_civilian_18_64_denominator`. It is
+> unaddressed. A validator that runs and a test suite that nobody runs are not
+> equivalent safeguards.
 
 ### Manual sources
 

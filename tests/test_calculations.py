@@ -6,9 +6,11 @@ import pandas as pd
 from cohort_model import ANNUAL_SURVIVAL, MODEL_COHORTS, WORKFORCE_GROUPS, CountyCohortModel
 from fetch_acs import _add_acs_metadata, _add_labor_force_status
 from fetch_ksde import apply_ksde_override
+from fetch_laus import MEASURES, _parse_series
 from fetch_qcew import SECTOR_DISPLAY_NAMES
 from participation_model import build_participation_table
 from run_forecast import _build_state_aggregate
+from scripts.validate_outputs import _failures_for_laus_grain
 
 
 def test_acs_metadata_adds_state_and_period_fields():
@@ -291,3 +293,80 @@ def test_state_aggregate_uses_percentile_of_aggregate_simulations():
 def test_broad_sector_display_labels_are_explicit():
     assert "Professional Services" in SECTOR_DISPLAY_NAMES["IT/Computer Services"]
     assert "Repair Services" in SECTOR_DISPLAY_NAMES["Skilled Trades"]
+
+
+def _laus_series(county_fips: str, measure_code: str, value: str) -> dict:
+    """Minimal BLS-shaped annual-average series for one county measure."""
+    return {
+        "seriesID": f"LAUCN20{county_fips}00000000{measure_code}",
+        "data": [{"year": "2025", "period": "M13", "value": value}],
+    }
+
+
+def test_laus_parse_merges_county_whose_measures_straddle_a_batch_boundary():
+    """
+    A county contributes four series and the BLS request batch size is not a
+    multiple of four, so a county's measures routinely land in two different
+    batches. The accumulator must therefore be shared across batches.
+
+    Regression test for the defect found 2026-09-04: _parse_series was called
+    once per batch and the partial dicts concatenated, publishing two
+    half-populated rows per straddling county -- labor_force/employed on one,
+    unemployed/unemployment_rate on the other -- in every year 2015-2025 across
+    all five deployed states.
+    """
+    batch_a = [
+        _laus_series("177", "06", "93752"),   # labor_force
+        _laus_series("177", "05", "90149"),   # employed
+    ]
+    batch_b = [
+        _laus_series("177", "04", "3603"),    # unemployed
+        _laus_series("177", "03", "3.8"),     # unemployment_rate
+    ]
+
+    rows: dict = {}
+    _parse_series(batch_a, "20", rows)
+    _parse_series(batch_b, "20", rows)
+
+    assert len(rows) == 1, "straddling county must collapse to a single row"
+    row = rows[("177", 2025)]
+    assert row["labor_force"] == 93752
+    assert row["employed"] == 90149
+    assert row["unemployed"] == 3603
+    assert row["unemployment_rate"] == 3.8
+    # Every measure present: a half-populated row is the defect's signature.
+    assert not set(MEASURES.values()) - set(row)
+
+
+def test_laus_grain_validator_flags_duplicate_county_years(tmp_path):
+    """The validator must fail on a duplicated (county_fips, year)."""
+    pd.DataFrame(
+        {
+            "state_fips": ["20", "20", "20"],
+            "county_fips": ["177", "177", "173"],
+            "year": [2025, 2025, 2025],
+            "labor_force": [93752, None, 277374],
+            "unemployment_rate": [None, 3.8, 4.1],
+        }
+    ).to_parquet(tmp_path / "laus_s20.parquet")
+
+    failures = _failures_for_laus_grain(tmp_path, state="20")
+
+    assert len(failures) == 1
+    assert "177" in failures[0]
+    # The clean county must not be implicated.
+    assert "173" not in failures[0]
+
+
+def test_laus_grain_validator_passes_on_unique_county_years(tmp_path):
+    pd.DataFrame(
+        {
+            "state_fips": ["20", "20"],
+            "county_fips": ["177", "173"],
+            "year": [2025, 2025],
+            "labor_force": [93752, 277374],
+            "unemployment_rate": [3.8, 4.1],
+        }
+    ).to_parquet(tmp_path / "laus_s20.parquet")
+
+    assert _failures_for_laus_grain(tmp_path, state="20") == []

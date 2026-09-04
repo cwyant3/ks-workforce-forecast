@@ -98,14 +98,28 @@ def _post_bls(
     return data.get("Results", {}).get("series", [])
 
 
-def _parse_series(series_list: list[dict], state_fips: str) -> list[dict]:
+def _parse_series(
+    series_list: list[dict],
+    state_fips: str,
+    rows: dict[tuple, dict] | None = None,
+) -> dict[tuple, dict]:
     """
-    Parse BLS series list into flat row dicts keyed by (county_fips, year).
+    Parse BLS series list into row dicts keyed by (county_fips3, year), merging
+    into `rows` when given.
+
+    The accumulator MUST be shared across request batches. A county contributes
+    four series (one per measure) and the batch size is not a multiple of four,
+    so a county's measures routinely straddle a batch boundary. Accumulating
+    per-batch and concatenating produced two half-populated rows for such a
+    county — one holding labor_force/employed, the other unemployed/
+    unemployment_rate — in every year. See the 2026-09-04 refresh-log entry.
+
     Annual averages have period 'M13'.
     """
     sf = state_fips.zfill(2)
     # Accumulate: {(county_fips3, year): {col: value}}
-    rows: dict[tuple, dict] = {}
+    if rows is None:
+        rows = {}
 
     for series in series_list:
         sid = series.get("seriesID", "")
@@ -136,7 +150,7 @@ def _parse_series(series_list: list[dict], state_fips: str) -> list[dict]:
             except ValueError:
                 rows[key][col_name] = None
 
-    return list(rows.values())
+    return rows
 
 
 def fetch_laus(
@@ -191,7 +205,9 @@ def fetch_laus(
         year_batches.append((y, y_end))
         y = y_end + 1
 
-    all_rows: list[dict] = []
+    # One accumulator for every batch — see _parse_series on why this cannot
+    # be per-batch.
+    all_rows: dict[tuple, dict] = {}
     _rate_limited = False
 
     for y_start, y_end in year_batches:
@@ -201,7 +217,7 @@ def fetch_laus(
                   f"of {len(all_ids)} ({y_start}–{y_end})…")
             try:
                 series_list = _post_bls(batch, y_start, y_end, api_key)
-                all_rows.extend(_parse_series(series_list, sf))
+                _parse_series(series_list, sf, all_rows)
             except RuntimeError as exc:
                 msg = str(exc)
                 if "daily threshold" in msg or "daily limit" in msg.lower() or "threshold" in msg:
@@ -228,7 +244,7 @@ def fetch_laus(
                                      "labor_force", "employed", "unemployed",
                                      "unemployment_rate"])
 
-    df = pd.DataFrame(all_rows)
+    df = pd.DataFrame(list(all_rows.values()))
 
     # Coerce counts to integer where possible
     for col in ("labor_force", "employed", "unemployed"):
@@ -240,6 +256,18 @@ def fetch_laus(
     # Filter to requested years
     df = df[df["year"].isin(years)].copy()
     df = df.sort_values(["county_fips", "year"]).reset_index(drop=True)
+
+    # Assert the property the row-keying above is supposed to guarantee. This
+    # defect was silent for eleven vintages across all five states because
+    # nothing downstream required one row per county-year, and the split rows
+    # carried complementary nulls rather than obviously bad numbers.
+    n_dup = int(df.duplicated(["county_fips", "year"]).sum())
+    if n_dup:
+        raise RuntimeError(
+            f"LAUS {sf}: {n_dup} duplicate (county_fips, year) rows after "
+            "parsing — a county's four measure series failed to merge onto one "
+            "row. Do not cache this. See _parse_series on batch accumulation."
+        )
 
     save_if_complete(df, cache_file, years,
                      sorted(df["year"].unique()), f"LAUS {sf}")

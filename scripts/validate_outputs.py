@@ -390,6 +390,51 @@ def _failures_for_jolts(outputs: Path, today: _dt.date | None = None) -> list[st
     return failures
 
 
+def _failures_for_laus_grain(outputs: Path, state: str | None = None) -> list[str]:
+    """
+    Assert one row per (county_fips, year) in every LAUS output.
+
+    Nothing covered this until 2026-09-04, which is why a batch-accumulation bug
+    in fetch_laus.py published half-populated county rows for eleven vintages
+    across all five deployed states without failing anything. The split rows
+    carried complementary nulls — labor_force/employed on one, unemployed/
+    unemployment_rate on the other — so no range or null check caught them, and
+    the affected counties included Shawnee (Topeka) and Jackson County MO.
+
+    Absence is not a failure, matching the rule the other layers follow.
+    """
+    failures: list[str] = []
+    paths = sorted(outputs.glob("laus_s*.parquet"))
+    if state:
+        paths = [outputs / f"laus_s{state.zfill(2)}.parquet"]
+
+    for path in paths:
+        if not path.exists():
+            continue
+        try:
+            df = pd.read_parquet(path, columns=["county_fips", "year"])
+        except Exception as exc:                      # noqa: BLE001
+            failures.append(f"{path.name}: could not read county_fips/year ({exc})")
+            continue
+        if df.empty:
+            failures.append(f"{path.name}: empty")
+            continue
+
+        dup = df.duplicated(["county_fips", "year"], keep=False)
+        if dup.any():
+            offenders = df.loc[dup, "county_fips"].unique()
+            shown = ", ".join(sorted(offenders.astype(str))[:8])
+            more = "" if len(offenders) <= 8 else f" (+{len(offenders) - 8} more)"
+            failures.append(
+                f"{path.name}: {len(offenders)} county_fips have >1 row per year "
+                f"[{shown}{more}]. Each county-year must be a single row; "
+                "duplicates mean a county's four LAUS measure series were not "
+                "merged onto one row (see _parse_series in fetch_laus.py)."
+            )
+
+    return failures
+
+
 def validate(outputs: Path, state: str | None = None) -> list[str]:
     failures: list[str] = []
     summary_files = sorted(outputs.glob("county_summary_s*.csv"))
@@ -414,6 +459,9 @@ def validate(outputs: Path, state: str | None = None) -> list[str]:
 
     # Annual-layer recency. Handles its own per-state vs national scoping.
     failures.extend(_failures_for_annual_vintages(outputs, state))
+
+    # LAUS county-year grain.
+    failures.extend(_failures_for_laus_grain(outputs, state))
     return failures
 
 

@@ -7,10 +7,13 @@ state whose forecast outputs are committed in this repository.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from streamlit.testing.v1 import AppTest
 
 
 COMMITTED_STATES = ("Colorado", "Kansas", "Missouri", "Nebraska", "Oklahoma")
+DASHBOARD_PATH = Path(__file__).resolve().parents[1] / "dashboard" / "app.py"
 
 
 def _state_selectbox(app: AppTest):
@@ -27,8 +30,12 @@ def _assert_no_app_exception(app: AppTest) -> None:
     assert not errors, "Dashboard raised exception(s):\n" + "\n".join(errors)
 
 
+def _load_app() -> AppTest:
+    return AppTest.from_file(DASHBOARD_PATH, default_timeout=180).run()
+
+
 def test_dashboard_loads_default_kansas_view() -> None:
-    app = AppTest.from_file("dashboard/app.py", default_timeout=180).run()
+    app = _load_app()
 
     _assert_no_app_exception(app)
     state = _state_selectbox(app)
@@ -37,7 +44,7 @@ def test_dashboard_loads_default_kansas_view() -> None:
 
 
 def test_dashboard_renders_every_committed_state() -> None:
-    app = AppTest.from_file("dashboard/app.py", default_timeout=180).run()
+    app = _load_app()
     _assert_no_app_exception(app)
 
     for state_name in COMMITTED_STATES:

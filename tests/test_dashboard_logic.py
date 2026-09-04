@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pandas as pd
 
 from dashboard_logic import (
@@ -14,6 +16,9 @@ from dashboard_logic import (
 
 
 CHANGES = pd.Series([-3.0, -2.0, -0.1, 0.0, 0.1, 2.0, 3.0, None])
+DASHBOARD_SOURCE = (
+    Path(__file__).resolve().parents[1] / "dashboard" / "app.py"
+).read_text(encoding="utf-8")
 
 
 def _selected_values(selection: list[str]) -> list[float]:
@@ -35,3 +40,19 @@ def test_selecting_all_trends_includes_every_numeric_county_once() -> None:
 
 def test_empty_trend_selection_returns_no_rows() -> None:
     assert not trend_mask(CHANGES, []).any()
+
+
+def test_dashboard_uses_tested_trend_logic() -> None:
+    assert "list(TREND_OPTIONS)" in DASHBOARD_SOURCE
+    assert 'trend_mask(disp["% Change"], trend_filter)' in DASHBOARD_SOURCE
+    assert "Growing (>0%)" not in DASHBOARD_SOURCE
+    assert "Declining (<0%)" not in DASHBOARD_SOURCE
+
+
+def test_dashboard_labels_kdol_and_ssa_scenarios_accurately() -> None:
+    assert "KDOL UI claims" not in DASHBOARD_SOURCE
+    assert "Kansas county UI claims by industry" not in DASHBOARD_SOURCE
+    assert "KDOL LMIS labor-force statistics" in DASHBOARD_SOURCE
+    assert "This is not an individual employability measure" in DASHBOARD_SOURCE
+    assert "Do not infer individual work capacity" in DASHBOARD_SOURCE
+    assert "Modeled Available Labor Force" in DASHBOARD_SOURCE

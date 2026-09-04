@@ -8,41 +8,74 @@ This addresses model limitation #1: the cohort model tracks working-age
 population headcounts but does not model who is actually available to work.
 
 Three-layer stack (per county, per year):
-  ┌─────────────────────────────────────────────────────────────┐
-  │ Layer 1: ACS working-age population (18–64)                 │
-  │   Raw census headcount; the cohort model's output           │
-  ├─────────────────────────────────────────────────────────────┤
-  │ Layer 2: minus SSA disability (SSDI + SSI, 18–64)          │
-  │   Removes individuals with federal disability determinations │
-  │   → disability_adjusted_pop                                 │
-  ├─────────────────────────────────────────────────────────────┤
-  │ Layer 3: × ACS civilian labor force participation rate      │
-  │   Keeps numerator and denominator inside the ACS universe   │
-  │   → effective_labor_force                                   │
-  └─────────────────────────────────────────────────────────────┘
+  1. ACS working-age population (18-64)
+  2. Optional SSA disability scenario adjustment
+  3. ACS civilian labor-force participation rate, with LAUS as fallback/context
 
-Layer 2 is optional: if SSA data is unavailable, the model skips
-directly from Layer 1 to Layer 3 (reverts to Phase 1 behaviour).
-
-Layer 3 is optional: if ACS B23001 data is unavailable, Layer 2 result is
-returned. LAUS remains optional context for current labor force counts.
-
-Output DataFrame columns (one row per county-year):
-  state_fips, county_fips, year,
-  working_age_pop         — ACS count (Layer 1 input)
-  ssdi_18_64              — SSA disability count (None if unavailable)
-  ssi_18_64               — SSA SSI count (None if unavailable)
-  total_disabled_18_64    — combined (None if unavailable)
-  disability_rate_pct     — Layer 2 rate (None if unavailable)
-  disability_adjusted_pop — Layer 2 result (falls back to working_age_pop)
-  labor_force             — LAUS labor force count (None if unavailable)
-  lfpr_pct                — ACS B23001 LFPR, or legacy LAUS proxy if unavailable
-  effective_labor_force   — Layer 3 result
-  layers_used             — e.g. "ACS+SSA+LAUS", "ACS+LAUS", "ACS_only"
+SSA records are aligned one-to-one to each ACS vintage using the ACS five-year
+period midpoint. The aligned source year is retained for auditability.
 """
 
+from __future__ import annotations
+
 import pandas as pd
-from pathlib import Path
+
+
+def _align_county_source_to_acs(
+    base: pd.DataFrame,
+    source: pd.DataFrame,
+    value_columns: list[str],
+    source_year_column: str,
+) -> pd.DataFrame:
+    """Select one period-aligned source record for each ACS county-year row.
+
+    The ACS five-year period midpoint is the comparison target when available;
+    otherwise the ACS vintage year is used. Ties prefer a non-future source and
+    then the newest source year. This avoids many-to-many merges and preserves
+    the source vintage used for every derived value.
+    """
+    output_columns = ["county_fips", "year", source_year_column, *value_columns]
+    if source.empty:
+        return pd.DataFrame(columns=output_columns)
+
+    source_use = source[["county_fips", "year", *value_columns]].copy()
+    source_use["county_fips"] = source_use["county_fips"].astype(str).str.zfill(3)
+    source_use["year"] = pd.to_numeric(source_use["year"], errors="coerce")
+    source_use = source_use.dropna(subset=["county_fips", "year"])
+    source_use = source_use.drop_duplicates(["county_fips", "year"], keep="last")
+
+    target_col = "acs_period_midpoint_year" if "acs_period_midpoint_year" in base.columns else "year"
+    targets = base[["county_fips", "year", target_col]].drop_duplicates().copy()
+    targets["county_fips"] = targets["county_fips"].astype(str).str.zfill(3)
+
+    aligned: list[dict] = []
+    for _, target in targets.iterrows():
+        county = target["county_fips"]
+        target_year = pd.to_numeric(target[target_col], errors="coerce")
+        if pd.isna(target_year):
+            target_year = pd.to_numeric(target["year"], errors="coerce")
+
+        candidates = source_use[source_use["county_fips"] == county].copy()
+        if candidates.empty or pd.isna(target_year):
+            continue
+
+        candidates["_distance"] = (candidates["year"] - float(target_year)).abs()
+        candidates["_is_future"] = candidates["year"] > float(target_year)
+        chosen = candidates.sort_values(
+            ["_distance", "_is_future", "year"],
+            ascending=[True, True, False],
+        ).iloc[0]
+
+        row = {
+            "county_fips": county,
+            "year": int(target["year"]),
+            source_year_column: int(chosen["year"]),
+        }
+        for column in value_columns:
+            row[column] = chosen[column]
+        aligned.append(row)
+
+    return pd.DataFrame(aligned, columns=output_columns)
 
 
 def build_participation_table(
@@ -51,123 +84,140 @@ def build_participation_table(
     laus_df: pd.DataFrame | None = None,
     baseline_year_only: bool = False,
 ) -> pd.DataFrame:
-    """
-    Combine ACS, SSA, and optional LAUS context into the effective labor force table.
+    """Combine ACS, SSA, and optional LAUS data into a county-year table."""
+    required = {"state_fips", "county_fips", "year", "pop_working_age"}
+    missing = sorted(required - set(acs_df.columns))
+    if missing:
+        raise ValueError(f"ACS participation input is missing required columns: {missing}")
 
-    Parameters
-    ----------
-    acs_df            : output of fetch_acs.fetch_all() — must contain
-                        county_fips, year, pop_working_age, state_fips
-    ssa_df            : output of fetch_ssa_disability.fetch_ssa_disability()
-                        with disability_adjusted_pop and disability_rate_pct
-                        (or None to skip Layer 2)
-    laus_df           : optional output of fetch_laus.compute_lfpr() with
-                        labor_force context columns
-    baseline_year_only: if True, return only the most recent ACS year
-
-    Returns
-    -------
-    DataFrame with all three layers merged, one row per (county_fips, year)
-    """
-    # ── Layer 1: ACS working-age population ──────────────────────────────────
     acs_cols = ["state_fips", "county_fips", "year", "pop_working_age"]
     for col in [
         "acs_lf_status_pop_18_64",
         "acs_civilian_labor_force_18_64",
         "acs_armed_forces_18_64",
         "acs_lfpr_pct",
+        "acs_period_midpoint_year",
     ]:
         if col in acs_df.columns:
             acs_cols.append(col)
-    if "acs_period_midpoint_year" in acs_df.columns:
-        acs_cols.append("acs_period_midpoint_year")
 
     base = acs_df[acs_cols].copy()
+    base["state_fips"] = base["state_fips"].astype(str).str.zfill(2)
+    base["county_fips"] = base["county_fips"].astype(str).str.zfill(3)
+    base["year"] = pd.to_numeric(base["year"], errors="raise").astype(int)
     base = base.rename(columns={"pop_working_age": "working_age_pop"})
 
-    if baseline_year_only:
-        base = base[base["year"] == base["year"].max()]
+    if baseline_year_only and not base.empty:
+        base = base[base["year"] == base["year"].max()].copy()
 
-    # ── Layer 2: SSA disability adjustment ───────────────────────────────────
+    duplicate_acs = base.duplicated(["county_fips", "year"], keep=False)
+    if duplicate_acs.any():
+        keys = base.loc[duplicate_acs, ["county_fips", "year"]].drop_duplicates()
+        raise ValueError(
+            "ACS participation input contains duplicate county-year rows: "
+            f"{keys.to_dict('records')[:5]}"
+        )
+
+    # Layer 2: align one SSA observation to each ACS period, never a many-to-many merge.
     has_ssa = ssa_df is not None and not ssa_df.empty
-
+    ssa_value_columns = [
+        "ssdi_18_64",
+        "ssi_18_64",
+        "total_disabled_18_64",
+        "disability_rate_pct",
+        "disability_adjusted_pop",
+    ]
     if has_ssa:
-        ssa_cols = ["county_fips", "year",
-                    "ssdi_18_64", "ssi_18_64", "total_disabled_18_64",
-                    "disability_rate_pct", "disability_adjusted_pop"]
-        ssa_use = ssa_df[[c for c in ssa_cols if c in ssa_df.columns]].copy()
-
-        # Map SSA year to nearest ACS year for merging
-        acs_years = sorted(base["year"].unique())
-
-        def _nearest(y):
-            return min(acs_years, key=lambda a: abs(a - y))
-
-        ssa_use["_merge_year"] = ssa_use["year"].apply(_nearest)
-        ssa_use = ssa_use.drop(columns=["year"]).rename(
-            columns={"_merge_year": "year"}
+        available = [column for column in ssa_value_columns if column in ssa_df.columns]
+        ssa_aligned = _align_county_source_to_acs(
+            base,
+            ssa_df,
+            available,
+            source_year_column="ssa_source_year",
         )
-
-        base = base.merge(ssa_use, on=["county_fips", "year"], how="left")
+        base = base.merge(ssa_aligned, on=["county_fips", "year"], how="left")
     else:
-        for col in ["ssdi_18_64", "ssi_18_64", "total_disabled_18_64",
-                    "disability_rate_pct"]:
-            base[col] = None
+        base["ssa_source_year"] = pd.NA
+        for column in ssa_value_columns:
+            base[column] = pd.NA
 
-    # disability_adjusted_pop: use SSA-derived value, else fall back to Layer 1
-    if "disability_adjusted_pop" not in base.columns:
-        base["disability_adjusted_pop"] = base["working_age_pop"]
-    else:
-        base["disability_adjusted_pop"] = base["disability_adjusted_pop"].where(
-            base["disability_adjusted_pop"].notna(),
-            base["working_age_pop"],
-        )
+    # Derive totals from component counts when the source did not supply a total.
+    if "total_disabled_18_64" not in base.columns:
+        base["total_disabled_18_64"] = pd.NA
+    total_disabled = pd.to_numeric(base["total_disabled_18_64"], errors="coerce")
+    component_columns = [column for column in ["ssdi_18_64", "ssi_18_64"] if column in base.columns]
+    if component_columns:
+        components = base[component_columns].apply(pd.to_numeric, errors="coerce")
+        component_total = components.fillna(0).sum(axis=1).where(components.notna().any(axis=1))
+        total_disabled = total_disabled.combine_first(component_total)
 
-    # ── Optional LAUS context ─────────────────────────────────────────────────
+    base["total_disabled_18_64"] = total_disabled.round(0).astype("Int64")
+    working_age = pd.to_numeric(base["working_age_pop"], errors="coerce")
+    valid_disability = total_disabled.notna() & working_age.notna() & (working_age > 0)
+
+    computed_rate = (total_disabled / working_age * 100).round(2).clip(0, 60)
+    existing_rate = pd.to_numeric(base.get("disability_rate_pct"), errors="coerce")
+    base["disability_rate_pct"] = computed_rate.where(valid_disability, existing_rate)
+
+    computed_adjusted = (working_age - total_disabled).clip(lower=0).round(0)
+    existing_adjusted = pd.to_numeric(base.get("disability_adjusted_pop"), errors="coerce")
+    adjusted = computed_adjusted.where(valid_disability, existing_adjusted)
+    base["disability_adjusted_pop"] = adjusted.fillna(working_age).round(0).astype("Int64")
+
+    # Optional LAUS context. Annual values are averaged only after assigning them
+    # to an ACS vintage, which keeps the merge one-to-one.
     has_laus = laus_df is not None and not laus_df.empty
-
     if has_laus:
         laus_cols = ["county_fips", "year", "labor_force", "lfpr_pct", "lfpr_source"]
-        laus_use  = laus_df[[c for c in laus_cols if c in laus_df.columns]].copy()
-
-        # LAUS year → nearest ACS year
+        laus_use = laus_df[[c for c in laus_cols if c in laus_df.columns]].copy()
+        laus_use["county_fips"] = laus_use["county_fips"].astype(str).str.zfill(3)
+        acs_years = sorted(base["year"].unique())
         laus_use["_merge_year"] = laus_use["year"].apply(
-            lambda y: min(sorted(base["year"].unique()), key=lambda a: abs(a - y))
+            lambda y: min(acs_years, key=lambda a: abs(a - y))
         )
+        numeric_laus = [c for c in ["labor_force", "lfpr_pct"] if c in laus_use.columns]
         laus_agg = (
             laus_use.groupby(["county_fips", "_merge_year"], as_index=False)
-            .agg({c: "mean" for c in ["labor_force", "lfpr_pct"] if c in laus_use.columns})
+            .agg({c: "mean" for c in numeric_laus})
             .rename(columns={"_merge_year": "year"})
         )
         base = base.merge(laus_agg, on=["county_fips", "year"], how="left")
     else:
-        base["labor_force"] = None
+        base["labor_force"] = pd.NA
 
-    if "acs_lfpr_pct" in base.columns and base["acs_lfpr_pct"].notna().any():
-        base["lfpr_pct"] = base["acs_lfpr_pct"]
-        base["lfpr_source"] = "ACS_B23001_civilian_18_64"
-    elif "lfpr_pct" not in base.columns:
-        base["lfpr_pct"] = None
-        base["lfpr_source"] = None
-    elif "lfpr_source" not in base.columns:
-        base["lfpr_source"] = "LAUS_labor_force_over_ACS_18_64_proxy"
+    # Prefer ACS LFPR row by row; use the LAUS proxy only where ACS is absent.
+    laus_lfpr = (
+        pd.to_numeric(base["lfpr_pct"], errors="coerce")
+        if "lfpr_pct" in base.columns
+        else pd.Series(pd.NA, index=base.index, dtype="Float64")
+    )
+    acs_lfpr = (
+        pd.to_numeric(base["acs_lfpr_pct"], errors="coerce")
+        if "acs_lfpr_pct" in base.columns
+        else pd.Series(pd.NA, index=base.index, dtype="Float64")
+    )
+    base["lfpr_pct"] = acs_lfpr.combine_first(laus_lfpr)
+    base["lfpr_source"] = pd.Series(pd.NA, index=base.index, dtype="object")
+    base.loc[acs_lfpr.notna(), "lfpr_source"] = "ACS_B23001_civilian_18_64"
+    base.loc[acs_lfpr.isna() & laus_lfpr.notna(), "lfpr_source"] = (
+        "LAUS_labor_force_over_ACS_18_64_proxy"
+    )
 
-    # Compute effective labor force
-    if "lfpr_pct" in base.columns and base["lfpr_pct"].notna().any():
-        base["effective_labor_force"] = (
-            base["disability_adjusted_pop"] * base["lfpr_pct"] / 100
-        ).round(0).astype("Int64")
-    else:
-        base["effective_labor_force"] = base["disability_adjusted_pop"].astype("Int64")
+    # Apply LFPR only where available; otherwise preserve the Layer 2 estimate.
+    effective = pd.to_numeric(base["disability_adjusted_pop"], errors="coerce")
+    has_lfpr = base["lfpr_pct"].notna()
+    effective.loc[has_lfpr] = (
+        effective.loc[has_lfpr] * base.loc[has_lfpr, "lfpr_pct"] / 100
+    ).round(0)
+    base["effective_labor_force"] = effective.round(0).astype("Int64")
 
-    # Metadata column: which layers were actually populated
     def _layers(row) -> str:
         parts = ["ACS"]
-        if has_ssa and pd.notna(row.get("disability_rate_pct")):
+        if pd.notna(row.get("ssa_source_year")) and pd.notna(row.get("disability_rate_pct")):
             parts.append("SSA")
         if pd.notna(row.get("acs_lfpr_pct")):
             parts.append("ACS_LFPR")
-        elif has_laus and pd.notna(row.get("lfpr_pct")):
+        elif pd.notna(row.get("lfpr_pct")):
             parts.append("LAUS")
         if has_laus and pd.notna(row.get("labor_force")):
             parts.append("LAUS_CONTEXT")
@@ -175,12 +225,16 @@ def build_participation_table(
 
     base["layers_used"] = base.apply(_layers, axis=1)
 
+    duplicate_output = base.duplicated(["county_fips", "year"], keep=False)
+    if duplicate_output.any():
+        raise ValueError("Participation transformation produced duplicate county-year rows")
+
     col_order = [
         "state_fips", "county_fips", "year",
         "working_age_pop",
         "acs_lf_status_pop_18_64", "acs_civilian_labor_force_18_64",
         "acs_armed_forces_18_64", "acs_lfpr_pct",
-        "ssdi_18_64", "ssi_18_64", "total_disabled_18_64",
+        "ssa_source_year", "ssdi_18_64", "ssi_18_64", "total_disabled_18_64",
         "disability_rate_pct", "disability_adjusted_pop",
         "labor_force", "lfpr_pct", "lfpr_source",
         "effective_labor_force", "layers_used",
@@ -191,20 +245,27 @@ def build_participation_table(
 
 
 def participation_summary(part_df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Return the most recent year's participation estimates per county,
-    with a computed 'adjustment_factor' showing how much the effective
-    labor force shrinks relative to the raw ACS working-age population.
+    """Return one latest-year participation record per county."""
+    if part_df.empty:
+        result = part_df.copy()
+        result["adjustment_factor"] = pd.Series(dtype="Float64")
+        result["adjustment_factor_pct"] = pd.Series(dtype="Float64")
+        return result
 
-    Useful for dashboard KPI cards and county comparison tables.
-    """
     latest_year = part_df["year"].max()
     snap = part_df[part_df["year"] == latest_year].copy()
+    duplicates = snap.duplicated("county_fips", keep=False)
+    if duplicates.any():
+        counties = sorted(snap.loc[duplicates, "county_fips"].astype(str).unique())
+        raise ValueError(
+            "Participation summary contains duplicate county rows for the latest year: "
+            f"{counties[:10]}"
+        )
 
+    denominator = pd.to_numeric(snap["working_age_pop"], errors="coerce").replace(0, pd.NA)
     snap["adjustment_factor"] = (
-        snap["effective_labor_force"] / snap["working_age_pop"]
+        pd.to_numeric(snap["effective_labor_force"], errors="coerce") / denominator
     ).round(4)
-
     snap["adjustment_factor_pct"] = (snap["adjustment_factor"] * 100).round(2)
 
     return snap.sort_values("county_fips").reset_index(drop=True)
@@ -214,33 +275,16 @@ def project_effective_workforce(
     part_df: pd.DataFrame,
     proj_df: pd.DataFrame,
 ) -> pd.DataFrame:
-    """
-    Scale cohort model projections by the county's participation adjustment factor.
-
-    Multiplies each projected year's p50 / mean / pXX by the ratio:
-      effective_labor_force / working_age_pop  (from most recent participation data)
-
-    This converts the cohort model's working-age population projection into
-    a projected effective labor force without re-running the simulation.
-
-    Parameters
-    ----------
-    part_df : output of build_participation_table()
-    proj_df : output of cohort_model.run_all_counties()
-
-    Returns
-    -------
-    proj_df copy with added columns: eff_p50, eff_mean, eff_p25, eff_p75,
-    participation_adj_factor
-    """
-    # Per-county adjustment factor from most recent participation snapshot
+    """Scale cohort projections by each county's latest participation factor."""
+    summary = participation_summary(part_df)
     adj = (
-        participation_summary(part_df)[["county_fips", "adjustment_factor"]]
+        summary[["county_fips", "adjustment_factor"]]
         .set_index("county_fips")["adjustment_factor"]
         .to_dict()
     )
 
     result = proj_df.copy()
+    result["county_fips"] = result["county_fips"].astype(str).str.zfill(3)
     result["participation_adj_factor"] = result["county_fips"].map(adj).fillna(1.0)
 
     pct_cols = ["p25", "p50", "p75", "p90", "mean"]

@@ -1452,3 +1452,72 @@ Notes:          ROOT CAUSE -- `_parse_series` in fetch_laus.py was called once
                 routine runs the test suite.
 
                 Uncommitted for review, per the never-commit rule.
+
+## [2026-09-04] ACS | tooling — the failing B23001 test was wrong, not the code
+Vintage before: n/a — no data changed
+Vintage after:  unchanged
+Checked:        Closes the open item from the LAUS entry above, which recorded
+                `test_acs_labor_force_status_uses_civilian_18_64_denominator`
+                failing and left it alone.
+
+                Resolved against a PRIMARY source rather than by reading the
+                code and guessing which side was right:
+                `api.census.gov/data/2023/acs/acs5/groups/B23001.json`.
+Outputs changed: none. One file: tests/test_calculations.py.
+Validation:     full test module now 14/14. Was 13/14.
+Notes:          **THE CODE WAS CORRECT ALL ALONG. The fixture was wrong.**
+
+                B23001 publishes each age block in a fixed order: total,
+                in-labor-force, in-Armed-Forces, civilian, civilian-employed,
+                civilian-unemployed, not-in-labor-force. Confirmed labels:
+
+                  _005E / _091E  "In labor force: In Armed Forces"
+                  _006E / _092E  "In labor force: Civilian:"
+                  _008E / _094E  "In labor force: Civilian: Unemployed"
+                  _012E / _098E  "In labor force: In Armed Forces"  (20-21)
+                  _013E / _099E  "In labor force: Civilian:"        (20-21)
+
+                `fetch_acs.B23001_18_64_WEIGHTS` maps all ten of those exactly
+                right. The test supplied the ARMED FORCES variables where it
+                meant civilian labour force, and civilian-UNEMPLOYED where it
+                meant armed forces — so it never supplied a civilian-LF column
+                at all, and asserted 195 against a sum of nothing. Its
+                armed-forces assertion (5) would have failed too, since the code
+                read its 40/50/80/70 as Armed Forces and totalled 195 there.
+
+                Fixed by correcting the fixture to the real variables, keeping
+                every intended number so all four assertions are unchanged:
+                total 300, civilian LF 195, armed forces 5, LFPR 195/295.
+
+                **WHY IT SURVIVED, which is the more useful finding.**
+                `_weighted_sum` does
+                  present = [v for v in groups[field] if v in df.columns]
+                and skips whatever is absent, so a frame missing a variable
+                silently contributes ZERO for that field instead of raising.
+                The caller only guards the all-absent case
+                (`if not any(v in df.columns for v in B23001_VARS): return df`,
+                which exists to no-op on legacy cached files). A frame with
+                SOME B23001 columns therefore under-counts without complaint —
+                which is exactly what turned a mis-written fixture into a
+                plausible-looking wrong number rather than a KeyError.
+
+                Not reachable from production today: `fetch_year` requests the
+                whole of `B23001_VARS` in one call, so either all arrive or the
+                request fails. But it is the same silent-wrongness shape this
+                repo has now been bitten by seven times, and the trigger would
+                be a Census schema change dropping or renaming one variable —
+                LFPR would quietly shift and nothing would fail.
+                **Recommended, not done here:** have
+                `_add_labor_force_status` raise when *some but not all* of
+                `B23001_VARS` are present, keeping the all-absent no-op for
+                legacy caches. Deliberately left out of this commit because it
+                changes production behaviour and does not belong in a test fix.
+
+                **Also worth knowing: no scheduled routine runs the test
+                suite,** and `pytest` is not installed on this machine (the
+                suite was run through a direct harness that imports the module
+                and calls each `test_*`, using `tempfile` for `tmp_path`
+                fixtures). So a broken test can sit indefinitely — this one did,
+                and it was only noticed because an unrelated LAUS change touched
+                the same file. Wiring the suite into `refresh_dashboard.py`, or
+                into a routine, would be the durable fix.

@@ -138,22 +138,39 @@ def test_projection_is_reproducible_with_random_seed():
 
 
 def test_acs_labor_force_status_uses_civilian_18_64_denominator():
+    """
+    B23001 publishes each age block as: total, in-labor-force, in-Armed-Forces,
+    civilian, civilian-employed, civilian-unemployed, not-in-labor-force. So
+    within a block the CIVILIAN labour force sits two variables after the total
+    and the ARMED FORCES one sits immediately before it — verified against
+    api.census.gov/data/2023/acs/acs5/groups/B23001.json:
+
+        _005E / _091E  ->  "In labor force: In Armed Forces"
+        _006E / _092E  ->  "In labor force: Civilian:"
+        _008E / _094E  ->  "In labor force: Civilian: Unemployed"
+
+    This test previously supplied the ARMED FORCES variables where it meant
+    civilian labour force, and civilian-UNEMPLOYED where it meant armed forces.
+    It therefore never supplied a civilian-LF column at all, and asserted 195
+    against a sum of nothing. fetch_acs.B23001_18_64_WEIGHTS was correct
+    throughout; only the fixture was wrong.
+    """
     df = pd.DataFrame(
         {
             # Male/female 16-19 are weighted at 0.5 to approximate 18-19.
-            "B23001_003E": [100],
-            "B23001_005E": [40],
-            "B23001_008E": [10],
-            "B23001_089E": [100],
-            "B23001_091E": [50],
-            "B23001_094E": [0],
+            "B23001_003E": [100],   # male 16-19 total
+            "B23001_005E": [10],    # male 16-19 in Armed Forces
+            "B23001_006E": [40],    # male 16-19 civilian labour force
+            "B23001_089E": [100],   # female 16-19 total
+            "B23001_091E": [0],     # female 16-19 in Armed Forces
+            "B23001_092E": [50],    # female 16-19 civilian labour force
             # Male/female 20-21 are fully included.
-            "B23001_010E": [100],
-            "B23001_012E": [80],
-            "B23001_015E": [0],
-            "B23001_096E": [100],
-            "B23001_098E": [70],
-            "B23001_101E": [0],
+            "B23001_010E": [100],   # male 20-21 total
+            "B23001_012E": [0],     # male 20-21 in Armed Forces
+            "B23001_013E": [80],    # male 20-21 civilian labour force
+            "B23001_096E": [100],   # female 20-21 total
+            "B23001_098E": [0],     # female 20-21 in Armed Forces
+            "B23001_099E": [70],    # female 20-21 civilian labour force
         }
     )
 

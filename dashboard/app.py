@@ -27,6 +27,8 @@ import streamlit as st
 ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT))
 
+from dashboard_logic import TREND_OPTIONS, trend_mask
+
 OUTPUT_DIR = ROOT / "data" / "outputs"
 QCEW_CACHE = ROOT / "data" / "qcew_cache"
 GEO_CACHE  = ROOT / "data" / "geo" / "geojson-counties-fips.json"
@@ -556,7 +558,7 @@ def build_narrative_handoff(
     if bls_df is not None and not bls_df.empty:
         demand_sources.append("BLS employment projections")
     if kdol_df is not None and not kdol_df.empty:
-        demand_sources.append("KDOL UI claims")
+        demand_sources.append("KDOL LMIS labor-force statistics")
     demand_note = (
         ", ".join(demand_sources) + " are loaded as directional demand context."
         if demand_sources
@@ -659,6 +661,7 @@ Forecast window: {base_year}-{end_year}
 - Do not call sector employment change "job openings" or "vacancies."
 - Do not treat IPEDS completions as placements or local retention.
 - Do not compare residence-based population directly to worksite employment without commute context.
+- Do not infer individual work capacity or employability from aggregate SSA benefit status.
 """
 
 
@@ -692,9 +695,9 @@ def build_methodology_handoff(
             "National structural demand context",
         ],
         [
-            "KDOL UI claims",
+            "KDOL LMIS labor-force statistics",
             "loaded" if kdol_df is not None and not kdol_df.empty else "not loaded",
-            "Kansas-only current labor market pulse",
+            "Kansas-only current labor-market conditions",
         ],
         [
             "IPEDS completions",
@@ -726,7 +729,7 @@ models entry from the 15-17 cohort into 18-24, models retirement exits from 60-6
 - ACS B23001 labor-force-status fields are required before saying "effective labor force."
 - QCEW sector projections describe employment exposure; they do not measure vacancies.
 - JOLTS and BLS demand layers are national unless specifically regenerated at a state layer.
-- KDOL UI claims are Kansas-only and should be framed as a pulse, not a forecast.
+- KDOL LMIS labor-force statistics are Kansas-only current-condition measures, not a forecast.
 - LODES lags by 2-3 years and should be used for labor-shed scale, not real-time commuting.
 
 ## Recommended Speaker Framing
@@ -872,8 +875,8 @@ def state_effective_labor_chart(part_df: pd.DataFrame,
 
     Aggregates the participation model across all counties for the most
     recent ACS year and renders a waterfall from the raw working-age
-    population down to the effective labor force, exposing the two
-    structural decrements (SSA disability and ACS non-participation).
+    population down to a modeled labor-force scenario, exposing the SSA
+    beneficiary-count adjustment and the ACS participation adjustment.
     Returns the figure plus a stats dict for KPI cards.
     """
     year = int(part_df["year"].max())
@@ -891,9 +894,9 @@ def state_effective_labor_chart(part_df: pd.DataFrame,
         orientation="v",
         measure=["absolute", "relative", "relative", "total"],
         x=["Working-Age<br>Population (18–64)",
-           "Less: disability<br>(SSA)",
-           "Less: not in<br>labor force (ACS)",
-           "Effective<br>Labor Force"],
+           "SSA beneficiary<br>scenario adjustment",
+           "ACS participation<br>adjustment",
+           "Modeled Available<br>Labor Force"],
         y=[wap, disability_drop, participation_drop, elf],
         text=[_fmt(wap), _fmt(disability_drop), _fmt(participation_drop), _fmt(elf)],
         textposition="outside",
@@ -906,7 +909,7 @@ def state_effective_labor_chart(part_df: pd.DataFrame,
     ))
     fig.update_layout(
         title=dict(
-            text=f"{state_name} — Effective Labor Force vs. Working-Age Population ({year})",
+            text=f"{state_name} — Modeled Available Labor Force Scenario ({year})",
             font=dict(size=15, color=C_BLUE),
         ),
         yaxis=dict(title="People (18–64)", tickformat=",",
@@ -1103,7 +1106,7 @@ def main():
         if bls_df is not None and not bls_df.empty:
             demand_sources.append("BLS projections")
         if kdol_df is not None and not kdol_df.empty:
-            demand_sources.append("KDOL UI claims")
+            demand_sources.append("KDOL LMIS labor-force statistics")
         demand_headline = "Demand layer available" if demand_sources else "Demand pressure not yet validated"
         demand_detail = (
             ", ".join(demand_sources) + " loaded as directional context."
@@ -1379,7 +1382,7 @@ def main():
         # statewide view so the county figures below read as a zoom-in, not an
         # unexplained drop in magnitude.
         state_part_df = load_participation(state_fips)
-        st.markdown(f"### Statewide Available Workforce — {selected_state}")
+        st.markdown(f"### Statewide Available Workforce Planning Scenario — {selected_state}")
         if state_part_df is not None and not state_part_df.empty:
             fig_state_elf, elf_stats = state_effective_labor_chart(
                 state_part_df, selected_state)
@@ -1390,17 +1393,17 @@ def main():
                 "ACS 18–64 headcount",
             ), unsafe_allow_html=True)
             scols[1].markdown(metric_card(
-                "After Disability Adj. (SSA)",
+                "After SSA Scenario Adj.",
                 _fmt(elf_stats["dadj"]),
                 f'−{_fmt(elf_stats["wap"] - elf_stats["dadj"])} SSDI/SSI',
             ), unsafe_allow_html=True)
             scols[2].markdown(metric_card(
-                "Effective Labor Force",
+                "Modeled Available Labor Force",
                 _fmt(elf_stats["elf"]),
                 "after ACS participation rate",
             ), unsafe_allow_html=True)
             scols[3].markdown(metric_card(
-                "Structural Gap",
+                "Modeled Availability Gap",
                 _fmt(elf_stats["gap"]),
                 f'<span class="declining">{elf_stats["gap_pct"]:.0f}% below working-age pop</span>',
             ), unsafe_allow_html=True)
@@ -1408,16 +1411,17 @@ def main():
             st.plotly_chart(fig_state_elf, use_container_width=True)
             st.markdown(
                 '<div class="note-box">'
-                "Effective labor force = working-age population, less people with federal "
-                "disability determinations (SSA, where county data is available), times the "
-                "ACS civilian labor-force participation rate. The gap is structural — it is "
-                "who is not available to work today, before any forecast or county detail."
+                "Planning scenario = working-age population, less aggregate county SSA "
+                "beneficiary counts where available, times the ACS civilian labor-force participation "
+                "rate. This is not an individual employability measure: receiving SSDI or SSI does "
+                "not establish that a person cannot or does not work. Review possible overlap between "
+                "the SSA and ACS adjustments before treating this scenario as a definitive labor-supply count."
                 "</div>",
                 unsafe_allow_html=True,
             )
         else:
             st.info(
-                "The statewide effective-labor-force view needs the participation model "
+                "The statewide modeled-availability view needs the participation model "
                 "(ACS B23001 labor-force status + SSA disability). It is not loaded for "
                 f"{selected_state} yet."
             )
@@ -1469,7 +1473,7 @@ def main():
                 lfpr     = row.get("lfpr_pct")
                 eff_lf   = row.get("effective_labor_force")
                 layers   = row.get("layers_used", "")
-                st.markdown("**Effective Labor Force (Participation Model)**")
+                st.markdown("**Modeled Available Labor Force (Planning Scenario)**")
                 pkpi = st.columns(4)
                 pkpi[0].markdown(metric_card(
                     "Working-Age Pop (ACS)",
@@ -1477,7 +1481,7 @@ def main():
                     "",
                 ), unsafe_allow_html=True)
                 pkpi[1].markdown(metric_card(
-                    "Disability Rate (SSA)",
+                    "SSA Beneficiary Rate",
                     f"{dis_rate:.1f}%" if dis_rate and not pd.isna(dis_rate) else "—",
                     "SSDI + SSI, 18–64",
                 ), unsafe_allow_html=True)
@@ -1494,12 +1498,12 @@ def main():
                     gap_abs = wap - eff_lf
                     gap_label = (
                         f'<span class="declining">'
-                        f'{gap_pct:.0f}% structural gap '
+                        f'{gap_pct:.0f}% modeled availability gap '
                         f'({_fmt(gap_abs)} fewer than working-age pop)'
                         f'</span><br>'
                     )
                 pkpi[3].markdown(metric_card(
-                    "Effective Labor Force",
+                    "Modeled Available Labor Force",
                     _fmt(eff_lf) if eff_lf and not pd.isna(eff_lf) else "—",
                     gap_label +
                     f'<span style="font-size:0.78rem;color:{C_NEUTRAL};">{layers}</span>',
@@ -3202,8 +3206,8 @@ def main():
         with fc1:
             trend_filter = st.multiselect(
                 "Trend filter",
-                ["Growing (>0%)", "Declining (<0%)", "Stable (±2%)"],
-                default=["Growing (>0%)", "Declining (<0%)", "Stable (±2%)"],
+                list(TREND_OPTIONS),
+                default=list(TREND_OPTIONS),
             )
         with fc2:
             sort_by = st.selectbox(
@@ -3224,14 +3228,7 @@ def main():
             "% Change", "Annual Retirements", "Annual Entries", "Net Mig Rate (%)",
         ]
 
-        mask = pd.Series([False] * len(disp), index=disp.index)
-        if "Growing (>0%)" in trend_filter:
-            mask |= disp["% Change"] > 0
-        if "Declining (<0%)" in trend_filter:
-            mask |= disp["% Change"] < 0
-        if "Stable (±2%)" in trend_filter:
-            mask |= disp["% Change"].abs() <= 2
-        disp = disp[mask]
+        disp = disp[trend_mask(disp["% Change"], trend_filter)]
 
         # ascending=True puts the smallest value first. "worst first" on a signed
         # % change means most-negative first (True); "largest first" on a count
@@ -3285,9 +3282,9 @@ county of **{selected_state}** from a {base_year} ACS baseline through {end_year
 | 4 | BLS OES | (internal) | `--oes` | Occupational employment and wage estimates by sector |
 | 5 | Census CBP | (internal) | `--cbp` | County business patterns; establishment counts and trends |
 | 6 | BLS JOLTS | Demand Pressure | `--jolts` | National job openings and vacancy rates by sector |
-| 7 | KDOL UI | Demand Pressure | `--kdol` | Kansas county UI claims by industry (KS-only) |
+| 7 | KDOL LMIS | Demand Pressure | `--kdol` | Kansas monthly labor force, employment, unemployment, and LFPR statistics (KS-only) |
 | 8 | KSDE/NCES CCD | (cohort model) | `--ksde` | K-12 enrollment by grade; patches ACS youth cohorts (KS-only) |
-| 9 | SSA Disability | Available Workforce | `--ssa` | SSDI + SSI beneficiary counts; adjusts effective workforce |
+| 9 | SSA Disability | Available Workforce | `--ssa` | Aggregate SSDI + SSI beneficiary counts used as a planning-scenario adjustment |
 | 10 | BLS Employment Projections | Demand Pressure | `--bls-proj` | 10-year national occupational employment projections |
 
 ### Components Modeled Each Year
@@ -3362,14 +3359,14 @@ county-level trends were never being shown. Three changes were made:
    historical compounding behavior. Linear OLS is used automatically if any historical
    value is zero (log undefined), and remains the default for wage projections.
 
-### Effective Labor Force (Participation Model)
+### Modeled Available Labor Force (Planning Scenario)
 When `--laus` or `--ssa` flags are used, the Available Workforce tab shows a three-layer
 effective labor force estimate:
 
 1. **ACS working-age population (18–64)** — raw cohort-model output
-2. **Minus SSA disability** (SSDI + SSI, 18–64) — removes individuals with federal
-   disability determinations (`disability_adjusted_pop`)
-3. **× ACS B23001 civilian labor force participation rate** — accounts for structural non-participation
+2. **SSA beneficiary-count scenario adjustment** (SSDI + SSI, 18–64) — subtracts
+   aggregate county beneficiary counts for planning sensitivity (`disability_adjusted_pop`)
+3. **× ACS B23001 civilian labor force participation rate** — applies observed aggregate participation
    (`effective_labor_force`)
 
 The `layers_used` badge indicates which layers were populated for each county-year.
@@ -3383,7 +3380,8 @@ The cohort-model projection is scaled by each county's adjustment factor
 - Birth-rate pipeline — children born after {base_year} won't enter workforce until {base_year + 18}+
 - JOLTS and BLS projections are **national** — state-level demand signals must be inferred
 - LODES commute data lags 2–3 years; snapshot year may not match forecast base year
-- KDOL UI claims are available only for Kansas; no stable public download API exists
+- KDOL LMIS labor-force statistics are Kansas-only current-condition measures, not future vacancies
+- Participation scenario may overlap SSA beneficiary nonparticipation with the ACS LFPR adjustment; validate the estimand before using it as a definitive available-worker count
 - Participation model uses a static adjustment factor from the most recent data year;
   does not project future disability or participation rate changes
 - Sector CI aggregation overstates uncertainty (sum of individual PIs, not joint CI)

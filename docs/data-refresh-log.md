@@ -1521,3 +1521,396 @@ Notes:          **THE CODE WAS CORRECT ALL ALONG. The fixture was wrong.**
                 and it was only noticed because an unrelated LAUS change touched
                 the same file. Wiring the suite into `refresh_dashboard.py`, or
                 into a routine, would be the durable fix.
+
+## [2026-09-15] SSA disability | no-op
+Vintage before: oasdi_sc25.xlsx (2025 edition, placed 2026-09-01), parsed into
+                ssa_disability_s{08,20,29,31,40}.parquet on 2026-09-04 08:30–08:34
+Vintage after:  unchanged
+Checked:        Newest held edition = oasdi_sc25 (data/ssa_cache also holds sc24).
+                SSA index page 403s to WebFetch as documented; WebSearch
+                (allowed_domains=ssa.gov) returns the live index page titled
+                "OASDI Beneficiaries by State and County, 2025", with archived
+                editions at /oasdi_sc/2024/ and /oasdi_sc/2023/ and no /2026/ —
+                so the 2025 edition is the newest published and we hold it.
+                Parse status: every participation_s* and ssa_disability_s* for
+                the five bloc states is dated 2026-09-04, after the workbook's
+                2026-09-01 mtime, so sc25 is already in outputs. Nothing to run.
+Outputs changed: none (`git status --short` empty before and after)
+Validation:     pass — `python scripts/validate_outputs.py` → "Output validation
+                passed.", exit 0 (run read-only; no pipeline invoked this fire)
+Notes:          **Found while confirming the parse — the SSA `year` stamp is
+                one year too early, and three places agree on the wrong rule.**
+                Read from the workbooks themselves, not inferred: the Table 4 -
+                Kansas header in oasdi_sc25.xlsx reads "…December 2025", and in
+                oasdi_sc24.xlsx "…December 2024". So edition YY holds December
+                YY data — the routine task file has this right ("each edition
+                reports data as of December of its reference year"). But
+                scripts/parse_manual_ssa.py:111 stamps `year = pub_year - 1`
+                (its header comment at :34–35 asserts "oasdi_sc25 … reporting
+                data as of December 2024"), and the parquets therefore carry
+                year=2024 for December 2025 counts. The release calendar row #9
+                and the 2026-09-01 log entry above repeat the same
+                "2025 edition = data year 2024" assumption.
+
+                **Forecast impact today: none.** Both consumers
+                (fetch_ssa_disability.compute_disability_rate :312–316 and
+                participation_model.py :100–111) map the SSA year to the
+                *nearest* ACS midpoint year; acs_combined_s20 holds midpoints
+                {2013, 2017, 2019, 2022}, and nearest(2024) == nearest(2025)
+                == 2022, so the counts divide by the same denominator either
+                way and every published number is identical. The dashboard
+                never renders the SSA year (no year/ssa pairing in app.py).
+                The defect is a provenance label, not a wrong number — but it
+                becomes a wrong number the day an ACS midpoint of 2024 lands
+                (2022–2026 5-year), when 2025-labelled counts would correctly
+                pick it and 2024-labelled ones would sit at a tie.
+
+                **Not fixed here** — a routine does not change production
+                parsing. Recommended, in order: (1) change :111 to
+                `year = pub_year` and correct the :34–39 comment, or better,
+                read the "December YYYY" from the Table 4 header so the label
+                comes from the source rather than the filename; (2) re-run
+                `python refresh_dashboard.py --sources none --states bloc` so
+                the five ssa_disability_s*.parquet carry year=2025 (expect
+                byte changes there and downstream in participation_s* /
+                projections_effective_s*, with identical values); (3) correct
+                calendar row #9 and its §4 line — the §4 item is then largely
+                answered: the 2025 edition's publication month was August 2026
+                per the search result's own summary, which is consistent with
+                the task-file cadence, though the page date itself was not read
+                directly [VERIFY against the index page in a browser].
+                Also worth noting: oasdi_sc24 (December 2024) is still in the
+                cache and would give the layer a second data year if the parser
+                ever kept history rather than newest-only.
+
+## [2026-09-15] KDOL KS projections | blocked
+Vintage before: projections 2024–2034 statewide (industry + occupational,
+                workbooks placed 2026-08-03), regional 2022–2032; demand flags
+                from the combined 2025 book. All three workbooks present,
+                `--sources none --dry-run` reports "ok 43d" for each.
+Vintage after:  unchanged — nothing downloaded, nothing parsed, no pipeline run.
+Checked:        **The documented URL is dead.** `www.dol.ks.gov/lmis/employment-projections`
+                (the URL in `MANUAL_SOURCES` for all three entries) returns
+                KDOL's "Page Not Found". WebFetch also 403s on `dol.ks.gov`, so
+                the browser pane was used. Content has moved into KLIC, split
+                across two pages: Employment Outlook (`?enc=bZzHuxoek0NJ0T158TW3mQ%3D%3D`)
+                and Occupational Employment Demand (`?docid=403`). Both were read
+                directly. Each publication carries its own release date on-page,
+                and the statewide download filenames match ours byte-for-byte
+                (`2024-2034 KS Occupational Projections.xlsx`,
+                `2024-2034 KS Industry Projections.xlsx`).
+Outputs changed: none (`git status --short` shows only this log and
+                data-source-release-calendar.md, both documentation)
+Validation:     pass — `python scripts/validate_outputs.py --state 20` →
+                "Output validation passed.", exit 0 (read-only; no pipeline run)
+Notes:          **Two of three workbooks are current. The third has a newer
+                edition we cannot safely take yet — hence blocked, not no-op.**
+
+                *Projections: current, and already parsed.* KLIC's newest
+                statewide cycle is 2024–2034, released **2026-07-07** — exactly
+                what we hold. `ks_proj_industry`, `ks_occ_proj_state_s20`,
+                `ks_occ_by_sector_s20` and `ks_occ_in_demand_top_s20` are all
+                dated 2026-09-04 08:30, after the workbooks' 2026-08-03 mtime,
+                so step 2b does not apply. `ks_occ_proj_region_s20` is dated
+                2026-08-02 and sits at 2022–2032 — **older by design, not drift**:
+                the published statewide book has no region dimension, and the
+                parser deliberately declines to clobber the regional file with an
+                empty one. 2022–2032 *is* KDOL's current regional cycle
+                (released 2025-07-07); the next one is due ~2027-07-07.
+
+                *Demand book: one edition behind, and blocked on a code change.*
+                KDOL released **2026 Occupational Employment Demand (Kansas)** on
+                **2026-08-20**. We hold the 2025 edition. It cannot simply be
+                dropped in, because the publication **changed shape**: what was
+                one combined workbook — ours, `2025 … (Kansas and Regions).xlsx`,
+                sheets `Kansas` + seven LWDA regions — is now two files,
+                `2026 … (Kansas).xlsx` and `2025 … (Kansas Regions).xlsx`.
+                `load_demand_flags()` takes a single path and unions High Demand
+                across the non-`Kansas` sheets *of that same file* to build
+                `regional_in_demand`; the driver picks it with a **lexical**
+                `newest_glob`. So `2026…` would outsort `2025…` and the flags
+                would be rebuilt from a book with no region sheets.
+
+                **Measured against the current outputs, the cost of a naive
+                drop-in:** `regional_in_demand` **384 → 0**, silently. `in_demand`
+                (250) and `demand_rank` (798 ranked of 821 state rows) would
+                survive — they come from the `Kansas` sheet. Nothing errors and
+                `validate_outputs.py` still passes; it has no assertion on this
+                layer. That is the same failure signature as the §2 stale-year
+                family, from a different cause: not a frozen year list, but a
+                publication that changed shape under a reader assuming the old
+                one. **So the partial download really is worse than none here,
+                exactly as the routine warns — do not fetch the 2026 book until
+                the parser can take two demand files.**
+
+                **Cadence is now confirmed and the calendar is updated.** KLIC
+                states it outright: long-term projections every two years,
+                statewide in even-numbered years, regional in odd. Observed
+                dates: statewide 2026-07-07, regional 2025-07-07, statewide
+                demand 2026-08-20, regional demand 2025-10-10. The demand book
+                is **not** on the projections cycle — it is annual, same parity.
+
+                **The cron watches the wrong months.** `0 8 15 9,10,11 *` fires
+                Sep/Oct/Nov 15 against releases on Jul 7, Aug 20 and Oct 10, so
+                it catches none of them — which is why the 2026 demand book sat
+                unnoticed for 26 days. Suggested `0 8 10,22 7,8,10 *`. Not
+                changed here: a routine does not rewrite its own schedule.
+
+                **For a human, in order:** (1) teach `load_demand_flags` /
+                the driver to take a statewide *and* a regional demand workbook;
+                (2) then download `2026 Occupational Employment Demand (Kansas).xlsx`
+                and `2025 Occupational Employment Demand (Kansas Regions).xlsx`
+                into `data/kdol_proj/` and re-run
+                `python refresh_dashboard.py --sources none --states 20`;
+                (3) repoint the three `MANUAL_SOURCES` URLs at the two KLIC
+                pages — the old one 404s and now misdirects anyone following the
+                "download from" hint; (4) update the routine's cron. Consider
+                also asserting a non-zero `regional_in_demand` in
+                `validate_outputs.py`, since that is the signal that would have
+                gone quietly to zero.
+
+## [2026-09-15] SSA disability | refreshed — year label corrected 2024 -> 2025, values unchanged
+Vintage before: oasdi_sc25.xlsx parsed with year=2024 in ssa_disability_s{08,20,29,31,40}
+Vintage after:  same workbook, year=**2025** — the label now matches the data
+Checked:        Not a publication check. This closes item (1) of the SSA no-op
+                entry above, at Chris's request. The rule was verified against
+                the workbooks themselves before any code moved: the Table 4
+                title row in oasdi_sc25.xlsx reads "... December 2025" and in
+                oasdi_sc24.xlsx "... December 2024" (both opened directly with
+                openpyxl). Edition YY holds December YY data.
+Outputs changed: exactly 5 files, all ssa_disability_s*.parquet. Content-diffed
+                against HEAD: the ONLY column that moved is `year`
+                (2024 -> 2025 on every row: 64 / 105 / 115 / 93 / 77 rows).
+                ssdi_18_64 and every other column are identical. Nothing
+                downstream changed — participation_s*, projections_effective_s*
+                and every other output came back byte-identical, as the no-op
+                entry predicted (nearest ACS midpoint is 2022 for both labels).
+Validation:     pass, 5/5 states, inline during the run and standalone
+                afterwards. 29/29 unit tests, run by the driver itself (see the
+                test-suite entry below).
+Notes:          scripts/parse_manual_ssa.py now reads the data year FROM THE
+                SHEET TITLE (`data_year_from_title`, matching "December YYYY"
+                with SSA's non-breaking space allowed for) and cross-checks it
+                against the edition year in the filename. A disagreement raises
+                rather than writing a mislabelled parquet — the same shape as
+                fetch_bls_proj's cycle-mismatch guard. Only if no title year is
+                found does it fall back to the filename, and it says so. The
+                docstring, the comment block, the --pub-year help and the
+                progress print all carried the wrong "pub_year - 1" rule and
+                were corrected together; the release calendar's row #9, its
+                naming section, and its Items Requiring Verification row were
+                corrected in the same session. Three regression tests cover the
+                title read, the stamp, and the mismatch refusal.
+
+                The 2026-09-01 entry above states "2025 edition = data year
+                2024" as fact. It is wrong and is left as written, per
+                append-only; this entry supersedes it.
+
+                Run as `python refresh_dashboard.py --sources none --states
+                bloc`. No API cache was touched. NOT COMMITTED — Chris reviews.
+
+## [2026-09-15] KDOL KS projections | tooling — two-file demand book, KLIC URLs, validator, cron
+Vintage before: n/a — no data changed (statewide demand still the 2025 edition)
+Vintage after:  unchanged. ks_occ_proj_state_s20 re-parsed from the same combined
+                2025 book: 250 in-demand, **384 regional in-demand**, 798/832
+                ranked — identical to before, byte-identical output.
+Checked:        Closes items (1), (3), (4) and the validator suggestion of the
+                KDOL "blocked" entry above, at Chris's request. Item (2), the
+                download, remains — see Notes.
+Outputs changed: none in data/. Code: scripts/parse_manual_ks_occproj.py,
+                refresh_dashboard.py, scripts/validate_outputs.py,
+                tests/test_calculations.py; docs/data-source-release-calendar.md;
+                the ks-refresh-kdol-projections routine (prompt + schedule).
+Validation:     pass — full bloc run through the real driver after the change;
+                29/29 tests including nine new ones for this layer.
+Notes:          1. PARSER. `load_demand_flags(path, regional_path=None,
+                   allow_no_regional=False)`. Statewide flags come from the
+                   "Kansas" sheet of `path`; regional_in_demand is the High
+                   Demand union across the region sheets of `regional_path`
+                   when given, else of `path` — so the legacy combined book
+                   parses exactly as before, and can also serve as the regional
+                   source beside a newer statewide-only book (its own Kansas
+                   sheet is ignored in that role). It now RAISES when no region
+                   sheet contributed, because that is precisely the silent
+                   384 -> 0 the blocked entry measured. `--allow-no-regional`
+                   is the deliberate override; the routine is told never to
+                   pass it.
+
+                2. PAIRING. `select_demand_workbooks()` takes the newest
+                   "(Kansas)"/"(Kansas and Regions)" book as statewide and the
+                   newest book whose scope mentions "Regions" as regional,
+                   preferring a dedicated "(Kansas Regions)" file on a vintage
+                   tie. refresh_dashboard.py calls it instead of a lexical
+                   newest_glob and passes `--regional-demand-file` when the
+                   pair is two files. Verified against the three real
+                   filenames: with the 2026 statewide book dropped in beside
+                   the combined 2025 book, the pair is (2026 Kansas, 2025 Kansas
+                   and Regions) — which is why the download can now happen
+                   without a code step.
+
+                3. VALIDATOR. `_failures_for_ks_demand_flags` fails when
+                   in_demand or regional_in_demand sums to zero, when either
+                   column is missing, or when demand_rank is null throughout,
+                   in ks_occ_proj_state_s20.parquet. Kansas-only; absence is
+                   not a failure. Exercised both ways against synthetic
+                   parquets.
+
+                4. URLS. MANUAL_SOURCES carries KLIC_OUTLOOK_URL for the two
+                   projections books and KLIC_DEMAND_URL for the demand books,
+                   the latter split into "(statewide)" and "(regional)" entries
+                   so the staleness report shows both. The two projections
+                   entries got an 800-day window: they publish biennially, and
+                   the 100-day default would report STALE for ~19 of every 24
+                   months — the same false-alarm shape OES carried before its
+                   400-day window. The "download from" hint now names the
+                   page that actually holds the file.
+
+                5. CRON. ks-refresh-kdol-projections retargeted from
+                   `0 8 15 9,10,11 *` to `0 8 10,22 7,8,10 *` (Jul/Aug/Oct
+                   10 + 22, a few days after each observed release with a
+                   second fire as a hedge). Its prompt was rewritten for the
+                   four-workbook layout, the confirmed cadence, the two KLIC
+                   pages, and the new guards. Done at Chris's explicit
+                   instruction — a routine still does not rewrite its own
+                   schedule.
+
+                REMAINING, FOR CHRIS: download
+                `2026 Occupational Employment Demand (Kansas).xlsx` from the
+                KLIC demand page into data/kdol_proj/ and run
+                `python refresh_dashboard.py --sources none --states 20`. The
+                parser will pair it with the combined 2025 book for the
+                regional flags; expect in_demand / demand_rank to move and
+                regional_in_demand to stay 384 until the 2026 "(Kansas
+                Regions)" book appears (~Oct 2026). This session did not fetch
+                the file: downloads are a human step under the vault's rules.
+                NOT COMMITTED.
+
+## [2026-09-15] all layers | tooling — ACS partial-schema guard; unit tests run on every refresh
+Vintage before: n/a — no data changed
+Vintage after:  unchanged
+Checked:        Closes the two "recommended, not done here" items of the
+                2026-09-04 ACS entry, at Chris's request.
+Outputs changed: none in data/. Code: fetch_acs.py, refresh_dashboard.py,
+                tests/test_calculations.py.
+Validation:     pass — 29/29 tests; full bloc refresh completed through the new
+                test step; validate_outputs 5/5.
+Notes:          1. ACS. `_add_labor_force_status` still no-ops when NO B23001
+                   variable is present (legacy caches), but now RAISES when some
+                   are present and others missing, naming the missing ones and
+                   pointing at the Census group definition. `_weighted_sum`
+                   skips absent variables silently, so a partial frame was a
+                   plausibly-wrong LFPR with no error — the Census schema-change
+                   scenario the 09-04 entry described. The existing
+                   civilian-denominator test supplied only 12 of the 60
+                   variables and so tripped the new guard; it now supplies the
+                   other 48 as zeros, which leaves every asserted number
+                   unchanged. Three new tests: all-absent no-op, partial
+                   raises, complete passes.
+
+                2. TESTS ON EVERY REFRESH. `pytest` was in requirements.txt but
+                   not installed in the pipeline's interpreter
+                   (Python 3.12, AppData\Local\Programs); installed it.
+                   refresh_dashboard.py now runs `python -m pytest tests -q`
+                   ONCE per invocation, before any cache is cleared, and aborts
+                   on failure so a broken tree cannot destroy a good cache and
+                   publish from a half-working pipeline. A missing pytest is
+                   reported as a failure with the install command, not skipped
+                   — a refresh that silently skips its tests is the condition
+                   this ends. `--skip-tests` exists for a deliberate bypass;
+                   dry-run prints that tests would run and does not run them.
+                   The step added ~3 s to the bloc run and its "29 passed"
+                   line is the second line of this run's log.
+
+                Both are production behaviour changes, which is why the 09-04
+                entry declined to bundle them with a test fix; they were done
+                here on explicit instruction. NOT COMMITTED.
+
+                Also observed, not acted on: the ks-refresh-ipeds routine
+                fired this morning (lastRunAt 07:02 local) and wrote no entry
+                to this log. Every fire is supposed to append one. Worth
+                checking that run's session before its next fire on 10-15.
+
+## [2026-09-15] KDOL labor force | refreshed
+Vintage before: monthly through 2026-06 (labforce__99999999.xlsx, downloaded 2026-08-20)
+Vintage after:  monthly through **2026-07** (labforce__99999999.xlsx, re-exported by
+                Chris 2026-09-15 13:17 over the previous file of the same name)
+Checked:        Export inspected before parsing: real .xlsx, the 23-column KDOL
+                schema, 72,587 rows, Periodyear*100+Period spanning 197600 ->
+                202607, area types 01/04/11/15/17/24/81/82 present. One monthly
+                vintage adopted (July 2026, published 2026-08-21). August 2026
+                publishes 2026-09-18, so this layer will be one vintage behind
+                again on Friday; the routine's next fire is 2026-09-22.
+Outputs changed: kdol_labforce_county_s20.parquet 49,770 -> 49,875 rows (+105,
+                one month x 105 counties); kdol_labforce_state_s20.parquet
+                1,262 -> 1,264 (+2: one month x adjusted/unadjusted);
+                kdol_labforce_county_recent_s20.parquet 24-month window rolled
+                2024-07..2026-06 -> **2024-08..2026-07**, 2,520 rows, 105
+                counties. Content-diffed against HEAD; no other output moved.
+Validation:     pass — validate_outputs --state 20 inline and standalone;
+                31/31 unit tests run by the driver first.
+Notes:          Run as `python refresh_dashboard.py --sources none --states 20`
+                (twice — the first run's KDOL occupational parse failed for the
+                reason in the next entry; the labor-force parse succeeded both
+                times with identical output). No benchmark-revision signal.
+                NOT COMMITTED.
+
+## [2026-09-15] KDOL KS projections | refreshed — 2026 statewide demand book adopted
+Vintage before: demand flags from the combined 2025 book (Kansas + regions)
+Vintage after:  statewide flags from **2026 Occupational Employment Demand
+                (Kansas).xlsx** (downloaded by Chris 2026-09-15 13:11; its
+                "About the Data" sheet prints "Published: August 2026");
+                regional flags still from the 2025 combined book, which is the
+                only regional source until KDOL publishes the 2026 "(Kansas
+                Regions)" book (~Oct). Projections books unchanged (2024-2034).
+Checked:        The driver paired the two files exactly as the tooling entry
+                above intended — statewide 2026, regional 2025 — and the parser
+                reported "250 in-demand, 384 regional in-demand, 798/832 SOC
+                codes matched". The counts match 2025 but the CONTENT does not:
+                compared SOC-by-SOC against HEAD, in_demand flipped on **42**
+                occupations (21 gained, 21 lost), emerging_demand on 106,
+                high_wage on 60, and demand_rank changed on **781 of 798**
+                ranked occupations. Regional flipped on 0, as expected from an
+                unchanged source. Top five by 2026 rank: Fast Food and Counter
+                Workers (1), Cashiers (2), Stockers and Order Fillers (3, was 4),
+                Registered Nurses (4, was 8), Customer Service Representatives
+                (5, was 6). Newly in-demand include Administrative Services
+                Managers and Human Resources Managers; dropped include Software
+                Quality Assurance Analysts and Testers and Civil Engineering
+                Technologists.
+Outputs changed: ks_occ_proj_state_s20.parquet and ks_occ_in_demand_top_s20
+                .parquet (246 detail occupations). ks_occ_by_sector_s20 did NOT
+                change — the sector roll-up sums employment, not flags. Plus
+                the labor-force files in the entry above.
+Validation:     pass, including the new demand-flags assertion; 31/31 tests.
+Notes:          **THE GUARD FIRED FIRST, AND WAS RIGHT TO.** The first run
+                failed the occupational parse with "No statewide 'Kansas'
+                sheet" and left the existing outputs intact. The 2026 book
+                changed more than the file split anticipated: its sheets are
+                `About the Data` and `Occupational Employment Demand` (no sheet
+                named `Kansas`; the scope sits in the title row, "Kansas - 2026
+                Occupational Employment Demand"), and the SOC column is headed
+                **"Occupation Code"** with "Occupation Title" beside it, where
+                the 2025 book had "SOC" / "SOC Title". Under the pre-09-15 code
+                this file would have been picked by lexical sort and parsed to
+                an empty join or a crash; under the morning's code it was
+                refused cleanly. Either way no wrong number reached an output.
+
+                Second tooling change, same day: `load_demand_flags` resolves
+                the statewide sheet by name, then by title row, then (for a
+                book scoped "(Kansas)" by filename) as the sole data sheet; a
+                new `_soc_col` accepts either header convention; "Map - ..."
+                sheets join Notes / About the Data as non-data. The regional
+                loop skips the regional book's own statewide sheet by the same
+                resolution. Two new tests reproduce the real 2026 layout and a
+                regional book carrying it; 31/31 pass. Verified against the
+                real files in a scratch directory before re-running the driver.
+
+                Expect the eventual 2026 "(Kansas Regions)" book to carry the
+                2026 headers too; the parser is ready for that. When it lands,
+                regional_in_demand will move for the first time since 2025.
+                README §5 row 13 still describes the demand book as one file;
+                worth a line when the README is next touched.
+
+                NOT COMMITTED. The diff a human is reviewing now spans: the
+                morning's seven fixes, the SSA re-stamp (5 files), this KDOL
+                labor-force month (3 files), and this demand adoption (2 files).

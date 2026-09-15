@@ -11,6 +11,10 @@ numbers month to month. To actually pull fresh data we must delete the
 API-backed caches first, then re-run the pipeline.
 
 This script:
+  0. Runs the unit test suite (tests/) once, before anything else. A failing
+     test aborts the refresh before any cache is touched. Until 2026-09-15
+     nothing scheduled ran the tests, so a broken test sat unnoticed for
+     weeks; --skip-tests exists for a deliberate bypass, never as a default.
   1. Clears the API-backed caches so the next run re-fetches live data.
   2. Parses the manual-download inputs (KDOL labor force, SSA disability, KDOL
      industry + occupational projections). run_forecast.py does not regenerate
@@ -65,6 +69,7 @@ import time
 from pathlib import Path
 
 import bulk_cache
+from scripts.parse_manual_ks_occproj import select_demand_workbooks
 
 BASE_DIR = Path(__file__).parent
 DATA_DIR = BASE_DIR / "data"
@@ -117,6 +122,13 @@ SOURCE_CACHES: dict[str, list[str]] = {
 BLOC_STATES = ["20", "08", "29", "31", "40"]  # KS, CO, MO, NE, OK
 
 # Manual-download sources (no public API). Checked for staleness, never cleared.
+# KDOL moved its projections content into KLIC on two pages; the old
+# www.dol.ks.gov/lmis/employment-projections URL 404s as of 2026-09-15.
+KLIC_OUTLOOK_URL = ("https://klic.dol.ks.gov/vosnet/gsipub/documentView.aspx"
+                    "?enc=bZzHuxoek0NJ0T158TW3mQ%3D%3D")   # Employment Outlook
+KLIC_DEMAND_URL = ("https://klic.dol.ks.gov/vosnet/gsipub/documentView.aspx"
+                   "?docid=403")                            # Occ. Employment Demand
+
 MANUAL_SOURCES = {
     # KDOL labor force export from KLIC's Telerik report builder (HTML-as-.xls).
     # NOTE: This REPLACES the abandoned "KDOL UI claims" source. KDOL does not
@@ -193,19 +205,35 @@ MANUAL_SOURCES = {
     # under their published filenames — no renaming needed. Both parsers still
     # accept the legacy Telerik HTML-as-.xls export as a fallback
     # (bls_proj_cache/ks_proj_manual.xls and data/occproj__*.xls).
+    # Statewide projections publish in EVEN years on ~July 7 (regional in odd
+    # years); 2024-2034 released 2026-07-07. Annual sources by default carry a
+    # 100-day window, which would cry STALE for most of a biennial cycle, so
+    # these two get a window sized to the cadence with slack for a late July.
     "KS industry projections": {
         "glob": "kdol_proj/*Industry Projections*.xlsx",
-        "url": "https://www.dol.ks.gov/lmis/employment-projections",
+        "url": KLIC_OUTLOOK_URL,
+        "stale_days": 800,
     },
     "KS occupational projections": {
         "glob": "kdol_proj/*Occupational Projections*.xlsx",
-        "url": "https://www.dol.ks.gov/lmis/employment-projections",
+        "url": KLIC_OUTLOOK_URL,
+        "stale_days": 800,
     },
     # Supplies the in-demand / rank flags the published projections book omits.
-    # Without it the dashboard's in-demand layer is empty.
-    "KS occupational demand flags": {
-        "glob": "kdol_proj/*Occupational Employment Demand*.xlsx",
-        "url": "https://www.dol.ks.gov/lmis/employment-projections",
+    # Without it the dashboard's in-demand layer is empty. Since 2026 this is
+    # TWO books — "(Kansas)" statewide and "(Kansas Regions)" — where it used
+    # to be one combined "(Kansas and Regions)" file; select_demand_workbooks()
+    # pairs the newest of each. Statewide is annual (~Aug 20), so the default
+    # 100-day window is right for it; the regional book is annual too (~Oct).
+    "KS occupational demand flags (statewide)": {
+        "glob": "kdol_proj/*Occupational Employment Demand (Kansas*.xlsx",
+        "url": KLIC_DEMAND_URL,
+        "stale_days": 400,
+    },
+    "KS occupational demand flags (regional)": {
+        "glob": "kdol_proj/*Occupational Employment Demand (Kansas*Regions).xlsx",
+        "url": KLIC_DEMAND_URL,
+        "stale_days": 400,
     },
 }
 
@@ -491,19 +519,25 @@ def refresh_state(state: str, sims: int) -> int:
                    or DATA_DIR / "bls_proj_cache" / "ks_proj_manual.xls")
         occ_src = (newest_glob("kdol_proj/*Occupational Projections*.xlsx")
                    or newest_glob("occproj__*.xls"))
-        demand_src = newest_glob("kdol_proj/*Occupational Employment Demand*.xlsx")
+        # The demand flags come from one combined book (through 2025) or a
+        # statewide + regional pair (2026 on). A lexical newest-glob here would
+        # hand the parser the 2026 statewide-only book and silently zero every
+        # regional flag, so the pairing is delegated to the parser module.
+        demand_src, regional_src = select_demand_workbooks(
+            sorted(DATA_DIR.glob("kdol_proj/*Occupational Employment Demand*.xlsx")))
         occ_extra = ["--demand-file", str(demand_src)] if demand_src else []
+        if regional_src is not None:
+            occ_extra += ["--regional-demand-file", str(regional_src)]
 
-        for label, script, src, extra in (
+        for label, script, src, extra, url in (
             ("KDOL industry projections",
-             "scripts/parse_manual_ks_proj.py", ind_src, []),
+             "scripts/parse_manual_ks_proj.py", ind_src, [], KLIC_OUTLOOK_URL),
             ("KDOL occupational projections",
-             "scripts/parse_manual_ks_occproj.py", occ_src, occ_extra),
+             "scripts/parse_manual_ks_occproj.py", occ_src, occ_extra, KLIC_OUTLOOK_URL),
         ):
             if src is None or not src.exists():
                 print(f"\n=== {label} export MISSING — skipping parse ===")
-                print(f"     Download from "
-                      f"{MANUAL_SOURCES['KS industry projections']['url']} "
+                print(f"     Download from {url} "
                       f"into data/kdol_proj/ (published filename is fine)")
                 continue
             print(f"\n=== Parsing {label} ({src.name}) ===")
@@ -561,6 +595,34 @@ def refresh_state(state: str, sims: int) -> int:
     return 0
 
 
+def run_test_suite() -> int:
+    """Run tests/ with pytest; return its exit code.
+
+    Runs once per driver invocation, before any cache is cleared, so a broken
+    tree cannot destroy a good cache and then publish from a half-working
+    pipeline. pytest is in requirements.txt; its absence is an environment
+    defect, reported as a failure rather than skipped — a refresh that silently
+    skips its tests is the condition this step exists to end.
+    """
+    print("\n=== Running unit tests (tests/) ===")
+    try:
+        import pytest  # noqa: F401
+    except ImportError:
+        print("  !! pytest is not installed in this interpreter "
+              f"({sys.executable}). Install it (`python -m pip install pytest`, "
+              "it is in requirements.txt) or pass --skip-tests to bypass "
+              "deliberately.")
+        return 2
+    proc = subprocess.run(
+        [sys.executable, "-m", "pytest", "tests", "-q", "-p", "no:cacheprovider"],
+        cwd=str(BASE_DIR),
+    )
+    if proc.returncode != 0:
+        print(f"\n!! Unit tests FAILED (pytest exit {proc.returncode}). "
+              f"Refresh aborted before touching any cache or output.")
+    return proc.returncode
+
+
 def resolve_states(spec: str) -> list[str]:
     """Parse --states into a list of zero-padded FIPS codes.
 
@@ -592,6 +654,9 @@ def main() -> int:
     parser.add_argument("--keep-annual-cache", action="store_true",
                         help="Only clear monthly series (LAUS/JOLTS); keep annual caches")
     parser.add_argument("--sims", default=2000, type=int, help="Monte Carlo sims per county")
+    parser.add_argument("--skip-tests", action="store_true",
+                        help="Do not run tests/ before refreshing. For a deliberate "
+                             "bypass only; the default runs them every time.")
     args = parser.parse_args()
 
     if args.list_sources:
@@ -623,6 +688,15 @@ def main() -> int:
     print(f"  KS Workforce Dashboard refresh — {scope}")
     print(f"  States: {', '.join(states)}")
     print("=" * 60)
+
+    if args.dry_run:
+        print("\n[dry-run] tests/ would run first (skipped in dry-run)")
+    elif args.skip_tests:
+        print("\n!! --skip-tests: unit tests NOT run this refresh.")
+    else:
+        rc = run_test_suite()
+        if rc != 0:
+            return rc
 
     print("\n=== Clearing API caches (forces live re-fetch) ===")
     if caches:

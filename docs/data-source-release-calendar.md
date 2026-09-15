@@ -85,7 +85,7 @@ moves year to year, the window carries an extra fire or two to absorb the slip.
 | 6 | CBP | Annual (~18 mo lag) | 2023 CBP released **2025-06-26** (adopted 2026-08-27). 2024 CBP **not out as of 2026-08-27** — confirmed twice that day: the census.gov CBP updates page advertises 2023 as newest, and `api.census.gov/data.json` lists vintages 1986…2023 with no 2024 endpoint. | `ks-refresh-cbp` | `0 7 27 6,7,8 *` | Jun/Jul/Aug 27 |
 | 7 | LODES | Annual | LODES 8.3 (2022 data) released **2024-11-19**. Tech doc rev 8.4 dated 2025-12-03 — and **2023 data is in fact published**, confirmed by direct request 2026-09-02. **2022 + 2023 adopted 2026-09-02**; 2024 returns 404. | `ks-refresh-lodes` | `0 7 20 11,12 *` | Nov 20, Dec 20 |
 | 8 | OES/OEWS | Annual — **part-manual** | May 2025 estimates released **2026-05-15** (delayed by the 2025-10-01→11-12 shutdown). Normal cadence is early April. **Fully unblocked 2026-09-03 — both layers adopted through 2025** (state 2015–2025, sector 2021–2025). Every `oesm25*` pattern 403s and `oesm24{st,in4,nat}` too, so each layer falls through its own three-tier chain ending at `data/oes_manual/all_data_M_{year}.xlsx`. The same change fixed a 3–4x aggregation double-count in the sector layer; see §4. | `ks-refresh-oes` | `0 7 4,16 4,5,6 *` | 4th + 16th of Apr/May/Jun |
-| 9 | SSA OASDI-SC | Annual — **manual** | 2024 edition released **August 2025**; 2025 edition in hand **2026-09-01** (release date itself unconfirmed). Each edition reports data as of December of its reference year, so the 2025 edition is data year 2024. **Adopted 2026-09-01.** | `ks-refresh-ssa` | `0 8 15 8,9 *` | Aug 15, Sep 15 |
+| 9 | SSA OASDI-SC | Annual — **manual** | 2024 edition released **August 2025**; 2025 edition in hand **2026-09-01** (release date itself unconfirmed). **Edition YY holds December YY data** — the Table 4 title in `oasdi_sc25.xlsx` reads "December 2025" (read directly 2026-09-15). The earlier "2025 edition = data year 2024" statement here was wrong and the parser stamped it that way until 2026-09-15; `parse_manual_ssa.py` now reads the year from the sheet title and refuses a workbook whose title disagrees with its filename. **Adopted 2026-09-01; re-stamped year=2025 on 2026-09-15.** | `ks-refresh-ssa` | `0 8 15 8,9 *` | Aug 15, Sep 15 |
 | 10 | KDOL labor force | Monthly — **manual** | Jul 2026 KS labor report → **2026-08-21** (3rd Friday, same day as the BLS state release). Annual benchmark revision released 2026-05-22. | `ks-refresh-kdol-labforce` | `0 8 22 * *` | 22nd monthly |
 
 ### KDOL labor force vs. LAUS — these are the same program, not duplicates
@@ -111,8 +111,103 @@ Two consequences worth knowing:
   since the filename carries a fixed `99999999` sentinel instead of a vintage.
 | 11 | KSDE / CCD | Annual | Via the Urban Institute Education Data API, which lags the NCES CCD collection. Release date unconfirmed. **Collection year 2024 adopted 2026-09-02.** Note the 2025 `directory` endpoint answers 200 with **count=0** — endpoint existence is not publication here, so check row counts before bumping. | `ks-refresh-ksde` | `0 7 18 2 *` | Feb 18 |
 | 12 | BLS national projections | Annual — **manual** | 2024–34 released **2025-08-28**; **2025–35 released 2026-08-27** (both the last Thursday of August). **2025–35 adopted 2026-09-01.** | `ks-refresh-bls-projections` | `0 8 29 8,9 *` | Aug 29, Sep 29 |
-| 13 | KDOL KS projections | Biennial cycle — **manual** | 2024–2034 workbooks currently adopted (industry, occupational, and the companion demand book). Next cycle date unconfirmed. | `ks-refresh-kdol-projections` | `0 8 15 9,10,11 *` | Sep/Oct/Nov 15 |
+| 13 | KDOL KS projections | Biennial, **alternating by year parity** — **manual**. Projections release **July 7**: statewide in even years, regional in odd. The companion demand book is a **separate, annual** publication on the same parity. | **Cadence confirmed 2026-09-15** — see "KDOL cadence is now known" below. 2024–2034 statewide (rel. **2026-07-07**) and 2022–2032 regional (rel. **2025-07-07**) both adopted. **Statewide demand 2026 adopted 2026-09-15** (released **2026-08-20**; its "About the Data" sheet prints "Published: August 2026"). Regional flags still come from the 2025 combined book until a "(Kansas Regions)" book is published (~Oct). | `ks-refresh-kdol-projections` | `0 8 10,22 7,8,10 *` (retargeted 2026-09-15; was `0 8 15 9,10,11 *`, which missed all three releases) | Jul/Aug/Oct 10 + 22 |
 | 14 | Projections Central | Annual, rolling by state | States publish their long-term cycle on their own timetables, so there is no single national date. | `ks-refresh-projections-central` | `0 7 10 2,5,8,11 *` | Feb/May/Aug/Nov 10 |
+
+### KDOL cadence is now known — and the routine's cron watches the wrong months
+
+Established 2026-09-15 from KDOL's own pages, which answers the long-standing
+"next cycle unconfirmed" question in §4. Three separate facts, all read directly
+off KLIC rather than inferred from cadence:
+
+**1. The documented URL is dead.** `https://www.dol.ks.gov/lmis/employment-projections`
+— the URL in `MANUAL_SOURCES` for all three KS projections entries in
+`refresh_dashboard.py`, and in §4 below — now returns KDOL's "Page Not Found".
+The content moved into KLIC and is split across **two** pages:
+
+| Page | URL |
+|---|---|
+| Employment Outlook (industry + occupational projections) | `klic.dol.ks.gov/vosnet/gsipub/documentView.aspx?enc=bZzHuxoek0NJ0T158TW3mQ%3D%3D` |
+| Occupational Employment Demand (the in-demand / rank flags) | `klic.dol.ks.gov/vosnet/gsipub/documentView.aspx?docid=403` |
+
+Note `dol.ks.gov` **403s to WebFetch** but serves fine to the browser pane, the
+same pattern SSA shows. A 403 here is not evidence about publication.
+
+**2. The cadence, quoted from the Employment Outlook overview:** "Long-term
+projections are released every two years with statewide projections being
+published in even numbered years, while regional projections are published
+during odd numbered years." Each file carries its own release date on the page:
+
+| Publication | Edition held | Released | Next due |
+|---|---|---|---|
+| Statewide projections (industry + occupational) | 2024–2034 ✓ | **2026-07-07** | 2026–2036, ~**2028-07-07** |
+| Regional projections | 2022–2032 ✓ | **2025-07-07** | 2024–2034, ~**2027-07-07** |
+| Statewide demand book | 2025 ✗ **(2026 is out)** | **2026-08-20** | annual, ~Aug |
+| Regional demand book | 2025 ✓ | **2025-10-10** | annual, ~Oct |
+
+Both projections releases landed on **July 7**. The demand book is **not** tied
+to the projections cycle — it is annual, on the same even/odd parity.
+
+**So the `0 8 15 9,10,11 *` window catches nothing.** It fires Sep/Oct/Nov 15;
+the releases are Jul 7, Aug 20 and Oct 10. That is why the 2026 statewide demand
+book (out since 2026-08-20) was still unnoticed on 2026-09-15. **Retargeted the
+same day** to `0 8 10,22 7,8,10 *` (Jul/Aug/Oct 10 + 22), which lands a few days
+after each of the three observed dates, and the routine's instructions were
+rewritten for the four-workbook layout and the KLIC URLs.
+
+**3. The demand book has SPLIT INTO TWO FILES, and the parser reads one.** This
+is the part that needs a code change before the 2026 edition can be adopted.
+KDOL used to ship one combined workbook — the one we hold,
+`2025 Occupational Employment Demand (Kansas and Regions).xlsx`, whose sheets are
+`Kansas` plus the seven LWDA regions. It now publishes them separately:
+
+- `2026 Occupational Employment Demand (Kansas).xlsx` — statewide only
+- `2025 Occupational Employment Demand (Kansas Regions).xlsx` — regions only
+
+`load_demand_flags()` in `scripts/parse_manual_ks_occproj.py` takes a **single**
+path, **requires** a sheet normalising to `kansas`, and unions High Demand across
+**every other sheet in that same file** to build `regional_in_demand`. The driver
+feeds it `newest_glob("kdol_proj/*Occupational Employment Demand*.xlsx")`, which
+sorts **lexically**. So dropping the 2026 statewide book in beside the 2025
+combined one makes `2026…` win on sort, and the flags would be rebuilt from a
+workbook with no region sheets:
+
+> **Measured on the current outputs, this is what a naive drop-in would cost:**
+> `regional_in_demand` falls from **384 SOC codes to 0**, silently. `in_demand`
+> (250) and `demand_rank` (798 ranked of 821 state rows) would survive, because
+> those come from the `Kansas` sheet. Nothing would error and
+> `validate_outputs.py` would still pass — it has no assertion on this layer.
+
+This is the §2 pattern again in a new costume: not a stale year list, but a
+**publication that changed shape** under a reader that assumed the old one. The
+fix is to let the demand flags come from **two** files — statewide and regional
+— rather than one, and only then download the 2026 book.
+
+**Landed 2026-09-15.** `load_demand_flags(path, regional_path=None)` now reads
+the statewide flags from one book and the regional union from a second when
+given; `select_demand_workbooks()` pairs the newest "(Kansas)"/"(Kansas and
+Regions)" book with the newest book whose scope mentions "Regions" (preferring
+a dedicated "(Kansas Regions)" file on a vintage tie), and `refresh_dashboard.py`
+passes both to the parser. Two guards back it: the parser **raises** when no
+region sheet contributed (`--allow-no-regional` is the deliberate override), and
+`validate_outputs.py` now fails when `in_demand` or `regional_in_demand` sums to
+zero in `ks_occ_proj_state_s20.parquet`. The legacy combined book still works
+unchanged, and doubles as the regional source until the split regional book is
+downloaded.
+
+**The 2026 book changed more than the file split — adopted 2026-09-15.** When
+Chris dropped `2026 Occupational Employment Demand (Kansas).xlsx` in, the parser
+refused it (the intended failure mode) because the statewide sheet is no longer
+named `Kansas`: the 2026 book has two sheets, `About the Data` and
+`Occupational Employment Demand`, with the scope in the title row
+("Kansas - 2026 Occupational Employment Demand"), and the SOC column is headed
+**"Occupation Code"** (with "Occupation Title") where the 2025 book had "SOC" /
+"SOC Title". `load_demand_flags` now resolves the statewide sheet by name, then
+by title row, and recognises either column convention; both layouts are covered
+by tests. Result on the live join: 250 in-demand (42 SOCs flipped vs 2025, 21
+gained / 21 lost), ranks changed on 781 of 798 ranked occupations, regional
+384 unchanged (same 2025 source). Expect the eventual `(Kansas Regions)` book
+to carry the 2026 headers too.
 
 ### Sources that need a code change, not just a cache clear
 
@@ -484,7 +579,8 @@ for years BLS will not serve (currently 2025 alone). Two consequences:
 these is selected by a glob that takes the newest match, so a new edition
 dropped in beside the old one wins automatically — and the year in the filename
 is what the parser reads the vintage from. `oasdi_sc25.xlsx` is parsed as the
-2025 edition (data year 2024); `bls_proj_national_2025_2035.xlsx` as the 2025–35
+2025 edition (data year **2025** — read from the sheet title, cross-checked
+against the filename); `bls_proj_national_2025_2035.xlsx` as the 2025–35
 cycle. Two consequences, both learned the hard way on 2026-09-01:
 
 - **Do not overwrite an old edition with a new one under the old name.** The
@@ -518,8 +614,11 @@ confirming.
 | CBP 2024 vintage | Whether 2024 CBP has published, and its date. **Checked 2026-08-27: not out.** Newest published vintage is 2023 (released 2025-06-26), now adopted. The API catalog is the cheaper of the two checks. | `api.census.gov/data.json` (vintage list) / `census.gov/programs-surveys/cbp/news-updates.html` |
 | LODES post-8.3 release | Whether a 2023-data LODES release shipped after 8.3 (2024-11-19). Tech doc rev 8.4 is dated 2025-12-03, which hints at a release but does not confirm one. | `lehd.ces.census.gov/data/` |
 | IPEDS provisional date | The exact 2024-25 completions provisional release date. Only the ≈9-month-after-collection rule was confirmed. | `nces.ed.gov/ipeds/survey-components/data-release-schedule` |
-| SSA OASDI-SC 2025 edition | Its **release date** only. The edition itself is confirmed to exist and was adopted 2026-09-01 (data year 2024), but it was downloaded by hand without recording a publication date, so the August cadence is still inferred from the 2024 edition alone. | `ssa.gov/policy/docs/statcomps/oasdi_sc/` |
-| KDOL next projections cycle | When KDOL publishes the cycle following 2024–2034. | `dol.ks.gov/lmis/employment-projections` |
+| SSA OASDI-SC 2025 edition | Its **release date** only. The edition itself is confirmed to exist and was adopted 2026-09-01 (data year **2025** — corrected 2026-09-15; the row previously said 2024). It was downloaded by hand without recording a publication date; the 2026-09-15 SSA no-op entry reports a search-result summary giving August 2026, consistent with the cadence, but the index page date was not read directly [VERIFY in a browser]. | `ssa.gov/policy/docs/statcomps/oasdi_sc/` |
+| ~~KDOL next projections cycle~~ | **Resolved 2026-09-15 — the cadence is stated on KLIC's Employment Outlook page and every file carries a release date.** Biennial on year parity: statewide in even years, regional in odd, both on **July 7**. 2024–2034 statewide released 2026-07-07 (held); 2022–2032 regional released 2025-07-07 (held). So the cycle following 2024–2034 statewide is **2026–2036, due ~2028-07-07**, and 2024–2034 *regional* is due ~2027-07-07 first. The companion demand book turned out **not** to follow the projections cycle at all — it is annual. See "KDOL cadence is now known" in §2. | resolved; `klic.dol.ks.gov/vosnet/gsipub/documentView.aspx?enc=bZzHuxoek0NJ0T158TW3mQ%3D%3D` |
+| ~~KDOL demand book — two-file split~~ | **Resolved 2026-09-15.** Two-file parser, pairing, guard and validator landed, and the 2026 statewide book was downloaded and adopted the same day (after a second parser fix for its renamed sheet and "Occupation Code" header). Remaining: the 2026 `(Kansas Regions)` book when KDOL publishes it (~Oct 2026); until then regional flags are the 2025 edition's. | `klic.dol.ks.gov/vosnet/gsipub/documentView.aspx?docid=403`; `scripts/parse_manual_ks_occproj.py::load_demand_flags` |
+| KDOL demand book annual cadence | Whether the demand book is reliably **annual** with statewide/regional alternating by year parity, as the two observed editions suggest (2026 statewide 2026-08-20, 2025 regional 2025-10-10). The 2026 book's own "About the Data" sheet says "Published: August 2026", consistent with the page date. Two data points establish the pattern but not that it holds. Worth a look when the 2026 regional edition is due (~Oct 2026). | `klic.dol.ks.gov/vosnet/gsipub/documentView.aspx?docid=403` |
+| ~~KDOL manual-source URLs in code~~ | **Resolved 2026-09-15.** `MANUAL_SOURCES` now carries `KLIC_OUTLOOK_URL` for the two projections books and `KLIC_DEMAND_URL` for the demand books (split into statewide and regional entries), and the "download from" hints use the matching page. The projections entries also got an 800-day staleness window sized to the biennial cadence, in place of the 100-day default that would have cried STALE for most of every cycle. | `refresh_dashboard.py` `MANUAL_SOURCES` |
 | Projections Central cadence | Whether Kansas and the neighbour states publish their long-term cycle on a predictable month. | `projectionscentral.org` |
 | KSDE / CCD via Urban Institute | When the Urban Institute Education Data API refreshes CCD enrollment each year. | `educationdata.urban.org` |
 | QCEW Q3/Q4 dates | BLS lists Q3 and Q4 2026 releases as "to be determined in 2027". The two-fire cron window is a hedge against that. **Note the quarterly date is not what gates this layer** — see the QCEW entry in §2's code-change list. The Q4 date is the one worth knowing, because the annual averages ride along with it. | `bls.gov/cew/release-calendar.htm` |

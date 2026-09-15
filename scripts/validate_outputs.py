@@ -435,6 +435,58 @@ def _failures_for_laus_grain(outputs: Path, state: str | None = None) -> list[st
     return failures
 
 
+def _failures_for_ks_demand_flags(outputs: Path, state: str | None = None) -> list[str]:
+    """
+    Assert the KDOL in-demand layer is actually populated.
+
+    ks_occ_proj_state_s20.parquet gets its in_demand / demand_rank /
+    regional_in_demand columns by joining KDOL's Occupational Employment Demand
+    book onto the published projections. Nothing checked the result until
+    2026-09-15, when KDOL split that book into statewide and regional files:
+    measured against the live outputs, feeding the parser only the new
+    statewide book would have taken regional_in_demand from 384 SOC codes to 0
+    with no error and a passing validation. A zero here is never a real
+    publication state — KDOL flags hundreds of occupations every edition — so
+    it always means the join lost its source.
+
+    Kansas-only layer; absence is not a failure, matching the other layers.
+    """
+    failures: list[str] = []
+    if state and state.zfill(2) != "20":
+        return failures
+    path = outputs / "ks_occ_proj_state_s20.parquet"
+    if not path.exists():
+        return failures
+    try:
+        df = pd.read_parquet(path)
+    except Exception as exc:                      # noqa: BLE001
+        return [f"{path.name}: could not read ({exc})"]
+    if df.empty:
+        return [f"{path.name}: empty"]
+
+    for col, what in (
+        ("in_demand", "statewide High Demand flags"),
+        ("regional_in_demand", "regional High Demand flags"),
+    ):
+        if col not in df.columns:
+            failures.append(f"{path.name}: column {col!r} missing — the demand-book "
+                            f"join did not run")
+            continue
+        n = int(pd.to_numeric(df[col], errors="coerce").fillna(0).sum())
+        if n == 0:
+            failures.append(
+                f"{path.name}: {col} sums to 0 across {len(df)} rows — no {what} "
+                f"reached the output. The KDOL Occupational Employment Demand join "
+                f"lost its source (since 2026 the regional flags ship in a separate "
+                f"'(Kansas Regions)' workbook; see load_demand_flags in "
+                f"scripts/parse_manual_ks_occproj.py)."
+            )
+    if "demand_rank" in df.columns and df["demand_rank"].notna().sum() == 0:
+        failures.append(f"{path.name}: demand_rank is null on every row — the "
+                        f"statewide demand book was not joined")
+    return failures
+
+
 def validate(outputs: Path, state: str | None = None) -> list[str]:
     failures: list[str] = []
     summary_files = sorted(outputs.glob("county_summary_s*.csv"))
@@ -462,6 +514,9 @@ def validate(outputs: Path, state: str | None = None) -> list[str]:
 
     # LAUS county-year grain.
     failures.extend(_failures_for_laus_grain(outputs, state))
+
+    # KDOL in-demand layer populated (Kansas only).
+    failures.extend(_failures_for_ks_demand_flags(outputs, state))
     return failures
 
 

@@ -246,9 +246,29 @@ def _weighted_sum(df: pd.DataFrame, field: str) -> pd.Series:
 
 
 def _add_labor_force_status(df: pd.DataFrame) -> pd.DataFrame:
-    """Add ACS B23001 18-64 civilian LFPR fields to the county-year table."""
-    if not any(v in df.columns for v in B23001_VARS):
+    """Add ACS B23001 18-64 civilian LFPR fields to the county-year table.
+
+    All-absent is a deliberate no-op: legacy cached frames predate B23001 and
+    must still load. SOME-but-not-all is an error, not a no-op, because
+    _weighted_sum() skips absent variables silently — a frame missing one
+    variable would contribute zero for it and publish a plausibly wrong LFPR
+    without raising. A Census schema change that drops or renames one B23001
+    variable is exactly how that would happen (found 2026-09-04 while fixing a
+    test fixture that had been under-counting this way).
+    """
+    present = [v for v in B23001_VARS if v in df.columns]
+    if not present:
         return df
+    missing = [v for v in B23001_VARS if v not in df.columns]
+    if missing:
+        shown = ", ".join(missing[:6]) + ("" if len(missing) <= 6 else f" (+{len(missing) - 6} more)")
+        raise ValueError(
+            f"_add_labor_force_status: {len(present)} of {len(B23001_VARS)} B23001 "
+            f"variables present but {len(missing)} missing [{shown}]. Refusing to "
+            f"compute a partial LFPR — check whether the Census B23001 schema changed "
+            f"(api.census.gov/data/<year>/acs/acs5/groups/B23001.json) and update "
+            f"B23001_18_64_WEIGHTS / B23001_SCHEMA_VERSION."
+        )
 
     df = df.copy()
     lf_status_pop = _weighted_sum(df, "total")

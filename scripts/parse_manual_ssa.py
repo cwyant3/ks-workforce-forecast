@@ -18,10 +18,17 @@ Workbook structure:
 
 Disability columns (offsets within row 3): 9=Disabled workers, 10=Spouses, 11=Children
 We treat "Disabled workers" as the working-age SSDI count (proxy for ssdi_18_64).
-SSI 18-64 is not in this file — set NA. Data year = publication year - 1.
+SSI 18-64 is not in this file — set NA.
+
+Data year: edition YY reports beneficiaries as of DECEMBER YY. The Table 4 title
+row says so in every sheet ("... December 2025" in oasdi_sc25.xlsx), and that is
+where the year is read from — the filename only cross-checks it. Until
+2026-09-15 this parser stamped pub_year - 1, which labelled December-2025 counts
+as year 2024 (see docs/data-refresh-log.md, 2026-09-15 SSA entries).
 
 Usage:
-    python scripts/parse_manual_ssa.py --state 20 --pub-year 2024
+    python scripts/parse_manual_ssa.py --state 20
+    python scripts/parse_manual_ssa.py --state 20 --pub-year 2025   # override
 """
 
 import argparse
@@ -31,13 +38,32 @@ from pathlib import Path
 
 import pandas as pd
 
-# SSA names the workbook for its PUBLICATION year: oasdi_sc25.xlsx is the 2025
-# edition, reporting data as of December 2024. Deriving the year from the
-# filename keeps the parser from mislabelling a new edition with the previous
-# cycle's year — the failure this replaced, where --pub-year defaulted to 2024
-# and refresh_dashboard.py never passed the flag, so a 2025 workbook would have
-# been stamped year=2023.
+# SSA names the workbook for its edition year: oasdi_sc25.xlsx is the 2025
+# edition, reporting data as of December 2025 (the Table 4 title says so).
+# Deriving the year from the filename keeps the parser from mislabelling a new
+# edition with the previous cycle's year — the failure this replaced, where
+# --pub-year defaulted to 2024 and refresh_dashboard.py never passed the flag.
 _PUB_YEAR_RE = re.compile(r"oasdi_sc(\d{2})", re.IGNORECASE)
+
+# "December 2025" in the Table 4 title. SSA separates the word and the year
+# with a non-breaking space in the workbook, so allow any short non-digit run.
+_DEC_YEAR_RE = re.compile(r"December\D{0,3}((?:19|20)\d{2})", re.IGNORECASE)
+
+
+def data_year_from_title(raw: pd.DataFrame, max_rows: int = 4) -> int | None:
+    """Reference year from the 'December YYYY' in a Table 4 sheet's title rows.
+
+    Read from the source, not the filename: this is what makes the label
+    self-correcting if SSA ever changes its naming convention.
+    """
+    for i in range(min(max_rows, len(raw))):
+        for cell in raw.iloc[i].tolist():
+            if cell is None or (isinstance(cell, float) and pd.isna(cell)):
+                continue
+            m = _DEC_YEAR_RE.search(str(cell))
+            if m:
+                return int(m.group(1))
+    return None
 
 
 def pub_year_from_name(path: Path) -> int | None:
@@ -83,6 +109,22 @@ def parse_state(xlsx_path: Path, state_fips: str, pub_year: int) -> pd.DataFrame
     sheet = f"Table 4 - {state_name}"
     raw   = pd.read_excel(xlsx_path, sheet_name=sheet, dtype=str, header=None)
 
+    # Data year comes from the sheet title. The filename's edition year must
+    # agree — a disagreement means either SSA changed conventions or the file
+    # was misnamed, and a mislabelled parquet is worse than a failed parse
+    # (same guard shape as fetch_bls_proj's cycle-mismatch check).
+    data_year = data_year_from_title(raw)
+    if data_year is None:
+        print(f"  !! no 'December YYYY' found in the title rows of {sheet!r}; "
+              f"falling back to the edition year {pub_year} from the filename")
+        data_year = pub_year
+    elif data_year != pub_year:
+        raise ValueError(
+            f"{xlsx_path.name}: sheet {sheet!r} reports December {data_year} but "
+            f"the filename says edition {pub_year}. Edition YY should hold "
+            f"December YY data; refusing to write a mislabelled parquet."
+        )
+
     # Find the row where county data starts (county name in col 0, blank state-total row preceded it).
     # Header row 3 has "Disabled workers" at col index 9.
     sf = state_fips.zfill(2)
@@ -108,7 +150,7 @@ def parse_state(xlsx_path: Path, state_fips: str, pub_year: int) -> pd.DataFrame
         rows.append({
             "state_fips":     fips5[:2],
             "county_fips":    fips5[2:],
-            "year":           pub_year - 1,
+            "year":           data_year,
             "ssdi_18_64":     int(disabled_workers) if pd.notna(disabled_workers) else None,
             "ssi_18_64":      None,
             "source":         "oasdi_sc_manual",
@@ -131,8 +173,9 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--state", default="20", help="State FIPS (default 20=KS)")
     ap.add_argument("--pub-year", type=int, default=None,
-                    help="SSA publication year (data year = pub_year - 1). "
-                         "Default: inferred from the workbook filename.")
+                    help="SSA edition year (edition YY holds December YY data). "
+                         "Default: inferred from the workbook filename; the sheet "
+                         "title must agree.")
     ap.add_argument("--cache-dir", default="data/ssa_cache")
     ap.add_argument("--output-dir", default="data/outputs")
     args = ap.parse_args()
@@ -152,8 +195,8 @@ def main():
               f"Re-run with an explicit --pub-year.", file=sys.stderr)
         sys.exit(1)
 
-    print(f"Parsing {xlsx.name}, state={args.state}, pub_year={pub_year} "
-          f"(data year {pub_year - 1})")
+    print(f"Parsing {xlsx.name}, state={args.state}, edition {pub_year} "
+          f"(data year read from the sheet title; expected {pub_year})")
 
     df = parse_state(xlsx, args.state, pub_year)
     print(f"Parsed {len(df)} counties for state {args.state}")

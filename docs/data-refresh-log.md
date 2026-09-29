@@ -1190,6 +1190,14 @@ Notes:          **THIS RUN IS THE STRONGEST EVIDENCE THE TREE IS HONEST that
                    identical inputs do produce identical bytes. Worth knowing,
                    because it means a non-empty `git status` after a refresh is
                    ALWAYS real drift and never noise.
+                   **[CORRECTED 2026-09-29 — do not act on the sentence above.**
+                   Byte-reproducibility holds only while the library versions
+                   hold still. Parquet embeds `pandas_version` and the pyarrow
+                   `creator` in its footer, so any bump rewrites every output
+                   with identical data and different bytes. The 2026-08-27 entry
+                   was right and this one over-generalised from a run that
+                   happened to sit on unchanged versions. Diff by CONTENT, as
+                   the calendar has always said. See the 2026-09-29 entry.**
                 3. The annual recency assertions added earlier today passed
                    5/5 against a completely rebuilt tree — their first test
                    against data they did not help produce.
@@ -1914,3 +1922,93 @@ Notes:          **THE GUARD FIRED FIRST, AND WAS RIGHT TO.** The first run
                 NOT COMMITTED. The diff a human is reviewing now spans: the
                 morning's seven fixes, the SSA re-stamp (5 files), this KDOL
                 labor-force month (3 files), and this demand adoption (2 files).
+
+## [2026-09-29] all layers | tooling — Python 3.14 rebuild, openpyxl declared, byte-reproducibility claim corrected
+Vintage before: n/a — no data changed
+Vintage after:  unchanged
+Checked:        Found while asking why the `ks-refresh-qcew` fire of 07:27 this
+                morning produced nothing. Two unrelated faults, and they masked
+                each other — the stuck run meant the fire never got far enough
+                to discover the broken environment.
+Outputs changed: none. requirements.txt + this log.
+Validation:     pass. Rebuilt environment verified rather than assumed:
+                `pytest tests/` 31 passed; `validate_outputs.py` passes for all
+                states; `audit_cache_freshness.py` runs clean;
+                `refresh_dashboard.py --dry-run` completes with all manual
+                sources fresh.
+Notes:          **FAULT 1 — the QCEW routine cannot fire while this session
+                lives.** `list_task_runs` for `ks-refresh-qcew` shows
+                `totalRuns: 1`, and that one run is the interactive session
+                started 2026-09-03T13:38Z, still `status: "running"` 26 days
+                later. The 2026-09-29 trigger updated `lastRunAt` and spawned no
+                new session. Contrast `ks-refresh-laus`: one run, `succeeded`,
+                13 minutes. The monthly supervisor has two clean runs. So this
+                is not systemic — it is one long-lived conversation holding its
+                task open.
+
+                Cost this time: nothing. 2026-09-29 is the second, hedge fire of
+                the September window; Q1 2026 published 2026-08-28 and was
+                handled on 09-03, and the ANNUAL file that actually drives this
+                layer sits at 2025 with the 2026 annual not due until ~June 2027.
+                **The December fire is the one that matters** — `nextRunAt` is
+                2026-12-03 and Q2 2026 lands 2026-12-02. If a session is still
+                open on that task then, it is skipped again. Ending the session
+                is the whole fix; the cron and the enabled flag are correct.
+
+                **FAULT 2 — the interpreter changed underneath the project.**
+                `python` now resolves to `C:\Python314\python.exe` (3.14.7). The
+                3.12 install every earlier traceback in this log came from is
+                GONE, there is no venv, and none of the dependencies existed on
+                the new interpreter. Both entry points died at import:
+                  refresh_dashboard.py --list-sources -> ModuleNotFoundError: pandas
+                  scripts/validate_outputs.py        -> ModuleNotFoundError: pandas
+                Every routine would have failed the same way, not just QCEW —
+                jolts (Oct 2), laus (Oct 4), kdol-projections (Oct 10), ipeds
+                (Oct 15). Reinstalled from requirements.txt. Resulting stack:
+                pandas 3.0.6, numpy 2.5.3, scipy 1.18.1, pyarrow 25.0.1,
+                requests 2.34.2, plotly 7.1.0, streamlit 1.64.0, openpyxl 3.1.5,
+                pytest 9.1.1.
+
+                **openpyxl was never declared.** requirements.txt listed eight
+                packages and not that one, although `pandas.read_excel` needs it
+                for every .xlsx — which is to say for every manual source: KDOL
+                labour force and projections, SSA OASDI-SC, the BLS national
+                projections workbook, and the OES all-data workbook. Nothing
+                imports it by name, so its absence never raises ImportError at
+                startup; it surfaces as a parser failure deep in a refresh. It
+                survived only because the old environment had it transitively.
+                Now declared, with the reason written next to it.
+
+                **A CLAIM IN THE 2026-09-03 ENTRY IS WRONG AND IS NOW MARKED SO
+                IN PLACE.** That entry said the pipeline is byte-reproducible
+                and therefore "a non-empty `git status` after a refresh is ALWAYS
+                real drift and never noise." Measured today: re-writing
+                laus_s20.parquet from its own contents gives the same length
+                (46,728 B) and `df.equals()` True, but a different SHA. The
+                difference is confined to two footer metadata keys —
+                  pandas_version   3.0.5          -> 3.0.6
+                  creator          pyarrow 24.0.0 -> pyarrow 25.0.1
+                — with no change to any column. Parquet embeds the writer
+                versions, so byte-reproducibility holds only while the libraries
+                hold still. The 2026-09-03 run satisfied that by accident, not
+                by design.
+
+                Note this also corrects that entry's side-swipe at the
+                2026-08-27 CBP entry: "parquet is not byte-reproducible" was
+                right, and the later entry over-generalised from one lucky run.
+                The calendar's long-standing instruction — **diff by content,
+                never by `git status`** — is the guidance that survives.
+
+                **Practical consequence for the next refresh:** the December
+                QCEW run will show all ~140 outputs modified with identical
+                content. Whoever reviews that diff must content-diff it or they
+                will read a version-string bump as five states' worth of drift.
+                The committed outputs were written by pandas 3.0.5 / pyarrow
+                24.0.0; anything regenerated from here carries 3.0.6 / 25.0.1.
+
+                Deliberately NOT done: pinning pandas. requirements.txt says
+                `pandas>=2.0.0` and resolved to 3.0.6, one patch above the 3.0.5
+                that produced the committed outputs, and the suite passes on it.
+                Pinning would trade a known-good floating version for a
+                maintenance burden nobody has asked for. Revisit if a future
+                bump breaks something rather than pre-emptively.

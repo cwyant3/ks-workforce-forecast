@@ -338,3 +338,99 @@ def compute_lfpr(
     ).round(0).astype("Int64")
 
     return merged
+
+
+def parse_laus_monthly(payload: dict | list, state_fips: str = "20") -> pd.DataFrame:
+    """Long monthly observations; keep footnotes and exclude annual M13 rows."""
+    import calendar
+    import json
+    import math
+    import re
+    if isinstance(payload, dict):
+        if payload.get("status") != "REQUEST_SUCCEEDED":
+            raise ValueError("BLS monthly response did not succeed")
+        series_list = payload.get("Results", {}).get("series", [])
+    elif isinstance(payload, list):
+        series_list = payload
+    else:
+        raise ValueError("Unexpected BLS response type")
+    sf = state_fips.zfill(2)
+    rows = []
+    for series in series_list:
+        sid = series.get("seriesID", "")
+        if not re.fullmatch(r"LAUCN\d{5}0{8}(03|04|05|06)", sid):
+            raise ValueError("Expected an unadjusted county LAUS series")
+        if sid[5:7] != sf:
+            raise ValueError("LAUS response contains a different state")
+        measure = MEASURES[sid[-2:]]
+        for obs in series.get("data", []):
+            period = obs.get("period", "")
+            if period == "M13":
+                continue
+            if not re.fullmatch(r"M(0[1-9]|1[0-2])", period):
+                raise ValueError(f"Unexpected LAUS period {period!r}")
+            year, month = int(obs["year"]), int(period[1:])
+            raw_value = obs.get("value")
+            try:
+                value = float(str(raw_value).replace(",", ""))
+                if not math.isfinite(value) or value < 0 or (measure == "unemployment_rate" and value > 100):
+                    value = None
+            except (TypeError, ValueError):
+                value = None
+            footnotes = [f for f in obs.get("footnotes", []) if f]
+            codes = [str(f.get("code", "")) for f in footnotes]
+            rows.append({
+                "source_id": "laus", "measure_id": measure,
+                "geography_type": "county", "geography_id": sid[5:10],
+                "location_basis": "residence", "age_group": "16+", "sex_group": "all",
+                "population_universe": "Civilian noninstitutional population age 16+",
+                "seasonal_adjustment": "not seasonally adjusted",
+                "period_start": f"{year}-{month:02d}-01",
+                "period_end": f"{year}-{month:02d}-{calendar.monthrange(year, month)[1]:02d}",
+                "frequency": "monthly", "estimate": value,
+                "unit": "percent" if measure == "unemployment_rate" else "people",
+                "availability_status": "published" if value is not None else "not_reported",
+                "source_status": json.dumps(footnotes, ensure_ascii=False, sort_keys=True),
+                "source_value": str(raw_value), "preliminary": "P" in codes,
+                "method_type": "observed estimate", "moe": None, "rse": None,
+                "source_url": f"https://data.bls.gov/timeseries/{sid}",
+                "release_id": "laus-reference-" + f"{year}-{month:02d}",
+                "reference_label": f"{year}-{month:02d}",
+            })
+    result = pd.DataFrame(rows)
+    if result.empty:
+        return result
+    keys = ["geography_id", "measure_id", "period_start"]
+    for _, group in result.groupby(keys, dropna=False):
+        if group["source_value"].nunique(dropna=False) > 1:
+            raise ValueError("Conflicting duplicate LAUS observations")
+    return result.drop_duplicates(keys).sort_values(keys).reset_index(drop=True)
+
+
+def fetch_laus_monthly(state_fips: str, county_fips3_list: list[str],
+                       years: list[int], api_key: str | None = None) -> pd.DataFrame:
+    """Fetch monthly county observations without writing the annual cache.
+
+    Requests are batched independently, but observations are concatenated only
+    at their long-form county/measure/month grain. Missing returned series stay
+    absent and must be reported by the caller's requested-coverage manifest.
+    """
+    if not years or not county_fips3_list:
+        return pd.DataFrame()
+    if len(set(years)) != len(years) or any(not isinstance(y, int) for y in years):
+        raise ValueError("years must be unique integers")
+    sf = state_fips.zfill(2)
+    if len(sf) != 2 or not sf.isdigit() or any(not str(c).isdigit() or len(str(c)) > 3 for c in county_fips3_list):
+        raise ValueError("Expected two-digit state and three-digit county suffixes")
+    ids = _build_series_ids(sf, sorted(set(str(c).zfill(3) for c in county_fips3_list)))
+    batch_size, span = (50, 20) if api_key else (25, 10)
+    series = []
+    for start in range(min(years), max(years) + 1, span):
+        end = min(start + span - 1, max(years))
+        for offset in range(0, len(ids), batch_size):
+            series.extend(_post_bls(ids[offset:offset + batch_size], start, end, api_key))
+            time.sleep(0.25)
+    result = parse_laus_monthly(series, sf)
+    if not result.empty:
+        result = result[result["period_start"].str[:4].astype(int).isin(years)].copy()
+    return result

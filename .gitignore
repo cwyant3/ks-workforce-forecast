@@ -77,3 +77,8 @@ data/outputs/_refresh_log_*.txt
 # churn and conflicts between JAB-EMPLAP-350 and NCAT-SPMA-01.
 # .claude/launch.json IS tracked — it is real project config.
 .claude/settings.local.json
+
+# Local staged source downloads, test scratch and build logs. Adopted immutable
+# releases remain trackable so deployment can carry the validated data.
+.tmp/
+data/pressure_sources/

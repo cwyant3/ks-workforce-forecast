@@ -42,6 +42,7 @@ Output from top_occupations_by_sector():
 """
 
 import io
+import json
 import time
 import zipfile
 import requests
@@ -50,6 +51,117 @@ from pathlib import Path
 
 import bulk_cache
 from cache_freshness import load_fresh_cache, save_if_complete
+
+
+AREA_MEASURES = {"01": ("oews_employment", "jobs"),
+                 "04": ("oews_mean_annual_wage", "USD/year"),
+                 "13": ("oews_median_annual_wage", "USD/year")}
+
+
+def area_series_ids(area_code: str, occupation_codes: list[str], area_type: str = "M") -> list[str]:
+    """Documented OE series: survey/season/area type/area/industry/SOC/measure."""
+    if area_type != "M":
+        raise ValueError("Only the verified substate M series is supported; N is national")
+    return ["OEU" + area_type + str(area_code).zfill(7) + "000000" + soc.replace("-", "") + measure
+            for soc in occupation_codes for measure in ("01", "02", "04", "05", "13")]
+
+
+def parse_area_api_response(payload: dict, requested_series: list[str] | None = None,
+                            *, year: int = 2025) -> pd.DataFrame:
+    """Preserve area/SOC grain, source footnotes and valid employment/mean-wage RSE.
+
+    Wage RSE applies to the mean, not automatically to median or other percentiles.
+    """
+    from data_contracts import normalize_observations
+    if payload.get("status") != "REQUEST_SUCCEEDED":
+        raise ValueError("OEWS API response unsuccessful")
+    series = payload.get("Results", {}).get("series", [])
+    observations = {}
+    for item in series:
+        for point in item.get("data", []):
+            if point.get("year") == str(year) and point.get("period") == "A01":
+                if item["seriesID"] in observations:
+                    raise ValueError("Duplicate OEWS area-series/year observation")
+                observations[item["seriesID"]] = point
+    expected = requested_series or [item["seriesID"] for item in series]
+    rows = []
+    for sid in expected:
+        if len(sid) != 25 or not sid.startswith("OEU"):
+            raise ValueError("Unexpected OEWS series identifier")
+        code = sid[-2:]
+        if code not in AREA_MEASURES:
+            continue
+        point = observations.get(sid, {})
+        value = pd.to_numeric(point.get("value"), errors="coerce")
+        footnotes = "; ".join(p.get("text", "") for p in point.get("footnotes", []) if p)
+        suppressed = any(word in footnotes.lower() for word in ("not released", "suppressed", "confidential"))
+        status = "suppressed" if suppressed else "published" if pd.notna(value) else "not_reported"
+        rse_id = sid[:-2] + ("02" if code == "01" else "05")
+        rse = pd.to_numeric(observations.get(rse_id, {}).get("value"), errors="coerce") if code != "13" else None
+        soc = sid[17:23]
+        rows.append(dict(geography_id=sid[4:11].lstrip("0"), geography_type="oews_area",
+                         occupation_code=soc[:2] + "-" + soc[2:], measure_id=AREA_MEASURES[code][0],
+                         unit=AREA_MEASURES[code][1], estimate=value if status == "published" else None,
+                         rse=rse, availability_status=status, source_status=footnotes,
+                         source_series_id=sid, source_url=f"https://api.bls.gov/publicAPI/v2/timeseries/data/{sid}?startyear={year}&endyear={year}",
+                         period_start=f"{year}-05-01", period_end=f"{year}-05-31", reference_label=f"May {year}",
+                         release_id=f"OEWS-May-{year}"))
+    return normalize_observations(pd.DataFrame(rows), source_id="oews", defaults={
+        "location_basis": "workplace", "job_universe": "nonfarm wage and salary jobs",
+        "ownership": "all covered ownership", "frequency": "annual", "method_type": "published estimate"})
+
+
+def fetch_area_oes_api(area_code: str, occupation_codes: list[str], *, year: int,
+                       area_type: str = "M", session=None) -> pd.DataFrame:
+    """Small scoped API alternative to bulk files; no credentials required.
+
+    Five occupations/25 series per request respects the unregistered limit. A
+    bulk statewide rollout should use bulk files, not exhaust daily API quotas.
+    """
+    ids = area_series_ids(area_code, occupation_codes, area_type)
+    frames = []
+    for offset in range(0, len(ids), 25):
+        batch = ids[offset:offset + 25]
+        response = (session or requests).post("https://api.bls.gov/publicAPI/v2/timeseries/data/",
+                                              json={"seriesid": batch, "startyear": str(year), "endyear": str(year)}, timeout=90)
+        response.raise_for_status()
+        frames.append(parse_area_api_response(response.json(), batch, year=year))
+    return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
+
+
+def build_oews_observations(evidence_dir: Path, *, year: int = 2025) -> pd.DataFrame:
+    """Load the reviewed Wichita API sample without any network activity.
+
+    Twenty source series yield twelve estimate rows: employment, mean annual
+    wages and median annual wages for four SOCs. Eight uncertainty series attach
+    as RSE fields to employment and mean-wage rows, never to median wages.
+    Native OEWS area identifiers remain intact; county coverage is a separate
+    crosswalk and this function does not invent nonmetropolitan areas.
+    """
+    path = Path(evidence_dir) / f"oews-wichita-{year}-sample.json"
+    payload = json.loads(path.read_text(encoding="utf-8-sig"))
+    series = payload.get("Results", {}).get("series", [])
+    ids = [item.get("seriesID", "") for item in series]
+    if not ids or len(ids) != len(set(ids)):
+        raise ValueError("Missing or duplicate cached OEWS source series")
+    if any(len(sid) != 25 or not sid.startswith("OEUM0048620000000")
+           or not sid[4:].isdigit() or sid[-2:] not in {"01", "02", "04", "05", "13"} for sid in ids):
+        raise ValueError("Cached OEWS sample contains an unreviewed area or series")
+    frame = parse_area_api_response(payload, requested_series=ids, year=year)
+    frame["industry_code"] = frame.source_series_id.str[11:17]
+    frame["oews_area_type"] = frame.source_series_id.str[3]
+    frame["area_name"] = "Wichita, KS"
+    frame["occupation_title"] = frame.occupation_code.map({
+        "00-0000": "All occupations", "47-2111": "Electricians",
+        "51-4121": "Welders, Cutters, Solderers, and Brazers",
+        "29-2061": "Licensed Practical and Licensed Vocational Nurses"}).fillna("")
+    frame["source_rse_series_id"] = [sid[:-2] + ("02" if sid.endswith("01") else "05")
+                                      if not sid.endswith("13") else "" for sid in frame.source_series_id]
+    frame["rse_availability_status"] = ["not_applicable" if sid.endswith("13") else
+                                        "published" if pd.notna(rse) else "not_reported"
+                                        for sid, rse in zip(frame.source_series_id, frame.rse)]
+    frame["coverage_note"] = "Verified Wichita area sample only; not a complete occupation inventory"
+    return frame
 
 # May 2020 OES was suspended, so 2019 is the prior comparable data point and
 # the gap in this list is intentional.

@@ -41,6 +41,19 @@ SECTORS = [
 ]
 
 
+def usable_sector_history(frame: pd.DataFrame) -> pd.DataFrame:
+    """Reject suppressed/partial legacy values before fitting or estimating shares."""
+    result = frame.copy()
+    invalid = pd.Series(False, index=result.index)
+    if "suppressed" in result:
+        invalid |= result["suppressed"].fillna(True).astype(bool)
+    if "availability_status" in result:
+        invalid |= ~result["availability_status"].isin(["published", "available"])
+    cols = [c for c in ("employment", "avg_annual_pay", "avg_weekly_wage") if c in result]
+    result.loc[invalid, cols] = np.nan
+    return result
+
+
 # ── Statistical helpers ───────────────────────────────────────────────────────
 
 def _ols_project(
@@ -123,6 +136,7 @@ def _option_a(
       1. County's average historical share of state sector employment (if ≥2 paired obs)
       2. County's working-age population share of state total (demographic proxy)
     """
+    county_hist, state_hist = usable_sector_history(county_hist), usable_sector_history(state_hist)
     county_valid = county_hist[county_hist["employment"].notna()]
     state_valid  = state_hist[state_hist["employment"].notna()]
 
@@ -163,6 +177,7 @@ def _forecast_one(
     proj_years: np.ndarray,
 ) -> pd.DataFrame:
     """Return annual projections for one (county, sector) pair."""
+    county_hist, state_hist = usable_sector_history(county_hist), usable_sector_history(state_hist)
     county_valid = county_hist[county_hist["employment"].notna()].sort_values("year")
     latest_emp   = float(county_valid["employment"].iloc[-1]) if len(county_valid) else 0.0
     n_obs        = len(county_valid)
@@ -309,6 +324,8 @@ def run_all_sectors(
     """
     Produce sector employment and wage forecasts for every county × sector.
     """
+    county_qcew = usable_sector_history(county_qcew)
+    state_qcew = usable_sector_history(state_qcew)
     proj_years = np.array(sorted(cohort_proj["year"].unique()), dtype=float)
 
     # Baseline (anchor) year = latest QCEW annual with data. Stored on every
@@ -351,7 +368,7 @@ def run_all_sectors(
             meth_s  = "option_b_flat"
             note_s  = "Insufficient state history; held constant"
         else:
-            proj_s = ci_lo_s = ci_hi_s = np.zeros(len(proj_years))
+            proj_s = ci_lo_s = ci_hi_s = np.full(len(proj_years), np.nan)
             sig_s  = False
             meth_s = "no_data"
             note_s = "No state data available"
@@ -365,7 +382,7 @@ def run_all_sectors(
         elif len(sw_hist) >= 1:
             wage_proj_s = np.full(len(proj_years), float(sw_hist["avg_annual_pay"].iloc[-1]))
         else:
-            wage_proj_s = np.zeros(len(proj_years))
+            wage_proj_s = np.full(len(proj_years), np.nan)
 
         state_projs[sector] = (proj_s, ci_lo_s, ci_hi_s, wage_proj_s)
 
@@ -382,6 +399,11 @@ def run_all_sectors(
             "method":      meth_s,
             "significant": sig_s,
             "note":        note_s,
+            "history_last_year": int(s_hist.year.max()) if len(s_hist) else None,
+            "history_usable_years": int(s_hist.year.nunique()),
+            "baseline_availability_status": "published" if len(emp_base_s) and emp_base_s.notna().all() else "incomplete",
+            "model_quality": "modeled_from_current_baseline" if len(emp_base_s) and emp_base_s.notna().all()
+                             else "modeled_from_older_observations" if len(s_hist) else "unavailable",
         }))
 
     state_sector_df = pd.concat(state_sector_rows, ignore_index=True) \
@@ -430,6 +452,17 @@ def run_all_sectors(
             emp_base = c_hist[c_hist["year"] == base_year]["employment"]
             result["emp_base"]  = float(emp_base.iloc[0]) if len(emp_base) else None
             result["base_year"] = base_year
+            usable = c_hist.dropna(subset=["employment"])
+            baseline = c_hist[c_hist.year == base_year]
+            baseline_status = (str(baseline.availability_status.iloc[0])
+                               if len(baseline) and "availability_status" in baseline
+                               else "published" if len(emp_base) and emp_base.notna().all() else "incomplete")
+            result["history_last_year"] = int(usable.year.max()) if len(usable) else None
+            result["history_usable_years"] = int(usable.year.nunique())
+            result["baseline_availability_status"] = baseline_status
+            result["model_quality"] = ("modeled_from_current_baseline" if baseline_status == "published"
+                                       else "modeled_from_older_observations" if len(usable)
+                                       else "demographic_proxy_no_local_observations")
 
             all_county.append(result)
             done += 1

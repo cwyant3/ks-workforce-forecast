@@ -32,7 +32,7 @@ Caches that are PRESERVED (never auto-cleared):
   - kdol_cache   : KDOL UI claims — manual file (kdol_ui_manual.csv).
   - ssa_cache    : SSA disability — manual file (ssa_manual.csv).
   - bls_proj_cache : BLS/KS employment projections — manual .xlsx files.
-  - ksde_cache   : KSDE K-12 enrollment override — annual, leave intact.
+  - ksde_cache   : KSDE K-12 enrollment (trend alerts + single-grade youth update) — annual, leave intact.
 Deleting any of those would destroy user-placed manual downloads.
 
 Per-source refresh (added 2026-08-20)
@@ -103,7 +103,7 @@ SOURCE_CACHES: dict[str, list[str]] = {
     "lodes":          ["lodes_cache"],
     "oes":            ["oes_cache"],
     "pc":             ["pc_cache"],
-    "ksde":           ["ksde_cache"],     # opt-in; annual K-12 override
+    "ksde":           ["ksde_cache"],     # opt-in; annual K-12 youth update
     # Manual downloads — no API cache to clear. Named so a routine can say what
     # it is refreshing, and so --sources rejects nothing a routine legitimately
     # passes. The manual parsers run on every non-dry-run invocation.
@@ -657,7 +657,32 @@ def main() -> int:
     parser.add_argument("--skip-tests", action="store_true",
                         help="Do not run tests/ before refreshing. For a deliberate "
                              "bypass only; the default runs them every time.")
+    parser.add_argument("--pressure-only", type=Path, metavar="EVIDENCE_DIR",
+                        help="Stage county pressure from verified source artifacts without clearing caches or rerunning population")
+    parser.add_argument("--pressure-corrections", type=Path,
+                        help="Reviewed sector correction directory for pressure staging")
+    parser.add_argument("--adopt-pressure", action="store_true",
+                        help="Adopt the validated pressure release after staging")
     args = parser.parse_args()
+
+    if args.pressure_only:
+        if args.dry_run:
+            print(f"Would stage county pressure from {args.pressure_only}; adopt={args.adopt_pressure}. Population is unchanged.")
+            return 0
+        if not args.skip_tests:
+            with tempfile.TemporaryDirectory(prefix="pressure-tests-", dir=BASE_DIR) as test_temp:
+                result = subprocess.run([sys.executable, "-m", "pytest", "tests", "-q", "--basetemp", test_temp], cwd=BASE_DIR)
+                if result.returncode:
+                    return result.returncode
+        from build_county_pressure import build
+        from pressure_release import adopt_release
+        manifest = build(args.pressure_only, DATA_DIR / "outputs", correction_dir=args.pressure_corrections)
+        if args.adopt_pressure:
+            adopt_release(DATA_DIR / "outputs", manifest)
+        print(f"{'Adopted' if args.adopt_pressure else 'Staged'} pressure release {manifest['release_id']}")
+        return 0
+    if args.adopt_pressure or args.pressure_corrections:
+        parser.error("Pressure adoption/corrections require --pressure-only EVIDENCE_DIR")
 
     if args.list_sources:
         print("source           caches cleared")

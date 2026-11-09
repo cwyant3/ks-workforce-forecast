@@ -76,7 +76,7 @@ def parse(xls_path: Path, state_fips: str = "20") -> pd.DataFrame:
     # in_demand / green: KDOL flags are "0"/"1" strings or NaN
     for flag in ("inDemand", "regionalInDemand", "green", "regionalGreen"):
         if flag in raw.columns:
-            raw[flag] = pd.to_numeric(raw[flag], errors="coerce").fillna(0).astype("Int64")
+            raw[flag] = pd.to_numeric(raw[flag], errors="coerce").astype("Int64")
 
     return raw.rename(columns={
         "stfips": "state_fips",
@@ -261,16 +261,14 @@ def select_demand_workbooks(candidates: list[Path]) -> tuple[Path | None, Path |
 
 def load_demand_flags(path: Path, regional_path: Path | None = None,
                       allow_no_regional: bool = False,
+                      region_id: str | None = None,
                       ) -> tuple[pd.DataFrame, str | None]:
     """Read KDOL's Occupational Employment Demand book(s) into SOC-keyed flags.
 
     Returns (flags, vintage). The statewide "Kansas" sheet of `path` supplies
-    in_demand / emerging_demand / high_wage / demand_rank. regional_in_demand is
-    the union of High Demand across the region sheets — taken from
-    `regional_path` when given (the post-2026 two-file layout), otherwise from
-    the other sheets of `path` (the legacy combined book). A "Kansas" sheet in
-    the regional book is ignored, so the legacy combined book can serve as the
-    regional source beside a newer statewide-only book.
+    in_demand / emerging_demand / high_wage / demand_rank. Regional flags require
+    an explicit region_id; otherwise regional_in_demand is unavailable. Use
+    load_regional_demand_flags for the complete region × SOC relation.
 
     Raises if no region sheet contributed at all, because that is exactly the
     silent-zero failure the two-file split would otherwise produce.
@@ -309,49 +307,75 @@ def load_demand_flags(path: Path, regional_path: Path | None = None,
     rank_col = _find(cols, "rank")
 
     def _yes(s: pd.Series) -> pd.Series:
-        return (s.astype(str).str.strip().str.lower() == "yes").astype("Int64")
+        return s.astype(str).str.strip().str.lower().map({"yes": 1, "no": 0}).astype("Int64")
 
     flags = pd.DataFrame()
     flags["soc_code"] = ks[soc_col].astype(str).str.strip()
-    flags["in_demand"] = _yes(ks[high_col]) if high_col else 0
-    flags["emerging_demand"] = _yes(ks[emrg_col]) if emrg_col else 0
-    flags["high_wage"] = _yes(ks[wage_col]) if wage_col else 0
+    flags["in_demand"] = _yes(ks[high_col]) if high_col else pd.NA
+    flags["emerging_demand"] = _yes(ks[emrg_col]) if emrg_col else pd.NA
+    flags["high_wage"] = _yes(ks[wage_col]) if wage_col else pd.NA
     flags["demand_rank"] = _num(ks[rank_col]).astype("Int64") if rank_col else pd.NA
     flags = flags[flags["soc_code"].str.match(r"^\d{2}-\d{4}$", na=False)]
 
-    # Regional High Demand — union across the LWDA sheets of the regional
-    # source (a separate book from 2026 on; the same book before that).
-    regional: set[str] = set()
-    region_sheets = 0
-    rbook = pd.ExcelFile(regional_path) if regional_path is not None else xl
-    r_statewide = _statewide_sheet(rbook) if regional_path is not None else ks_sheet
-    for sheet in rbook.sheet_names:
-        if sheet == r_statewide or _is_non_data_sheet(sheet):
-            continue
-        d = _read(rbook, sheet)
-        if d is None:
-            continue
-        rc = list(d.columns)
-        s_col = _soc_col(rc)
-        h_col = _find(rc, "high", "demand")
-        if not (s_col and h_col):
-            continue
-        region_sheets += 1
-        hits = d.loc[_yes(d[h_col]) == 1, s_col].astype(str).str.strip()
-        regional.update(hits.tolist())
-
-    if region_sheets == 0 and not allow_no_regional:
+    regional = load_regional_demand_flags(regional_path or path)
+    if regional.empty and not allow_no_regional:
         src = regional_path.name if regional_path is not None else path.name
         raise RuntimeError(
             f"No region sheets with a SOC / High Demand layout found in {src}. "
             f"Since 2026 KDOL ships the regional flags in a separate "
             f"'... Occupational Employment Demand (Kansas Regions).xlsx' book; "
             f"supply it via --regional-demand-file (or pass --allow-no-regional "
-            f"to publish regional_in_demand as all zeros deliberately)."
+            f"to leave regional_in_demand unavailable)."
         )
 
-    flags["regional_in_demand"] = flags["soc_code"].isin(regional).astype("Int64")
+    flags["regional_in_demand"] = pd.Series(pd.NA, index=flags.index, dtype="Int64")
+    flags["regional_demand_region_id"] = region_id if region_id is not None else ""
+    if region_id is not None:
+        selected = regional[regional.region_id == region_id]
+        if selected.empty:
+            raise ValueError("Requested demand region not present: " + region_id)
+        flags["regional_in_demand"] = flags.soc_code.map(selected.set_index("soc_code").regional_in_demand).astype("Int64")
     return flags.drop_duplicates("soc_code").reset_index(drop=True), vintage
+
+
+REGION_NAMES = {"KC": "Kansas City", "NC": "North Central", "NE": "Northeast",
+                "NW": "Northwest", "SC": "South Central", "SE": "Southeast", "SW": "Southwest"}
+
+
+def region_key(label: str) -> str:
+    normalized = _norm(label).replace(" projection region", "").replace(" region", "")
+    for code, name in REGION_NAMES.items():
+        if normalized in {code.lower(), name.lower()}:
+            return "KS-" + code
+    raise ValueError("Unrecognized official Kansas projection region: " + label)
+
+
+def load_regional_demand_flags(path: Path) -> pd.DataFrame:
+    """Return region × SOC flags. Unknown/missing flags are never false."""
+    rows = []
+    with pd.ExcelFile(path) as book:
+        state = _statewide_sheet(book)
+        for sheet in book.sheet_names:
+            if sheet == state or _is_non_data_sheet(sheet):
+                continue
+            data = book.parse(sheet, dtype=str, header=2)
+            data.columns = [_norm(c) for c in data.columns]
+            soc, high = _soc_col(list(data)), _find(list(data), "high", "demand")
+            if soc is None or high is None:
+                continue
+            key = region_key(sheet)
+            for _, row in data.iterrows():
+                code = str(row[soc]).strip()
+                if re.fullmatch(r"\d{2}-\d{4}", code):
+                    value = {"yes": 1, "no": 0}.get(str(row[high]).strip().lower())
+                    rows.append({"region_id": key, "soc_code": code,
+                                 "regional_in_demand": value, "demand_vintage": _vintage_from_name(path),
+                                 "availability_status": "published" if value is not None else "not_reported"})
+    result = pd.DataFrame(rows, columns=["region_id", "soc_code", "regional_in_demand", "demand_vintage", "availability_status"])
+    result["regional_in_demand"] = result.regional_in_demand.astype("Int64")
+    if result.duplicated(["region_id", "soc_code"]).any():
+        raise ValueError("Duplicate region/SOC demand flags")
+    return result
 
 
 def parse_published(xlsx_path: Path, state_fips: str = "20") -> pd.DataFrame:
@@ -424,6 +448,79 @@ def parse_published(xlsx_path: Path, state_fips: str = "20") -> pd.DataFrame:
     return df.reset_index(drop=True)
 
 
+def parse_regional_published(workbook: Path, state_fips: str = "20") -> pd.DataFrame:
+    """Read official regional sheets with two-row headers and separate annual columns.
+
+    Accepts only the verified regional header convention. A changed source layout
+    fails visibly instead of silently reinterpreting decade totals as annual.
+    """
+    rows = []
+    with pd.ExcelFile(workbook) as book:
+        for sheet in book.sheet_names:
+            if _is_non_data_sheet(sheet):
+                continue
+            key = region_key(sheet)
+            raw = book.parse(sheet, header=None, dtype=str)
+            title = " ".join(raw.iloc[:3].fillna("").to_numpy().ravel())
+            years = re.search(r"(20\d{2})\s+to\s+(20\d{2})", title)
+            if not years or raw.shape[1] < 18:
+                raise ValueError("Unexpected regional projection header in " + sheet)
+            base_year, proj_year = map(int, years.groups())
+            header = raw.iloc[4].map(_norm).tolist()
+            expected = {2: f"base year {base_year}", 3: f"projected year {proj_year}",
+                        8: "exits: annual", 10: "transfers: annual", 12: "numerical change: annual", 14: "openings: annual"}
+            if any(header[index] != label for index, label in expected.items()):
+                raise ValueError("Regional annual/decade column positions changed: " + sheet)
+            body = raw.iloc[5:].copy()
+            body = body[body[0].fillna("").str.fullmatch(r"\d{2}-\d{4}")]
+            for _, source in body.iterrows():
+                code = source[0]
+                row = dict(state_fips=state_fips, region_id=key, areatype="15", areaname=REGION_NAMES[sheet],
+                           soc_code=code, occ_title=source[1], base_year=base_year, proj_year=proj_year,
+                           codelevel=1 if code == "00-0000" else 2 if code.endswith("0000") else
+                           3 if code.endswith("000") else 5 if code.endswith("0") else 6,
+                           sector=SOC2_TO_SECTOR.get(code[:2]), projection_source="KDOL_Regional_Occupational_Published")
+                for name, index in {"base_emp": 2, "proj_emp": 3, "annual_exits": 8, "annual_transfers": 10,
+                                    "annual_change": 12, "annual_openings": 14, "mean_annual_wage": 15,
+                                    "median_annual_wage": 17}.items():
+                    text = str(source[index]).strip()
+                    value = pd.to_numeric(text.replace(",", ""), errors="coerce")
+                    row[name] = value
+                    row[name + "_status"] = "suppressed" if "*" in text else "published" if pd.notna(value) else "not_reported"
+                rows.append(row)
+    result = pd.DataFrame(rows)
+    if result.empty or result.duplicated(["region_id", "soc_code"]).any():
+        raise ValueError("Missing or duplicate regional occupation observations")
+    return result
+
+
+def build_regional_context(workbook: Path) -> pd.DataFrame:
+    """Normalized official region × SOC observations, without allocating to counties."""
+    from data_contracts import normalize_observations
+    raw = parse_regional_published(workbook)
+    if set(zip(raw.base_year, raw.proj_year)) != {(2022, 2032)}:
+        raise ValueError("New regional source vintage requires a reviewed release ID and source URL")
+    rows = []
+    for _, source in raw.iterrows():
+        for measure in ("base_emp", "proj_emp", "annual_exits", "annual_transfers", "annual_change", "annual_openings"):
+            start = int(source.proj_year) if measure == "proj_emp" else int(source.base_year)
+            end = int(source.base_year) if measure == "base_emp" else int(source.proj_year)
+            rows.append(dict(geography_id=source.region_id, region_id=source.region_id, region_name=source.areaname,
+                             occupation_code=source.soc_code, occupation_title=source.occ_title,
+                             occupation_level=source.codelevel, measure_id="ks_occ_" + measure,
+                             estimate=source[measure], availability_status=source[measure + "_status"],
+                             period_start=f"{start}-01-01", period_end=f"{end}-12-31",
+                             unit="jobs" if measure in {"base_emp", "proj_emp"} else "jobs/year" if measure == "annual_change" else "openings/year",
+                             frequency="annual" if measure in {"base_emp", "proj_emp"} else "annual_average_projection",
+                             base_year=int(source.base_year), projection_year=int(source.proj_year),
+                             reference_label=f"{source.base_year}–{source.proj_year}",
+                             release_id="KDOL-regional-2022-2032-published-2025-07-07"))
+    return normalize_observations(pd.DataFrame(rows), source_id="kdol_regional_projections", defaults={
+        "geography_type": "projection_region", "location_basis": "workplace",
+        "job_universe": "occupational employment projections", "method_type": "published projection",
+        "source_url": "https://klic.dol.ks.gov/admin/gsipub/htmlarea/Uploads/2022-2032%20KS%20Occupational%20Projections%20%28Regional%29.xlsx"})
+
+
 def is_published_workbook(path: Path) -> bool:
     """True for a real .xlsx; the legacy KDOL export is an HTML table named .xls."""
     return path.suffix.lower() == ".xlsx"
@@ -442,7 +539,7 @@ def main():
                     help="The '(Kansas Regions)' demand book supplying regional_in_demand "
                          "when the statewide book carries no region sheets (2026+ layout)")
     ap.add_argument("--allow-no-regional", action="store_true",
-                    help="Publish regional_in_demand as all zeros when no region sheets "
+                    help="Leave regional_in_demand unavailable when no region sheets "
                          "are available, instead of failing")
     ap.add_argument("--output-dir", default="data/outputs")
     args = ap.parse_args()
@@ -479,14 +576,16 @@ def main():
                     on="soc_code", how="left")
                 for c in ("in_demand", "regional_in_demand",
                           "emerging_demand", "high_wage"):
-                    df[c] = df[c].fillna(0).astype("Int64")
+                    df[c] = df[c].astype("Int64")
                 matched = int((df["demand_rank"].notna()).sum())
                 rsrc = (f"; regional from {rpath.name} (vintage {_vintage_from_name(rpath)})"
                         if rpath is not None else "")
                 print(f"  Demand flags joined from {dpath.name} "
                       f"(vintage {dvintage}){rsrc}: {int(df['in_demand'].sum())} in-demand, "
-                      f"{int(df['regional_in_demand'].sum())} regional in-demand, "
+                      "regional flags saved separately by region and SOC, "
                       f"{matched}/{len(flags)} SOC codes matched a ranked occupation")
+                regional_flags = load_regional_demand_flags(rpath or dpath)
+                regional_flags.to_parquet(out / f"ks_occ_demand_region_s{sf}.parquet", index=False)
             else:
                 print(f"  !! demand file not found: {dpath} — in-demand layer will be empty")
         else:

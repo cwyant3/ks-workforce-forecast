@@ -4,6 +4,7 @@ Validate generated forecast outputs for structural and calculation issues.
 Usage:
     python scripts/validate_outputs.py
     python scripts/validate_outputs.py --outputs data/outputs --state 20
+    python scripts/validate_outputs.py --outputs data/outputs --state 20 --pressure
 """
 
 from __future__ import annotations
@@ -435,59 +436,103 @@ def _failures_for_laus_grain(outputs: Path, state: str | None = None) -> list[st
     return failures
 
 
+KS_REGION_IDS = {"KS-KC", "KS-NC", "KS-NE", "KS-NW", "KS-SC", "KS-SE", "KS-SW"}
+
+
+def _flag_errors(df: pd.DataFrame, column: str, name: str) -> list[str]:
+    if column not in df:
+        return [f"{name}: column {column!r} missing — the demand-book join did not run"]
+    values = pd.to_numeric(df[column], errors="coerce")
+    invalid = df[column].notna() & ~values.isin([0, 1])
+    return [f"{name}: {column} must contain only 0, 1 or NA"] if invalid.any() else []
+
+
+def _failures_for_regional_demand_flags(path: Path) -> list[str]:
+    """Validate native region × SOC flags without unioning regions or filling NA."""
+    if not path.exists():
+        return []
+    try:
+        df = pd.read_parquet(path)
+    except Exception as exc:
+        return [f"{path.name}: could not read ({exc})"]
+    required = {"region_id", "soc_code", "regional_in_demand", "availability_status"}
+    if missing := sorted(required - set(df)):
+        return [f"{path.name}: missing columns {missing}"]
+    if df.empty:
+        return [f"{path.name}: empty"]
+    failures = _flag_errors(df, "regional_in_demand", path.name)
+    if not df.region_id.isin(KS_REGION_IDS).all():
+        failures.append(f"{path.name}: invalid native Kansas region_id")
+    if not df.soc_code.astype("string").str.fullmatch(r"\d{2}-\d{4}").fillna(False).all():
+        failures.append(f"{path.name}: invalid soc_code")
+    if df.duplicated(["region_id", "soc_code"]).any():
+        failures.append(f"{path.name}: duplicated region_id × soc_code")
+    statuses = df.availability_status
+    if not statuses.isin(["published", "not_reported"]).all():
+        failures.append(f"{path.name}: invalid flag availability_status")
+    if (statuses.eq("published") != df.regional_in_demand.notna()).any():
+        failures.append(f"{path.name}: flag availability_status disagrees with value")
+    return failures
+
+
 def _failures_for_ks_demand_flags(outputs: Path, state: str | None = None) -> list[str]:
-    """
-    Assert the KDOL in-demand layer is actually populated.
+    """Statewide flags stay statewide; regional flags retain an explicit region.
 
-    ks_occ_proj_state_s20.parquet gets its in_demand / demand_rank /
-    regional_in_demand columns by joining KDOL's Occupational Employment Demand
-    book onto the published projections. Nothing checked the result until
-    2026-09-15, when KDOL split that book into statewide and regional files:
-    measured against the live outputs, feeding the parser only the new
-    statewide book would have taken regional_in_demand from 384 SOC codes to 0
-    with no error and a passing validation. A zero here is never a real
-    publication state — KDOL flags hundreds of occupations every edition — so
-    it always means the join lost its source.
-
-    Kansas-only layer; absence is not a failure, matching the other layers.
+    An all-region union has no valid meaning on a statewide SOC row. Missing
+    regional flags are therefore expected there unless a single named region
+    was selected. Native regional flags are checked independently when present.
     """
-    failures: list[str] = []
     if state and state.zfill(2) != "20":
-        return failures
+        return []
+    failures = _failures_for_regional_demand_flags(outputs / "ks_occ_demand_region_s20.parquet")
     path = outputs / "ks_occ_proj_state_s20.parquet"
     if not path.exists():
         return failures
     try:
         df = pd.read_parquet(path)
-    except Exception as exc:                      # noqa: BLE001
-        return [f"{path.name}: could not read ({exc})"]
+    except Exception as exc:
+        return failures + [f"{path.name}: could not read ({exc})"]
     if df.empty:
-        return [f"{path.name}: empty"]
-
-    for col, what in (
-        ("in_demand", "statewide High Demand flags"),
-        ("regional_in_demand", "regional High Demand flags"),
-    ):
-        if col not in df.columns:
-            failures.append(f"{path.name}: column {col!r} missing — the demand-book "
-                            f"join did not run")
-            continue
-        n = int(pd.to_numeric(df[col], errors="coerce").fillna(0).sum())
-        if n == 0:
-            failures.append(
-                f"{path.name}: {col} sums to 0 across {len(df)} rows — no {what} "
-                f"reached the output. The KDOL Occupational Employment Demand join "
-                f"lost its source (since 2026 the regional flags ship in a separate "
-                f"'(Kansas Regions)' workbook; see load_demand_flags in "
-                f"scripts/parse_manual_ks_occproj.py)."
-            )
-    if "demand_rank" in df.columns and df["demand_rank"].notna().sum() == 0:
-        failures.append(f"{path.name}: demand_rank is null on every row — the "
-                        f"statewide demand book was not joined")
+        return failures + [f"{path.name}: empty"]
+    failures.extend(_flag_errors(df, "in_demand", path.name))
+    if "in_demand" in df and not pd.to_numeric(df.in_demand, errors="coerce").eq(1).any():
+        failures.append(f"{path.name}: no statewide High Demand flags reached the output")
+    if "regional_in_demand" in df:
+        failures.extend(_flag_errors(df, "regional_in_demand", path.name))
+        flagged = df.regional_in_demand.notna()
+        if flagged.any():
+            metadata = next((c for c in ("regional_demand_region_id", "region_id") if c in df), None)
+            regions = df.loc[flagged, metadata] if metadata else pd.Series(dtype="string")
+            if metadata is None or not regions.isin(KS_REGION_IDS).all() or regions.nunique() != 1:
+                failures.append(f"{path.name}: regional_in_demand requires explicit single-region metadata; otherwise use NA")
+    if "demand_rank" in df and df.demand_rank.notna().sum() == 0:
+        failures.append(f"{path.name}: demand_rank is null on every row — the statewide demand book was not joined")
     return failures
 
 
-def validate(outputs: Path, state: str | None = None) -> list[str]:
+def _failures_for_pressure(outputs: Path, state: str | None = None) -> list[str]:
+    """Check exactly the captured adopted release, never superseded legacy files."""
+    # Direct invocation puts scripts/ on sys.path, not the project root.
+    import sys
+    root = str(Path(__file__).resolve().parents[1])
+    if root not in sys.path:
+        sys.path.insert(0, root)
+    from pressure_release import read_active, validate_release
+    try:
+        manifest = read_active(outputs)
+        if not manifest:
+            return ["pressure: no active release is adopted"]
+        scope_state = manifest.get("scope", {}).get("state")
+        if state and scope_state is not None and str(scope_state).zfill(2) != state.zfill(2):
+            return [f"pressure: active release state {scope_state} != requested {state.zfill(2)}"]
+        return [f"pressure: {error}" for error in validate_release(outputs, manifest)]
+    except Exception as exc:
+        return [f"pressure: could not validate active release ({exc})"]
+
+
+def validate(outputs: Path, state: str | None = None, *, pressure: bool = False) -> list[str]:
+    if pressure:
+        return _failures_for_pressure(outputs, state)
     failures: list[str] = []
     summary_files = sorted(outputs.glob("county_summary_s*.csv"))
     if state:
@@ -525,9 +570,11 @@ def main() -> int:
     parser.add_argument("--outputs", default=Path(__file__).resolve().parents[1] / "data" / "outputs",
                         type=Path)
     parser.add_argument("--state", default=None, help="Optional 2-digit state FIPS")
+    parser.add_argument("--pressure", action="store_true",
+                        help="Validate only the active pressure release and its overrides, not superseded legacy outputs")
     args = parser.parse_args()
 
-    failures = validate(args.outputs, args.state)
+    failures = validate(args.outputs, args.state, pressure=args.pressure)
     if failures:
         print("Output validation failed:")
         for failure in failures:

@@ -219,9 +219,9 @@ def _parse_df(df: pd.DataFrame, area_fips: str, year: int) -> list[dict]:
         naics     = str(row["industry_code"])
         disc      = str(row.get("disclosure_code", "")).strip()
         disclosed = disc not in ("N", "S")
-        emp  = float(row.get("annual_avg_emplvl",  "") or 0) if disclosed else None
-        pay  = float(row.get("avg_annual_pay",     "") or 0) if disclosed else None
-        wkly = float(row.get("annual_avg_wkly_wage", "") or 0) if disclosed else None
+        emp = pd.to_numeric(row.get("annual_avg_emplvl"), errors="coerce") if disclosed else None
+        pay = pd.to_numeric(row.get("avg_annual_pay"), errors="coerce") if disclosed else None
+        wkly = pd.to_numeric(row.get("annual_avg_wkly_wage"), errors="coerce") if disclosed else None
         rows.append({
             "area_fips":       area_fips,
             "year":            year,
@@ -266,36 +266,50 @@ def _aggregate(rows: list[dict], is_county: bool) -> tuple[pd.DataFrame, pd.Data
 
     # Total employment rows (naics="10")
     tot_rows = df[df["naics"] == "10"].copy()
+    if tot_rows.duplicated(["county_fips", "year"]).any():
+        raise ValueError("Duplicate all-industry totals cannot be added")
+    tot_rows.loc[tot_rows["suppressed"].fillna(True), "employment"] = float("nan")
     if tot_rows.empty:
         totals_df = _empty_tot.copy()
     else:
         totals_df = (tot_rows.groupby(["county_fips", "year"])["employment"]
-                     .sum().reset_index()
+                     .sum(min_count=1).reset_index()
                      .rename(columns={"employment": "total_employment"}))
 
     # Sector rows (exclude naics="10")
     sec_df = df[df["sector"].notna()].copy()
     result = []
-    for (fips, year, sector), grp in sec_df.groupby(
-            ["county_fips", "year", "sector"]):
-        has = grp["employment"].notna()
-        if not has.any():
+    for (fips, year), area in df.groupby(["county_fips", "year"]):
+        for sector, required in SECTOR_NAICS.items():
+            grp = area[area["sector"] == sector]
+            # A sector total is published only when every NAICS component is
+            # present and disclosed; a partial sum would understate employment.
+            complete = (set(grp["naics"]) == set(required)
+                        and not grp["naics"].duplicated().any()
+                        and grp["employment"].notna().all()
+                        and not grp["suppressed"].fillna(True).any())
+            if not complete:
+                result.append({"county_fips": fips, "year": year, "sector": sector,
+                               "employment": None, "avg_annual_pay": None,
+                               "avg_weekly_wage": None,
+                               "suppressed": bool(grp["suppressed"].any()),
+                               "availability_status": "suppressed" if grp["suppressed"].any() else "incomplete",
+                               "expected_components": len(required),
+                               "available_components": int(grp["employment"].notna().sum())})
+                continue
+            emp = float(grp["employment"].sum())
+            employed = grp[grp["employment"] > 0]
+
+            def wage(col):
+                return (float((employed[col] * employed["employment"]).sum() / emp)
+                        if emp > 0 and employed[col].notna().all() else None)
+
+            w_pay, w_wkly = wage("avg_annual_pay"), wage("avg_weekly_wage")
             result.append({"county_fips": fips, "year": year, "sector": sector,
-                           "employment": None, "avg_annual_pay": None,
-                           "avg_weekly_wage": None, "suppressed": True})
-            continue
-        sub  = grp[has]
-        emp  = float(sub["employment"].sum())
-        if emp > 0:
-            w_pay  = float((sub["avg_annual_pay"].fillna(0)  * sub["employment"]).sum() / emp)
-            w_wkly = float((sub["avg_weekly_wage"].fillna(0) * sub["employment"]).sum() / emp)
-        else:
-            w_pay  = float(sub["avg_annual_pay"].mean() or 0)
-            w_wkly = float(sub["avg_weekly_wage"].mean() or 0)
-        result.append({"county_fips": fips, "year": year, "sector": sector,
-                       "employment": emp, "avg_annual_pay": w_pay,
-                       "avg_weekly_wage": w_wkly,
-                       "suppressed": bool(grp["suppressed"].any())})
+                           "employment": emp, "avg_annual_pay": w_pay,
+                           "avg_weekly_wage": w_wkly,
+                           "suppressed": False, "availability_status": "published",
+                           "expected_components": len(required), "available_components": len(required)})
 
     sector_df = pd.DataFrame(result) if result else _empty_sec.copy()
     return sector_df, totals_df
@@ -389,9 +403,68 @@ def fetch_state_qcew(
 
     # State totals: aggregate across years
     state_totals_df = (state_totals.groupby("year")["total_employment"]
-                       .sum().reset_index()) if not state_totals.empty else pd.DataFrame(
+                       .sum(min_count=1).reset_index()) if not state_totals.empty else pd.DataFrame(
         columns=["year", "total_employment"])
 
     print(f"  QCEW loaded: {len(county_sector_df)} county-sector-year rows, "
           f"{len(state_sector_df)} state-sector-year rows")
     return county_sector_df, state_sector_df, state_totals_df
+
+
+def parse_quarterly_qcew(data: pd.DataFrame, *, county_fips: str, year: int,
+                          quarter: int, industries: list[str] | None = None,
+                          ownership: str = "5") -> pd.DataFrame:
+    """Parse a county area slice without collapsing suppression to zeros.
+
+    Each requested industry has explicit rows even when absent. Quarter employment
+    is a mean of the three reported monthly job counts, not an annual observation.
+    """
+    from data_contracts import normalize_observations
+    if quarter not in (1, 2, 3, 4):
+        raise ValueError("QCEW quarter must be 1..4")
+    fips = str(county_fips).zfill(5)
+    required = {"area_fips", "own_code", "industry_code", "size_code", "disclosure_code", "year", "qtr"}
+    if not required.issubset(data.columns):
+        raise ValueError("Unexpected QCEW area slice schema")
+    data = data.copy()
+    for col in required:
+        data[col] = data[col].fillna("").astype(str).str.strip()
+    subset = data[(data.area_fips == fips) & (data.own_code == str(ownership)) & (data.size_code == "0")
+                  & (data.year == str(year)) & (data.qtr == str(quarter))]
+    if subset.industry_code.duplicated().any():
+        raise ValueError("QCEW slice contains duplicate industry/ownership rows")
+    codes = industries if industries is not None else sorted(_SECTOR_NAICS)
+    period = pd.Period(f"{year}Q{quarter}", freq="Q")
+    rows = []
+    for code in codes:
+        found = subset[subset.industry_code == code]
+        source = found.iloc[0] if len(found) else None
+        disc = str(source.disclosure_code) if source is not None else "absent"
+        monthly = pd.to_numeric(pd.Series([source.get(f"month{i}_emplvl") if source is not None else None
+                                           for i in (1, 2, 3)]), errors="coerce")
+        values = {"qcew_employment": (monthly.mean() if monthly.notna().all() else None, "jobs"),
+                  "qcew_weekly_wage": (source.get("avg_wkly_wage") if source is not None else None, "USD/week"),
+                  "qcew_establishments": (source.get("qtrly_estabs") if source is not None else None, "establishments")}
+        for measure, (value, unit) in values.items():
+            value = pd.to_numeric(value, errors="coerce")
+            status = ("not_reported" if source is None else "suppressed" if disc in {"N", "S"}
+                      else "published" if pd.notna(value) else "cannot_compute")
+            rows.append(dict(geography_id=fips, industry_code=code, ownership=str(ownership), measure_id=measure,
+                             estimate=value if status == "published" else None, unit=unit,
+                             availability_status=status, source_status=disc,
+                             period_start=str(period.start_time.date()), period_end=str(period.end_time.date()),
+                             reference_label=f"{year} Q{quarter}"))
+    return normalize_observations(pd.DataFrame(rows), source_id="qcew", defaults={
+        "geography_type": "county", "location_basis": "workplace", "job_universe": "UI-covered jobs",
+        "frequency": "quarterly", "method_type": "published estimate", "release_id": f"{year}Q{quarter}",
+        "source_url": f"https://data.bls.gov/cew/data/api/{year}/{quarter}/area/{fips}.csv"})
+
+
+def fetch_quarterly_qcew(county_fips: str, year: int, quarter: int,
+                         industries: list[str] | None = None, ownership: str = "5", session=None) -> pd.DataFrame:
+    url = f"https://data.bls.gov/cew/data/api/{year}/{quarter}/area/{str(county_fips).zfill(5)}.csv"
+    response = (session or requests).get(url, timeout=90)
+    response.raise_for_status()
+    data = pd.read_csv(io.StringIO(response.text), dtype=str)
+    return parse_quarterly_qcew(data, county_fips=county_fips, year=year, quarter=quarter,
+                                industries=industries, ownership=ownership)

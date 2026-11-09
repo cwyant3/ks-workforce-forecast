@@ -92,7 +92,7 @@ REGISTRY: list[dict] = [
     {"source": "lodes",    "module": "fetch_lodes",    "years_attr": "LODES_YEARS",
      "cache": "data/lodes_cache/lodes_s20_all.parquet",  "output": "data/outputs/lodes_s20.parquet"},
     {"source": "ipeds",    "module": "fetch_ipeds",    "years_attr": "IPEDS_YEARS",
-     "cache": "data/ipeds_cache/ipeds_s20_all.parquet",  "output": "data/outputs/ipeds_s20.parquet"},
+     "cache": "data/ipeds_cache/ipeds_detail_v3_s20_all.parquet",  "output": "data/outputs/ipeds_s20.parquet"},
     {"source": "cbp",      "module": "fetch_cbp",      "years_attr": "CBP_YEARS",
      "cache": "data/cbp_cache/cbp_s20.parquet",          "output": "data/outputs/cbp_s20.parquet"},
     {"source": "qcew",     "module": "fetch_qcew",     "years_attr": "QCEW_YEARS",

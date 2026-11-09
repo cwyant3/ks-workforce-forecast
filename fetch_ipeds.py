@@ -5,8 +5,8 @@ a given state, maps CIP codes to workforce sectors, and caches as parquet.
 Designed to be state-agnostic; defaults to Kansas (FIPS 20).
 
 Data source: NCES IPEDS bulk CSV downloads (no API key required)
-  Completions: https://nces.ed.gov/ipeds/datacenter/data/C{YEAR}_A.zip
-  Institution characteristics (HD): https://nces.ed.gov/ipeds/datacenter/data/HD{YEAR}.zip
+  Completions: https://nces.ed.gov/ipeds/complete-data-files/C{YEAR}_A.zip
+  Institution characteristics (HD): https://nces.ed.gov/ipeds/complete-data-files/HD{YEAR}.zip
 
 Key survey variables:
   UNITID     — institution ID (join key to HD file)
@@ -37,16 +37,53 @@ from pathlib import Path
 import bulk_cache
 from cache_freshness import load_fresh_cache, save_if_complete
 
-# Collection years; year N is the N-1/N academic year. 2024 confirmed
-# present 2026-09-02 by requesting the NCES bulk files directly:
-# C2024_A.zip (4.68 MB) and HD2024.zip (1.09 MB) both returned HTTP 200,
-# while C2025_A.zip and HD2025.zip returned 404. Both files are required —
-# HD supplies the institution-to-county map that completions are joined to.
-IPEDS_YEARS = list(range(2015, 2025))   # 2014–15 through 2023–24 academic years
+# Collection N covers academic year N-1/N. C2025_A and HD2025 were
+# downloaded and row-validated 2026-10-20 from complete-data-files.
+IPEDS_YEARS = list(range(2015, 2026))
 
-IPEDS_BASE         = "https://nces.ed.gov/ipeds/datacenter/data"
+IPEDS_BASE         = "https://nces.ed.gov/ipeds/complete-data-files"
+# NCES serves the bulk files from two paths. Checked 2026-11-08 with HEAD
+# requests: complete-data-files has collections 2023-2025 and returns 404 for
+# 2015-2022; datacenter/data has 2015-2024 and returns 404 for 2025. Each
+# download tries the primary path, then falls back on a 404.
+IPEDS_FALLBACK_BASE = "https://nces.ed.gov/ipeds/datacenter/data"
+IPEDS_BASES        = (IPEDS_BASE, IPEDS_FALLBACK_BASE)
 COMPLETIONS_URL    = IPEDS_BASE + "/C{year}_A.zip"
 HD_URL             = IPEDS_BASE + "/HD{year}.zip"
+FLAGS_URL          = IPEDS_BASE + "/FLAGS{year}.zip"
+IMPUTATION_LABELS = {
+    'A': 'Not applicable', 'B': 'Institution left item blank',
+    'C': 'Analyst corrected reported value', 'D': 'Do not know',
+    'G': 'Data generated from other data values', 'H': 'Data not usable',
+    'J': 'Logical imputation', 'K': 'Ratio adjustment',
+    'L': 'Group median imputation', 'N': 'Nearest neighbor imputation',
+    'P': 'Carry forward imputation', 'R': 'Reported', 'Z': 'Implied zero',
+}
+
+
+def attach_response_flags(detail, flags):
+    """Preserve public institution response/parent flags without allocating campuses.
+
+    FLAGS and C2025_A dictionaries checked 2026-10-20. A parent total remains
+    at the reporting institution; never copy it to each child campus.
+    """
+    flags = flags.copy()
+    flags.columns = flags.columns.str.lower().str.strip()
+    fields = ['unitid', 'stat_c', 'lock_c', 'prch_c', 'idx_c', 'pcc_f', 'imp_c']
+    if not set(fields) <= set(flags):
+        raise ValueError('IPEDS FLAGS missing completions response fields')
+    flags = flags[fields].copy()
+    flags['unitid'] = pd.to_numeric(flags.unitid, errors='raise').astype('Int64')
+    if flags.unitid.duplicated().any():
+        raise ValueError('Duplicate reporting UNITID in FLAGS')
+    result = detail.merge(flags, on='unitid', how='left', validate='many_to_one')
+    result['response_flag_status'] = result.stat_c.map({'1':'Respondent','4':'Nonrespondent, imputed','5':'Nonrespondent, not imputed','-2':'Not applicable','-9':'Not active'}).fillna('Unknown or unavailable')
+    result['parent_reporting_status'] = result.prch_c.map({'1':'Includes child campuses','2':'All data reported with parent','-2':'No parent/child relationship reported'}).fillna('Unknown or unavailable')
+    result['imputation_status'] = result.imputation_flag.map(IMPUTATION_LABELS).fillna('Unknown or unavailable')
+    result['flags_availability_status'] = result.stat_c.notna().map({True:'published',False:'not_reported'})
+    if result.prch_c.eq('2').any():
+        raise ValueError('Child campus unexpectedly has detail; review before aggregation')
+    return result
 
 # Credential level codes → readable labels
 CREDENTIAL_LEVELS: dict[int, str] = {
@@ -60,10 +97,15 @@ CREDENTIAL_LEVELS: dict[int, str] = {
     8: "post_masters_cert",
     9: "doctoral",
     10: "doctoral_professional",
+    20: "less_than_12_weeks_cert",
+    21: "12_weeks_to_less_than_1yr_cert",
+    17: "doctoral_research",
+    18: "doctoral_professional",
+    19: "doctoral_other",
 }
 
 # CIP 2-digit prefix → dashboard sector.
-# Source: O*NET CIP→SOC crosswalk + BLS sector definitions.
+# Legacy dashboard category approximation, not an official CIP-to-SOC allocation.
 # Only includes CIPs commonly produced at sub-baccalaureate level in KS.
 CIP2_TO_SECTOR: dict[str, str] = {
     # Healthcare & Nursing
@@ -111,8 +153,28 @@ def _download_zip(url: str, label: str) -> bytes:
     """
     return bulk_cache.cached_download(
         f"ipeds_{url.rsplit('/', 1)[-1]}",
-        lambda: _http_get_zip(url, label),
+        lambda: _http_get_zip_any(candidate_urls(url), label),
     )
+
+
+def candidate_urls(url: str) -> list[str]:
+    """The given URL first, then the same file name on each other NCES base."""
+    name = url.rsplit("/", 1)[-1]
+    return [url] + [f"{base}/{name}" for base in IPEDS_BASES if f"{base}/{name}" != url]
+
+
+def _http_get_zip_any(urls: list[str], label: str) -> bytes:
+    """Try each URL in order; only a 404 moves on to the next path."""
+    last_404 = None
+    for url in urls:
+        try:
+            return _http_get_zip(url, label)
+        except requests.HTTPError as exc:
+            if exc.response is not None and exc.response.status_code == 404:
+                last_404 = exc
+                continue
+            raise
+    raise last_404 if last_404 is not None else FileNotFoundError(f"No URL for {label}")
 
 
 def _http_get_zip(url: str, label: str) -> bytes:
@@ -157,7 +219,7 @@ def _load_hd(
     Load institutional characteristics for a given year, filtered to state.
     Returns DataFrame: unitid (int), institution_name, county_fips (3-digit str).
     """
-    cache_file = cache_dir / f"hd_{year}.parquet"
+    cache_file = cache_dir / f"hd_v2_{year}.parquet"
     if cache_file.exists():
         return pd.read_parquet(cache_file)
 
@@ -167,110 +229,88 @@ def _load_hd(
 
     raw.columns = raw.columns.str.lower().str.strip().str.replace('﻿', '', regex=False)
 
-    needed = ["unitid", "instnm", "stabbr", "countycd"]
-    missing = [c for c in needed if c not in raw.columns]
-    if missing:
-        # Some years use slightly different column names; attempt fallbacks
-        if "countycd" in missing and "countynm" in raw.columns:
-            raw["countycd"] = raw.get("fips", "")
-        remaining = [c for c in needed if c not in raw.columns]
-        if remaining:
-            raise KeyError(f"HD{year}: missing columns {remaining}. "
-                           f"Available: {list(raw.columns)}")
-
-    hd = raw[needed].copy()
-    hd["unitid"] = pd.to_numeric(hd["unitid"], errors="coerce").astype("Int64")
-    # COUNTYCD is a 5-digit FIPS string; strip to 3-digit county suffix
-    hd["countycd"] = hd["countycd"].str.strip().str.zfill(5)
-    hd["county_fips3"] = hd["countycd"].str[-3:]
-    hd["state_fips_from_county"] = hd["countycd"].str[:2]
-    hd = hd.rename(columns={"instnm": "institution_name"})
+    hd = prepare_hd(raw)
 
     hd.to_parquet(cache_file, index=False)
-    print(f"    [saved] hd_{year}.parquet  ({len(hd)} institutions)")
+    print(f"    [saved] hd_v2_{year}.parquet  ({len(hd)} institutions)")
     return hd
 
 
 # ── Completions loader ────────────────────────────────────────────────────────
 
-def _load_completions(
-    year: int,
-    state_fips: str,
-    hd_df: pd.DataFrame,
-    cache_dir: Path,
-) -> pd.DataFrame:
+def prepare_hd(raw):
+    """Keep reporting-unit identity; never substitute state FIPS for missing county."""
+    raw=raw.copy(); raw.columns=raw.columns.str.lower().str.strip().str.replace("\ufeff","",regex=False)
+    needed=["unitid","instnm","stabbr","countycd"]
+    if not set(needed)<=set(raw): raise ValueError("IPEDS HD missing required geography fields")
+    hd=raw[needed+[c for c in ("fips","countynm","cyactive","newid","closedat") if c in raw]].copy()
+    hd["unitid"]=pd.to_numeric(hd.unitid,errors="raise").astype("Int64")
+    if hd.unitid.duplicated().any(): raise ValueError("Duplicate reporting UNITID in HD")
+    valid=hd.countycd.astype(str).str.strip().str.fullmatch(r"\d{5}")
+    hd["countycd"]=hd.countycd.where(valid)
+    hd["county_fips3"]=hd.countycd.str[-3:]
+    hd["state_fips_from_county"]=hd.countycd.str[:2]
+    hd=hd.rename(columns={"instnm":"institution_name"})
+    return hd
+
+
+def parse_completions(raw, hd_df, year, state_fips="20"):
+    """One row per reporting unit/CIP6/award level, first majors; retain zero/null/flags.
+
+    Aggregate CIP99 rows are retained only for reconciliation via attrs, never
+    added to detail. Two/four-digit hierarchy subtotals are excluded as well.
     """
-    Load completions for one academic year, filter to state institutions,
-    and join with HD for county FIPS.
+    raw=raw.copy(); raw.columns=raw.columns.str.lower().str.strip().str.replace("\ufeff","",regex=False)
+    if "awlevel" not in raw and "awlevelc" in raw: raw=raw.rename(columns={"awlevelc":"awlevel"})
+    required=["unitid","cipcode","majornum","awlevel","ctotalt"]
+    if not set(required)<=set(raw): raise ValueError("IPEDS completions missing required fields")
+    raw["unitid"]=pd.to_numeric(raw.unitid,errors="raise").astype("Int64")
+    raw["cipcode"]=raw.cipcode.astype(str).str.strip()
+    raw["majornum"]=pd.to_numeric(raw.majornum,errors="raise").astype(int)
+    raw["award_level"]=pd.to_numeric(raw.awlevel,errors="raise").astype(int)
+    raw["completions"]=pd.to_numeric(raw.ctotalt,errors="coerce")
+    if (raw.completions.dropna()<0).any(): raise ValueError("Negative completion counts")
+    raw=raw.loc[raw.majornum==1].copy()
+    key=["unitid","cipcode","award_level","majornum"]
+    if raw.duplicated(key).any(): raise ValueError("Duplicate institutional CIP/award rows")
+    hd=hd_df.copy()
+    # Keep institutions with missing county but valid state FIPS for coverage QA.
+    state=hd["fips"].astype(str).str.zfill(2) if "fips" in hd else hd.state_fips_from_county
+    hd=hd.loc[state==str(state_fips).zfill(2)]
+    joined=raw.merge(hd,on="unitid",how="inner",validate="many_to_one")
+    totals=joined.loc[joined.cipcode.isin(["99","99.0000"]),["unitid","award_level","completions"]].rename(columns={"completions":"published_total"})
+    detail=joined.loc[joined.cipcode.str.fullmatch(r"\d{2}\.\d{4}") & ~joined.cipcode.str.startswith("99")].copy()
+    detail["cip6"]=detail.cipcode
+    detail["cip2"]=detail.cipcode.str[:2]
+    detail["sector"]=detail.cip2.map(CIP2_TO_SECTOR)
+    detail["credential_level"]=detail.award_level.map(CREDENTIAL_LEVELS).fillna("unknown")
+    detail["county_fips"]=detail.county_fips3
+    detail["county_fips5"]=detail.countycd
+    detail["state_fips"]=str(state_fips).zfill(2); detail["year"]=int(year)
+    detail["imputation_flag"]=detail["xctotalt"] if "xctotalt" in detail else "unknown"
+    detail["availability_status"]=detail.completions.map(lambda v:"published" if pd.notna(v) else "not_reported")
+    # Numeric total reconciliation is separate from distinct-person counting.
+    sums=detail.groupby(["unitid","award_level"],as_index=False).completions.agg(lambda x:x.sum() if x.notna().all() else float("nan"))
+    checks=totals.merge(sums,on=["unitid","award_level"],how="outer")
+    checks["reconciled"]=(checks.published_total==checks.completions)&checks.published_total.notna()
+    detail.attrs["reconciliation"]=checks
+    return detail.reset_index(drop=True)
 
-    Returns DataFrame: unitid, institution_name, county_fips, year,
-    cip2, sector, credential_level, completions.
-    """
-    cache_file = cache_dir / f"completions_{year}_s{state_fips.zfill(2)}.parquet"
-    if cache_file.exists():
-        return pd.read_parquet(cache_file)
 
-    zip_bytes = _download_zip(
-        COMPLETIONS_URL.format(year=year), f"C{year}_A completions"
-    )
-    time.sleep(1)
-    raw = _read_csv_from_zip(zip_bytes, f"c{year}_a.csv")
-    raw.columns = raw.columns.str.lower().str.strip().str.replace('﻿', '', regex=False)
-
-    # IPEDS renamed awlevelc → awlevel in some release years; normalise to awlevelc
-    if "awlevelc" not in raw.columns and "awlevel" in raw.columns:
-        raw = raw.rename(columns={"awlevel": "awlevelc"})
-
-    needed = ["unitid", "cipcode", "majornum", "awlevelc", "ctotalt"]
-    missing = [c for c in needed if c not in raw.columns]
-    if missing:
-        raise KeyError(f"C{year}_A: missing columns {missing}. "
-                       f"Available: {list(raw.columns)}")
-
-    # First majors only to prevent double-counting joint programs
-    comp = raw[raw["majornum"] == "1"].copy()
-
-    comp["unitid"]   = pd.to_numeric(comp["unitid"], errors="coerce").astype("Int64")
-    comp["awlevelc"] = pd.to_numeric(comp["awlevelc"], errors="coerce").astype("Int64")
-    comp["ctotalt"]  = pd.to_numeric(comp["ctotalt"], errors="coerce").fillna(0).astype(int)
-
-    # Filter to state institutions via HD join
-    state_units = hd_df[
-        hd_df["state_fips_from_county"] == state_fips.zfill(2)
-    ][["unitid", "institution_name", "county_fips3"]].copy()
-
-    comp = comp.merge(state_units, on="unitid", how="inner")
-
-    # 2-digit CIP prefix
-    comp["cip2"] = comp["cipcode"].str.split(".").str[0].str.zfill(2)
-
-    # Map to sector
-    comp["sector"] = comp["cip2"].map(CIP2_TO_SECTOR)
-
-    # Credential level label
-    comp["credential_level"] = comp["awlevelc"].map(
-        lambda x: CREDENTIAL_LEVELS.get(x, f"level_{x}") if pd.notna(x) else "unknown"
-    )
-
-    comp["year"] = year
-
-    result = (
-        comp.groupby(
-            ["unitid", "institution_name", "county_fips3",
-             "year", "cip2", "sector", "credential_level"],
-            as_index=False,
-            dropna=False,
-        )["ctotalt"]
-        .sum()
-        .rename(columns={"county_fips3": "county_fips", "ctotalt": "completions"})
-    )
-
-    # Drop rows with zero completions
-    result = result[result["completions"] > 0].reset_index(drop=True)
-
-    result.to_parquet(cache_file, index=False)
-    print(f"    [saved] completions_{year}_s{state_fips.zfill(2)}.parquet  "
-          f"({len(result)} rows)")
+def _load_completions(year,state_fips,hd_df,cache_dir):
+    cache_file=cache_dir/f"completions_detail_v3_{year}_s{state_fips.zfill(2)}.parquet"
+    if cache_file.exists(): return pd.read_parquet(cache_file)
+    raw=_read_csv_from_zip(_download_zip(COMPLETIONS_URL.format(year=year),f"C{year}_A"),f"c{year}_a.csv")
+    result=parse_completions(raw,hd_df,year,state_fips)
+    # attrs DataFrame is deliberately not serialized into parquet metadata.
+    result.attrs={}
+    try:
+        flags=_read_csv_from_zip(_download_zip(FLAGS_URL.format(year=year),f"FLAGS{year}"),f"flags{year}.csv")
+        result=attach_response_flags(result,flags)
+        result.to_parquet(cache_file,index=False)
+    except (requests.RequestException, OSError) as exc:
+        result['flags_availability_status']='access_failed'
+        result['flags_quality_note']=f'{type(exc).__name__}: {exc}'
     return result
 
 
@@ -284,13 +324,13 @@ def fetch_ipeds(
     """
     Fetch IPEDS postsecondary completions for all institutions in a state.
 
-    Completions are grouped by institution, CIP 2-digit prefix, award level,
-    and year, then mapped to the five dashboard workforce sectors.
+    Completions retain institution, six-digit CIP, award level and first-major
+    detail. Legacy sector categories are descriptive approximations.
 
     Parameters
     ----------
     state_fips : 2-digit state FIPS (default "20" = Kansas)
-    years      : academic years to fetch (default 2015–2023)
+    years      : academic years to fetch (default 2015–2025)
     cache_dir  : parquet cache directory
 
     Returns
@@ -308,7 +348,7 @@ def fetch_ipeds(
 
     # As with LODES, the per-year HD/completions sub-caches are vintage-keyed
     # but this combined shortcut short-circuits ahead of them.
-    combined_cache = cache_dir / f"ipeds_s{sf}_all.parquet"
+    combined_cache = cache_dir / f"ipeds_detail_v3_s{sf}_all.parquet"
     cached = load_fresh_cache(combined_cache, years, f"IPEDS {sf} (combined)")
     if cached is not None:
         return cached
@@ -335,8 +375,9 @@ def fetch_ipeds(
     df = pd.concat(frames, ignore_index=True)
     df = df.sort_values(["county_fips", "year", "sector"]).reset_index(drop=True)
 
-    save_if_complete(df, combined_cache, years,
-                     sorted(df["year"].unique()), f"IPEDS {sf} (combined)")
+    if 'flags_availability_status' in df and df.flags_availability_status.eq('published').all():
+        save_if_complete(df, combined_cache, years,
+                         sorted(df["year"].unique()), f"IPEDS {sf} (combined)")
     print(f"  IPEDS {sf}: {len(df)} rows, {df['unitid'].nunique()} institutions, "
           f"{df['year'].nunique()} years")
 
@@ -351,7 +392,7 @@ def summarize_by_sector(ipeds_df: pd.DataFrame) -> pd.DataFrame:
     return (
         ipeds_df[ipeds_df["sector"].notna()]
         .groupby(["state_fips", "county_fips", "year", "sector"], as_index=False)["completions"]
-        .sum()
+        .agg(lambda x: x.sum() if x.notna().all() else float("nan"))
         .sort_values(["county_fips", "year", "sector"])
         .reset_index(drop=True)
     )

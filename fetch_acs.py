@@ -30,7 +30,7 @@ TOTAL_POP = "B01001_001E"
 #   +6 Not in labor force
 # So civilian labor force = band_total + 3 and armed forces = band_total + 2.
 # (Bumping SCHEMA_VERSION below invalidates older caches that used wrong offsets.)
-B23001_SCHEMA_VERSION = 2
+B23001_SCHEMA_VERSION = 3
 B23001_18_64_WEIGHTS: dict[float, dict[str, list[str]]] = {
     0.5: {
         "total": ["B23001_003E", "B23001_089E"],
@@ -117,11 +117,12 @@ def _get(url: str, params: dict, retries: int = 3) -> list:
         try:
             r = requests.get(url, params=params, timeout=30)
             r.raise_for_status()
-        except Exception as exc:
-            last_exc = exc
+        except requests.RequestException as exc:
+            # Request exceptions may include the query string and Census key.
+            last_exc = type(exc).__name__
             if attempt == retries - 1:
-                raise
-            print(f"  [retry {attempt+1}] {exc}")
+                raise RuntimeError(f"Census request failed ({last_exc}); credentials omitted") from None
+            print(f"  [retry {attempt+1}] Census request failed ({last_exc})")
             time.sleep(3 * (attempt + 1))
             continue
 
@@ -209,17 +210,32 @@ def fetch_year(year: int, state_fips: str = "20",
             for v in batch:
                 rows[fips][v] = int(row[hdr_lf.index(v)] or 0)
 
+    # Retain published sampling uncertainty separately from model intervals.
+    estimate_vars = [TOTAL_POP] + MALE_VARS + FEMALE_VARS + B23001_VARS
+    for batch in _chunks([v[:-1] + "M" for v in estimate_vars], 45):
+        time.sleep(1.5)
+        raw_moe = _get(base, {"get": ",".join(batch), **shared})
+        header = raw_moe[0]
+        for values in raw_moe[1:]:
+            fips = values[header.index("county")]
+            if fips in rows:
+                for variable in batch:
+                    rows[fips][variable] = _census_number(values[header.index(variable)])
+
     df = pd.DataFrame(list(rows.values()))
 
     # Aggregate to logical age groups
     for group, vars_ in AGE_GROUPS.items():
         present = [v for v in vars_ if v in df.columns]
         df[f"pop_{group}"] = df[present].sum(axis=1)
+        df[f"pop_{group}_moe"] = _sum_moe(df, [(v[:-1] + "M", 1.0) for v in vars_])
 
     df["pop_working_age"]  = df[[f"pop_{g}" for g in WORKFORCE_GROUPS]].sum(axis=1)
     df["pop_youth"]        = df[[f"pop_{g}" for g in YOUTH_GROUPS]].sum(axis=1)
     df["pop_retirement"]   = df[[f"pop_{g}" for g in RETIREMENT_GROUPS]].sum(axis=1)
     df["pop_total"]        = df[TOTAL_POP]
+    df["pop_total_moe"] = df[TOTAL_POP[:-1] + "M"]
+    df["moe_confidence_level"] = 0.90
     df = _add_labor_force_status(df)
     df["year"] = year
     df = _add_acs_metadata(df, year, state_fips)
@@ -241,8 +257,23 @@ def _weighted_sum(df: pd.DataFrame, field: str) -> pd.Series:
     for weight, groups in B23001_18_64_WEIGHTS.items():
         present = [v for v in groups[field] if v in df.columns]
         if present:
-            total = total + df[present].sum(axis=1) * weight
+            total = total + df[present].sum(axis=1, min_count=len(present)) * weight
     return total
+
+
+def _sum_moe(df: pd.DataFrame, weighted_vars: list[tuple[str, float]]) -> pd.Series:
+    """ACS approximate sum MOE; missing components never count as zero.
+
+    Root-sum-of-squares uses published 90% MOEs. Weights on the 16–19 band
+    inherit the age-allocation approximation; they are not exact age-18–19 MOEs.
+    """
+    pieces = [pd.to_numeric(df.get(v, pd.Series(float("nan"), index=df.index)),
+                            errors="coerce").where(lambda s: s >= 0) * weight
+              for v, weight in weighted_vars]
+    if not pieces:
+        return pd.Series(float("nan"), index=df.index)
+    squared = pd.concat(pieces, axis=1).pow(2)
+    return squared.sum(axis=1, min_count=len(pieces)).pow(0.5)
 
 
 def _add_labor_force_status(df: pd.DataFrame) -> pd.DataFrame:
@@ -271,18 +302,29 @@ def _add_labor_force_status(df: pd.DataFrame) -> pd.DataFrame:
         )
 
     df = df.copy()
+    for variable in B23001_VARS:
+        df[variable] = pd.to_numeric(df[variable], errors="coerce").where(lambda s: s >= 0)
     lf_status_pop = _weighted_sum(df, "total")
     civilian_lf = _weighted_sum(df, "civilian_lf")
     armed_forces = _weighted_sum(df, "armed_forces")
-    civilian_denominator = (lf_status_pop - armed_forces).clip(lower=0)
+    civilian_denominator = (lf_status_pop - armed_forces).where(lambda s: s >= 0)
 
     df["acs_lf_status_pop_18_64"] = lf_status_pop.round(0).astype("Int64")
     df["acs_civilian_labor_force_18_64"] = civilian_lf.round(0).astype("Int64")
     df["acs_armed_forces_18_64"] = armed_forces.round(0).astype("Int64")
     df["acs_lfpr_pct"] = (
-        civilian_lf / civilian_denominator.replace(0, pd.NA) * 100
-    ).round(2).clip(0, 100)
+        civilian_lf / civilian_denominator.where(civilian_denominator.ne(0)) * 100
+    ).round(2).where(lambda s: s.between(0, 100))
     df["acs_lf_schema_version"] = B23001_SCHEMA_VERSION
+    df["acs_age_basis"] = "18–64 approximation: half of 16–19 plus ages 20–64"
+    df["acs_lf_method_type"] = "derived"
+    for field, output in [("civilian_lf", "acs_civilian_labor_force_18_64_moe"),
+                          ("total", "acs_lf_status_pop_18_64_moe"),
+                          ("armed_forces", "acs_armed_forces_18_64_moe")]:
+        df[output] = _sum_moe(df, [(v[:-1] + "M", weight)
+                                  for weight, groups in B23001_18_64_WEIGHTS.items()
+                                  for v in groups[field]])
+    df["acs_moe_method"] = "90% approximate RSS; age allocation uncertainty not included"
     return df
 
 
@@ -296,7 +338,103 @@ def _add_acs_metadata(df: pd.DataFrame, year: int, state_fips: str) -> pd.DataFr
     df["acs_period_midpoint_year"] = year - 2
     df["estimate_type"] = "ACS 5-year"
     df["overlapping_period_estimate"] = True
+    df["acs_age_basis"] = "18–64 approximation: half of 16–19 plus ages 20–64"
     return df
+
+
+def _census_number(value):
+    """ACS numeric estimates/MOEs: preserve zero, reject sentinels and negatives."""
+    import math
+    try:
+        number = float(value)
+        return number if math.isfinite(number) and number >= 0 else None
+    except (TypeError, ValueError):
+        return None
+
+
+def parse_acs_supply(payload: list, year: int, table: str = "S2301") -> pd.DataFrame:
+    """Parse exact published 16+ measures and their 90% MOEs into observations.
+
+    S2301 participation is the published population-16+ subject measure.
+    B23025 civilian counts are separate measures; no S2301 percentage is
+    multiplied by an incompatible 18–64 population to invent a count.
+    """
+    if not isinstance(payload, list) or not payload or not isinstance(payload[0], list):
+        raise ValueError("ACS response must be a Census header/rows array")
+    specs = {
+        "S2301": {"S2301_C02_001": ("labor_force_participation_rate_16_plus", "percent",
+                                       "Population age 16 and over")},
+        "B23025": {
+            "B23025_001": ("population_16_plus", "people", "Population age 16 and over"),
+            "B23025_002": ("labor_force_16_plus", "people", "Population age 16 and over; includes armed forces"),
+            "B23025_003": ("civilian_labor_force_16_plus", "people", "Civilian labor force age 16 and over"),
+            "B23025_004": ("civilian_employed_16_plus", "people", "Civilian employed age 16 and over"),
+            "B23025_005": ("civilian_unemployed_16_plus", "people", "Civilian unemployed age 16 and over"),
+            "B23025_006": ("armed_forces_16_plus", "people", "Armed forces age 16 and over"),
+            "B23025_007": ("not_in_labor_force_16_plus", "people", "Population age 16 and over not in labor force"),
+        },
+    }
+    if table not in specs:
+        raise ValueError(f"Unsupported ACS supply table: {table}")
+    fields = specs[table]
+    header = payload[0]
+    required = {"state", "county"} | {code + suffix for code in fields for suffix in ("E", "M")}
+    if required - set(header):
+        raise ValueError(f"ACS {table} missing fields: {sorted(required - set(header))}")
+    source_url = f"https://api.census.gov/data/{year}/acs/acs5" + ("/subject" if table == "S2301" else "")
+    observations = []
+    for values in payload[1:]:
+        if len(values) != len(header):
+            raise ValueError("ACS row length does not match header")
+        row = dict(zip(header, values))
+        state, county = str(row["state"]), str(row["county"])
+        if not state.isdigit() or not county.isdigit() or len(state) > 2 or len(county) > 3:
+            raise ValueError("Invalid ACS county geography")
+        for code, (measure, unit, universe) in fields.items():
+            estimate = _census_number(row[code + "E"])
+            moe = _census_number(row[code + "M"])
+            if unit == "percent" and estimate is not None and estimate > 100:
+                estimate = None
+            observations.append({
+                "source_id": "acs_" + table.lower(), "measure_id": measure,
+                "geography_id": state.zfill(2) + county.zfill(3),
+                "geography_type": "county", "geography_name": row.get("NAME"),
+                "location_basis": "residence", "age_group": "16+", "sex_group": "all",
+                "population_universe": universe, "period_start": f"{year-4}-01-01",
+                "period_end": f"{year}-12-31", "frequency": "five_year",
+                "estimate": estimate, "moe": moe, "moe_confidence_level": 0.90,
+                "rse": (moe / 1.645 / estimate * 100 if moe is not None and estimate not in (None, 0) else None),
+                "unit": unit, "source_status": str(row[code + "E"]),
+                "source_moe_status": str(row[code + "M"]),
+                "availability_status": "published" if estimate is not None else "not_reported",
+                "quality_note": "MOE unavailable" if moe is None else "Published 90% sampling MOE",
+                "method_type": "observed estimate", "source_url": source_url,
+                "release_id": f"acs5-{year}", "reference_label": f"{year-4}–{year} ACS five-year",
+            })
+    result = pd.DataFrame(observations)
+    if not result.empty and result.duplicated(["geography_id", "measure_id"]).any():
+        raise ValueError("Duplicate ACS county/measure observations")
+    return result
+
+
+def fetch_acs_supply(year: int = 2024, state_fips: str = "20",
+                     api_key: str | None = None, tables=("S2301", "B23025")) -> pd.DataFrame:
+    """Fetch current exact 16+ indicators without touching cohort caches/outputs."""
+    frames = []
+    for table in tables:
+        if table == "S2301":
+            fields = ["S2301_C02_001E", "S2301_C02_001M"]
+            endpoint = ACS_BASE.format(year=year) + "/subject"
+        elif table == "B23025":
+            fields = [f"B23025_{i:03d}{suffix}" for i in range(1, 8) for suffix in ("E", "M")]
+            endpoint = ACS_BASE.format(year=year)
+        else:
+            raise ValueError(f"Unsupported ACS supply table: {table}")
+        params = {"get": ",".join(["NAME"] + fields), "for": "county:*", "in": f"state:{state_fips.zfill(2)}"}
+        if api_key:
+            params["key"] = api_key
+        frames.append(parse_acs_supply(_get(endpoint, params), year, table))
+    return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
 
 
 def fetch_all(state_fips: str = "20",

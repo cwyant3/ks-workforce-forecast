@@ -42,6 +42,24 @@
       "bytes": 14052,
       "acquisition": "Official SSA page through web tool; exact returned response text preserved. Direct HTTP HTML attempts returned 403.",
       "original_response_text_sha256": "8d8103dcfcf86014e446a40a08332d4d8718d13dee37eb06b36bb627cf7274f2"
+    },
+    "acs2024_5yr_B07001_labels.json": {
+      "source_url": "https://api.census.gov/data/2024/acs/acs5/groups/B07001.json",
+      "retrieved_at_utc": "2026-11-09T19:32:02.374660+00:00",
+      "sha256": "fca4db66a394e978e339eeb0145f781bd5e910d221f8bb293fa55dae4abe56d7",
+      "bytes": 350438
+    },
+    "acs2024_5yr_B07001_response.json": {
+      "source_url": "https://api.census.gov/data/2024/acs/acs5?get=group%28B07001%29&for=county%3A%2A&in=state%3A20",
+      "retrieved_at_utc": "2026-11-09T19:32:03.481771+00:00",
+      "sha256": "f20bebcdd234723096746d868ceaaa277ffac2753e3053d5fd6125e16fa54e97",
+      "bytes": 215503
+    },
+    "acs2024_5yr_B07001_msa48620_response.json": {
+      "source_url": "https://api.census.gov/data/2024/acs/acs5?get=group%28B07001%29&for=metropolitan+statistical+area%2Fmicropolitan+statistical+area%3A48620",
+      "retrieved_at_utc": "2026-11-09T19:32:04.182022+00:00",
+      "sha256": "bf1233dff1e195e5ddb37de06b5ac62e5492d9b3736ebac373087a06efc6f01b",
+      "bytes": 7915
     }
   },
   "access_notes": [

@@ -108,7 +108,8 @@ def fertility_schedules(local, national, level_adjustment=1.):
 
 
 def project_fertility_paths(population, shares, survival, local, national, observed_births_2025,
-                            annual_net_migrants=0., participation_pp=0.):
+                            annual_net_migrants=0., participation_pp=0.,
+                            all_age_net_migrants=None, working_age_share=None):
     """Endogenous births respond to female aging, prior births and migration.
 
     All paths share observed2025 births. A disclosed level bridge reconciles
@@ -129,6 +130,7 @@ def project_fertility_paths(population, shares, survival, local, national, obser
     for name in PATHS:
         summary, ages = project_cohorts(population, shares, survival,
                         annual_net_migrants=annual_net_migrants, participation_pp=participation_pp,
+                        all_age_net_migrants=all_age_net_migrants, working_age_share=working_age_share,
                         fertility_by_year=schedules[name], births_by_year={2025:observed_births_2025},
                         return_age_states=True)
         summary["fertility_path"] = name

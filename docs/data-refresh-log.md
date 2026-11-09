@@ -2252,3 +2252,48 @@ Notes:          Release vs 20261020T215651_b4a47fdc: three tables changed. proje
                 combined IPEDS cache. Roll back with:
                 `.venv/Scripts/python.exe build_county_pressure.py --rollback 20261020T215651_b4a47fdc`.
                 Nothing committed.
+
+## [2026-11-09] ACS B07001 (migrant age mix) | tooling — working-age share for all-age migration
+Vintage before: no migrant age data; all-age net migration entered the cohort engine as if every migrant were 18-64
+Vintage after:  2024 ACS 5-year (2020-24) B07001, 105 Kansas counties + Wichita metro (CBSA 48620),
+                saved to data/demographic_inputs/acs2024_5yr_B07001_{labels,response,msa48620_response}.json
+                with provenance in source_manifest.json
+Checked:        api.census.gov/data/2024/acs/acs5, group(B07001); key read from .env, never written or printed.
+                Metro check reproduces 12,694 of 17,294 movers from another state or abroad aged 18-64 (73.4%).
+Outputs changed: none in data/outputs. Code: migration_age_mix.py (new), demographic_pipeline.project_cohorts
+                and fertility_model.project_fertility_paths (new all_age_net_migrants + working_age_share
+                inputs), scripts/build_migration_age_inputs.py (new), census_key() factored out of
+                scripts/build_demographic_inputs.py, tests/test_migration_age_mix.py (12 tests).
+Validation:     pass — full suite 196 passed.
+Notes:          Method. project_cohorts adds or removes residents ages 18-64. Its annual_net_migrants
+                input is an 18-64 count, and the dashboard sliders already state that basis, so they are
+                unchanged. An all-age total (Census PEP net migration) now goes in all_age_net_migrants
+                with working_age_share; only that share enters the cohorts, and the output records both.
+                The share is the 18-64 fraction of people who moved in from outside the county in the
+                past year (other Kansas county, other state, abroad), from migration_age_mix.county_shares().
+                A county uses its own share when it has at least 1,000 in-movers and a 90% MOE no wider
+                than 10 points; the other 79 counties use the pooled Kansas share (74.8%), because tiny
+                counties' own shares run from 16% to 100%.
+                Wichita MSA shares (own basis): Butler 69.2% (+/-4.5), Harvey 71.1% (+/-6.6),
+                Sedgwick 72.3% (+/-2.3), Sumner 64.8% (+/-9.4). Metro, outside-county basis 71.5%;
+                state-or-abroad only 73.4%.
+                Limits. B07001 counts in-movers only. It does not observe out-movers or net migration
+                by age, so the same share is applied to net gains and net losses; if leavers skew older
+                or younger than arrivals, the true working-age net differs. The 5-year table pools
+                2020-24 movers, which includes pandemic-era moves. The share converts migrant counts
+                only: arrivals still take the baseline 18-64 age-sex mix inside the engine, and child
+                and 65+ migrants are dropped rather than aged in, so a few child migrants who would
+                turn 18 before the horizon are omitted (small over 10 years).
+                Not applied to the cohort model's trend migration. CountyCohortModel.mig_mean is a
+                residual measured on the 18-64 population itself, so it is already working-age;
+                scaling it again would double-count.
+                Effect on the State of the Trade Part 2 scenarios (four-county MSA, change in 2035
+                age-18+ participants vs no net migration, PEP MSA totals split by 18-64 population):
+                2021-25 pace (+2,137 all-age/yr): +17,059 -> +12,223
+                  (Butler +1,734 -> +1,200; Harvey +885 -> +629; Sedgwick +13,911 -> +10,052; Sumner +529 -> +343)
+                2015-19 pace (-1,041 all-age/yr): -8,389 -> -6,011
+                  (Butler -853 -> -590; Harvey -435 -> -309; Sedgwick -6,837 -> -4,940; Sumner -265 -> -172)
+                Trends (cohort-model residual, already 18-64): +5,947, unchanged.
+                The deck's extract_forecast.py still passes PEP totals as annual_net_migrants; a refresh
+                should pass all_age_net_migrants=..., working_age_share=county_shares()[fips]["share_applied"].
+                The dashboard release was not republished.

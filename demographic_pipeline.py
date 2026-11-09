@@ -97,8 +97,14 @@ def participation_shares(record, labels, fallback=None, return_proxies=False):
 
 def project_cohorts(population, shares, survival, base_year=2024, horizon=18,
                     annual_net_migrants=0.0, participation_pp=0.0, return_age_states=False,
-                    births_by_year=None, birth_sex_share=None, fertility_by_year=None):
+                    births_by_year=None, birth_sex_share=None, fertility_by_year=None,
+                    all_age_net_migrants=None, working_age_share=None):
     """Age one year per step; add/subtract age-18–64 migrants after aging.
+
+    ``annual_net_migrants`` is already an age-18–64 count. An all-age total,
+    such as Census PEP net migration, goes in ``all_age_net_migrants`` with the
+    18–64 share of in-movers (``working_age_share``, see migration_age_mix);
+    only that share enters the cohorts. The two inputs are mutually exclusive.
 
     In-migrants follow the baseline 18–64 age-sex distribution. Out-migrants
     follow the current 18–64 distribution, capped at available residents.
@@ -115,6 +121,16 @@ def project_cohorts(population, shares, survival, base_year=2024, horizon=18,
         raise ValueError("Population or probability outside valid range.")
     if not isinstance(horizon, int) or not 1 <= horizon <= 18:
         raise ValueError("The observed-cohort horizon must be 1–18 years.")
+    if all_age_net_migrants is not None or working_age_share is not None:
+        if all_age_net_migrants is None or working_age_share is None:
+            raise ValueError("All-age migration needs both the total and its working-age share.")
+        if annual_net_migrants:
+            raise ValueError("Give either age-18–64 or all-age net migrants, not both.")
+        if not np.isfinite(all_age_net_migrants) or not np.isfinite(working_age_share):
+            raise ValueError("Scenario assumptions must be finite.")
+        if not 0 < working_age_share <= 1:
+            raise ValueError("The working-age share must be in (0, 1].")
+        annual_net_migrants = all_age_net_migrants * working_age_share
     if not np.isfinite(annual_net_migrants) or not np.isfinite(participation_pp):
         raise ValueError("Scenario assumptions must be finite.")
     newborns = np.zeros_like(pop)
@@ -196,6 +212,8 @@ def project_cohorts(population, shares, survival, base_year=2024, horizon=18,
                    reaching_65=crossing65 if step else np.nan,
                    net_migrants_applied=migration_applied,
                    annual_net_migrants_assumption=annual_net_migrants,
+                   all_age_net_migrants_assumption=np.nan if all_age_net_migrants is None else all_age_net_migrants,
+                   migrant_working_age_share=np.nan if working_age_share is None else working_age_share,
                    participation_change_pp=participation_pp * step/horizon)
         for name, (low, high) in DISPLAY_BANDS.items():
             row[f"residents_{name}"] = pop[:, low:high+1].sum()

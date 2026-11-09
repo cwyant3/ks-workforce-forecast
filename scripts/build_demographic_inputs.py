@@ -27,11 +27,12 @@ def write_json(path: Path, value) -> None:
     path.write_text(json.dumps(value, indent=2, allow_nan=False) + "\n", encoding="utf-8")
 
 
-def download_inputs(destination: Path = DESTINATION, ssa_web_response: Path | None = None) -> dict:
+def census_key(root: Path = ROOT) -> str | None:
+    """Return the Census key from the environment or local .env; never log it."""
     key = os.getenv("CENSUS_API_KEY")
     # Match this application's supported local KEY=value configuration. This is
     # not a general dotenv parser and does not evaluate shell syntax.
-    config = ROOT / ".env"
+    config = root / ".env"
     if not key and config.is_file():
         for line in config.read_text(encoding="utf-8-sig").splitlines():
             if line.strip().startswith("CENSUS_API_KEY="):
@@ -39,6 +40,11 @@ def download_inputs(destination: Path = DESTINATION, ssa_web_response: Path | No
                 if len(key) >= 2 and key[0] == key[-1] and key[0] in {"'", '"'}:
                     key = key[1:-1]
                 break
+    return key
+
+
+def download_inputs(destination: Path = DESTINATION, ssa_web_response: Path | None = None) -> dict:
+    key = census_key()
     destination.mkdir(parents=True, exist_ok=True)
     sources = {}
     manifest = {"schema_version": 1, "baseline_period": "2020-2024", "acs_product": "2024 ACS 5-year",

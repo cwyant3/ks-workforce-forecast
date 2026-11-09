@@ -270,7 +270,32 @@ def training(frame,detail,county,key):
         draw(fig,key+"programs")
     st.caption("Awards may exceed the number of people. They do not establish local placements or new workers. Program titles use the NCES CIP 2020 classification; hover for the CIP code. The ranking is award volume, not employment demand or program quality.")
     st.caption("Program title source: [NCES Classification of Instructional Programs](https://nces.ed.gov/ipeds/cipcode/Files/CIPCode2020.csv).")
+    award_industry_chart(selected,key+"industries")
     evidence(selected,"Institution totals, reporting flags and program records")
+
+
+def award_industry_chart(selected,key):
+    """Estimated industry mix of awards; an allocation, never a placement record."""
+    from dashboard.award_industries import load_industry_weights, allocate_awards, OTHER_INDUSTRIES
+    from dashboard.training_pathways import load_crosswalk
+    try:
+        weights,year=load_industry_weights()
+    except (OSError,ValueError):
+        st.info("The national occupation-by-industry employment file is unavailable, so awards are not broken down by industry.")
+        return
+    mix=allocate_awards(selected,load_crosswalk(),weights)
+    if mix.empty:return
+    labels=[f"{INDUSTRIES[c]} (NAICS {c})" if c in INDUSTRIES else c for c in mix.index]
+    st.markdown("#### Estimated awards by related industry")
+    fig=horizontal(mix.round(0).tolist(),labels,"Estimated awards",color=GOLD,height=max(320,len(mix)*34+80))
+    fig.update_traces(hovertemplate="%{y}<br>%{x:,.0f} estimated awards<extra></extra>")
+    draw(fig,key)
+    other=mix.get(OTHER_INDUSTRIES,0)/mix.sum()
+    st.caption(f"ESTIMATE · Each award is split equally across the occupations its program relates to (NCES CIP 2020–SOC 2018), "
+               f"then across industries by each occupation's national employment mix (BLS OEWS {year}). Totals match reported awards. "
+               f"Only the nine dashboard industries are shown separately; {other:.0%} of awards fall in all other industries "
+               "(for example education, retail, finance and public administration). This is the national industry mix of related occupations, "
+               "not where graduates work, local hiring or worker supply.")
 
 
 def movement(frame,flows,county,names,key):

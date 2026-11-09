@@ -1,0 +1,20 @@
+{
+  "annual": {
+    "rows": 18126,
+    "groups": 2014,
+    "complete_groups_reconciled": 338,
+    "suppressed_cells": 4439,
+    "published_zero_cells": 4642
+  },
+  "pooled": {
+    "rows": 954,
+    "groups": 106,
+    "complete_groups_reconciled": 23,
+    "suppressed_cells": 190,
+    "published_zero_cells": 192
+  },
+  "independent_totals": {
+    "rows": 2014,
+    "suppressed_cells": 0
+  }
+}

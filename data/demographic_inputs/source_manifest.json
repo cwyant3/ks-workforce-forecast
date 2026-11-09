@@ -1,0 +1,50 @@
+{
+  "schema_version": 1,
+  "baseline_period": "2020-2024",
+  "acs_product": "2024 ACS 5-year",
+  "ssa_reference_year": 2023,
+  "ssa_trustees_report_year": 2026,
+  "sources": {
+    "acs2024_5yr_B01001_labels.json": {
+      "source_url": "https://api.census.gov/data/2024/acs/acs5/groups/B01001.json",
+      "retrieved_at_utc": "2026-10-21T15:59:45.138754+00:00",
+      "sha256": "0f0422e346fdd3369363f040127fe61a3e35a47215755bcd300615bbfc7abcc6",
+      "bytes": 251518
+    },
+    "acs2024_5yr_B01001_response.json": {
+      "source_url": "https://api.census.gov/data/2024/acs/acs5?get=group%28B01001%29&for=county%3A%2A&in=state%3A20",
+      "retrieved_at_utc": "2026-10-21T15:59:46.006545+00:00",
+      "sha256": "fc9db9670b586bb4ec11a3941176f129f97394cb2ce778bf42f612e28d7abdee",
+      "bytes": 117548
+    },
+    "acs2024_5yr_B23001_labels.json": {
+      "source_url": "https://api.census.gov/data/2024/acs/acs5/groups/B23001.json",
+      "retrieved_at_utc": "2026-10-21T15:59:46.062427+00:00",
+      "sha256": "320a1565f0d979c04fed392a26a3458d4493e68ae75dd76b13a1f9874216b5b3",
+      "bytes": 451030
+    },
+    "acs2024_5yr_B23001_response.json": {
+      "source_url": "https://api.census.gov/data/2024/acs/acs5?get=group%28B23001%29&for=county%3A%2A&in=state%3A20",
+      "retrieved_at_utc": "2026-10-21T15:59:48.329084+00:00",
+      "sha256": "57b543e18b237bbafba7dfac15c8cb4871d08bf1f45a734fc3d25596d891962c",
+      "bytes": 385350
+    },
+    "acs2024_5yr_B23001_state_response.json": {
+      "source_url": "https://api.census.gov/data/2024/acs/acs5?get=group%28B23001%29&for=state%3A20",
+      "retrieved_at_utc": "2026-10-21T15:59:49.744495+00:00",
+      "sha256": "680d334af709c37c79fadc14fa66174b8c2f8f635748bdd5583f94c20efa9e8f",
+      "bytes": 14258
+    },
+    "ssa2023_web_response.json": {
+      "source_url": "https://www.ssa.gov/oact/STATS/table4c6.html",
+      "retrieved_at_utc": "2026-10-21 15:59:22 UTC",
+      "sha256": "abc9e9833dcf9b69ae2e5359dcd5939949354e5ae3416ff88531c0b341006da0",
+      "bytes": 14052,
+      "acquisition": "Official SSA page through web tool; exact returned response text preserved. Direct HTTP HTML attempts returned 403.",
+      "original_response_text_sha256": "8d8103dcfcf86014e446a40a08332d4d8718d13dee37eb06b36bb627cf7274f2"
+    }
+  },
+  "access_notes": [
+    "SSA raw HTML download returned HTTP403; full official web-tool response preserved instead."
+  ]
+}

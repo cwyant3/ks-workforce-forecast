@@ -1,0 +1,824 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en-us">
+
+<head>
+<!-- Google Tag Manager -->
+<script>(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
+new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
+j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
+'https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);
+})(window,document,'script','dataLayer','GTM-KHSW65T');</script>
+<!-- End Google Tag Manager -->
+<link href="css/menuhorizontalflyout.css" type="text/css" rel="Stylesheet"/>
+<link href="css/myformats3a25.css" type="text/css" rel="Stylesheet"/>
+
+<script type="text/javascript" src="death_table_files/kic_dthbrth.js"></script>
+<!--
+<script type="text/javascript" src="death_table_files/loadforma.js"></script>
+<script type="text/javascript" src="death_table_files/regiona.js"></script>
+-->
+
+<meta http-equiv="Content-Language" content="en-us">
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<meta name="robots" content="index, follow">
+<meta name="Author" content="Kansas Department of Health and Environment">
+<meta name="Copyright" content="Kansas Department of Health and Environment - 2011">
+<meta name="DC.Identifier" content="http://www.kdheks.gov/">
+<meta name="DC.Language" content="en-us">
+<meta name="DC.Title" content="The Kansas Department of Health and Environment">
+<meta name="keywords" content="Kansas, birth, births, information, statistics, data, health, table, map">
+<meta name="DC.Description" content="Kansas Information for Communities, KIC,Kansas,Health, Information,statistics, data, CHES, birth, death, cancer, Hospital Discharge, disease, population, pregnancy, map, county, table,KIC,Information,data,CHES,birth,death,cancer,Hospital Discharge,disease,population,pregnancy,map,county,table,Kansas, birth, births, information, statistics, data, health, table, map,births,information,health,Birth Statistics,counties,race,Age Group,Birth Statistics Query,KIC Home,Frequencies,The Birth Statistics Query allows you to generate tables or maps for birth characteristics by Year, Age Group, Sex, Race, and County.">
+
+<title>Kansas Department of Health and Environment: Kansas Information for Communities</title>
+
+<!-- This javascript is required to support IE version under 9 -->
+<script type="text/javascript" src="https://ajax.googleapis.com/ajax/libs/jquery/1.7.2/jquery.min.js"></script>
+<script type="text/javascript">
+	$(document).ready(function() {
+		$("#menuwrapper ul li").mouseover(function(e) {$(this).addClass(" iehover ");});
+		$("#menuwrapper ul li").mouseout(function(e) {$(this).removeClass(" iehover ");});
+	});
+</script>
+
+<script type="text/javascript">
+function iniforms() {
+var regb=document.getElementById("regi");
+var txt="Blank Holder";var val="999";
+regb.length=0;
+addopt(regb,txt,val,true);
+}
+
+
+ </script>
+
+
+<style>
+#ctspan{
+display: block;
+}
+#regspan{
+display: none;
+}
+</style>
+
+<style type="text/css">
+span.dropt {border-bottom: thin dotted; background: #ffff99;}
+span.dropt:hover {text-decoration: none; background: #ffffff; z-index: 6; }
+span.dropt span {position: absolute; left: -9999px;
+  margin: 20px 0 0 0px; padding: 3px 3px 3px 3px;
+  border-style:solid; border-color:black; border-width:1px; z-index: 6;}
+span.dropt:hover span {left: 2%; background: #ffffff;}
+span.dropt span {position: absolute; left: -9999px;
+  margin: 4px 0 0 0px; padding: 3px 3px 3px 3px;
+  border-style:solid; border-color:black; border-width:1px;}
+span.dropt:hover span {margin: 20px 0 0 170px; background: #ffffff; z-index:6;}
+p {font-size:14px;}
+</style>
+
+</head>
+
+<body onload="checkBrowser(); disabled(); var rw = checkRow(); rowColCheck(rw); javascript:iniform();">
+
+<!-- Google Tag Manager (noscript) -->
+<noscript><iframe src="https://www.googletagmanager.com/ns.html?id=GTM-KHSW65T"
+height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
+<!-- End Google Tag Manager (noscript) -->
+<script>
+			function disabled(){
+				if (document.getElementById('rstate').checked)
+					{state();}
+				else if (document.getElementById('rcounty').checked)
+					{cnty();}
+				else if (document.getElementById('rkhpr').checked)
+					{ phprgns(); }
+				else if (document.getElementById('rgrdo').checked)
+					{ grgns(); }
+				else if (document.getElementById('rprgp').checked)
+					{ prgrps();}
+				else {
+						document.getElementById("state").disabled=true;
+						document.getElementById("countys").disabled=true;
+						document.getElementById("georgns").disabled=true;
+						document.getElementById("phrgns").disabled=true;
+						document.getElementById("peergrps").disabled=true;
+					}
+				}
+</script>
+
+<a name="top"></a>
+<div class="divA">
+
+<script type="text/javascript" src="js_kdhe/kicheader-2014SbLvl.js" language="JavaScript1.2"></script>
+<!-- Body content starts here -->
+<div class="mainbody">
+
+<script type="text/javascript">
+  <!-- Begin
+ function check_all(flg)		//ADDED BY MIKE MOFFITT 12-17-03
+ {
+ 	if(flg==2)
+ 	{
+ 	 for(var i=0;i<18;i++)					//changed from i<16 to i<18 by Akshita Patri as of Apr 19, 2024. As you keep adding new year's data, make sure you increate the number by 1. 18 is just number of boxes that get checked when one clicks "All Years"
+ 		window.document.myform['yr[]'][i].checked = true;
+ 	}
+ 	if(flg==3)
+ 	{
+ 	 for(var i=0;i<22;i++)
+ 		window.document.myform['yr[]'][i].checked = false;
+ 	 window.document.myform['yr[]'][22].checked = true; //reset for the current year
+ 	}
+ }
+  //  End -->
+  </script>
+
+<!-- <table style="width: 1000px" border="0" cellpadding="0" cellspacing="0" class="tablesettingblueborder" summary="layout"> -->
+<!--<table style="width: 1000px" border="0" cellpadding="4" cellspacing="0" summary="layout"> -->
+        <tr valign="top">
+          <td style="width: 1000px" class="tablesettingblue">
+<p class="font18ptblue" style="margin-left: 20px;">Birth Statistics</p>
+          </td>
+        </tr>
+        <tr width="1000px">
+			<td>
+          <!-- <td class="tablesettingblueborder"> -->
+<p align="left" style="font-weight: bold; margin-left: 20px; margin-right: 20px;">Birth KIC allows you to create statistics for birth outcomes, by year, age-group, sex, race, and county. Select row and column variables to define the table of results.  Use filters in optional step 2 to limit results.  The most current year is 2024 births.  See birth statistics notes and limitations for more information on this dataset and how it was prepared.  See the <a href="OHA/kicnote.html#Birth" target="blank"> Birth Statistics Notes and Limitations</a> for more information on this dataset and how it was prepared. For map presentation <a href="birthmap.php">"Birth Map"</a>.
+</br></br>
+NOTE: Beginning 2005 the birth certificate format was updated redefining (additional fields) the information that is recorded for all births. Therefore, data prior to 2005 will not be available for some groups indicators, groups such as "Mother Smoked", "Breastfeeding", "WIC Participation", "Pay Source" and "Diabetes".
+</p>
+            </td>
+        </tr>
+
+<form name="myform" method="post" action="birth.php">
+
+<!--<input type="hidden" name="pasca" value="1"/> -->
+<input type="hidden" name="pasto" value="1"/>
+<input type="hidden" name="screen_id" value=""/>
+<input type="hidden" name="configfile" value="configs/birth_config.php"/>
+<input name="pasag" value="1" type="hidden">
+<input name="screen_id" value="" type="hidden">
+<input name="bw" value="0" type="hidden">
+<input name="flip" value="0" type="hidden">
+<input name="menu" value="0" type="hidden">
+<input name="dwn" value="0" type="hidden">
+<input name="sort" value="0" type="hidden">
+<!--<input name="et" value="3" type="hidden"> -->
+<input name="seladj" value="3" type="hidden">
+<input name="uadj" value="1" type="hidden">
+<input name="prob" value="0" type="hidden">
+<input name="grpa" value="0" type="hidden">
+
+
+<table cellpadding="2" cellspacing="2" border="0" style="text-align: left; width: 100%; margin-left: 0px;" summary="layout">
+    <tbody>
+      <tr>
+        <td style="vertical-align: top;">
+        <table cellpadding="2" cellspacing="2" border="0" style="text-align: left; width: 100%;" summary="layout">
+          <tbody>
+            <tr>
+              <td style="vertical-align: top;">
+              <table class="queryhead" style="max-width: 470px;" summary="layout">
+                <tbody>
+                  <tr>
+                    <td <div id="healthmissionwrapper"> STEP 1 </div></td>
+                  </tr>
+                </tbody>
+              </table>
+              </td>
+
+
+              <td style="vertical-align: top;">
+              <table class="queryhead" style="max-width: 470px;" summary="layout">
+                <tbody>
+                  <tr>
+                     <td <div id="healthmissionwrapper"> STEP 2&nbsp;&nbsp;- OPTIONAL</div></td>
+                  </tr>
+                </tbody>
+              </table>
+              <span style="vertical-align: top; white-space: normal; font-style: italic; font-weight: bold; color: rgb(0, 0, 102);"></span>
+			  </td>
+            </tr>
+           <tr>
+              <td style="vertical-align: top;"><span style="vertical-align: top; white-space: normal; font-style: italic; font-weight: bold; color: rgb(0, 0, 102);">Choose the variables you want in your table.</<br />
+              </span></td>
+              <td style="vertical-align: top;"><span style="vertical-align: top; white-space: normal; font-style: italic; font-weight: bold; color: rgb(0, 0, 102);">Certain variables can be limited in your search.<br />
+              </span></td>
+            </tr>
+             <tr>
+              <td style="vertical-align: top;">
+              <table width="100%" summary="layout">
+                <tbody>
+                  <tr>
+                    <td style="width: 40%"><span style="font-style: italic;"><span style="text-decoration: underline;"><b>Rows</b></span><b>:</b></span><br />
+					&nbsp;&nbsp;<input type="radio" onclick="rowColCheck(0);" onkeypress="rowColCheck(0);" name="row" value="7" checked="checked" />Year<br />
+					&nbsp;&nbsp;<input type="radio" onclick="rowColCheck(1);" onkeypress="rowColCheck(1);" name="row" value="4" />Age Group<br />
+					&nbsp;&nbsp;<input type="radio" onclick="rowColCheck(2);" onkeypress="rowColCheck(2);" name="row" value="2" />Race <br />
+					&nbsp;&nbsp;<input type="radio" onclick="rowColCheck(3);" onkeypress="rowColCheck(3);" name="row" value="5" />Marital Status<br />
+					&nbsp;&nbsp;<input type="radio" onclick="rowColCheck(4);" onkeypress="rowColCheck(4);" name="row" value="3" />Hispanic Origin<br />
+					&nbsp;&nbsp;<input type="radio" onclick="rowColCheck(5);" onkeypress="rowColCheck(5);" name="row" value="8" />Education Level<br />
+					&nbsp;&nbsp;<input type="radio" onclick="rowColCheck(6);" onkeypress="rowColCheck(6);" name="row" value="9" />Birth Order<br />
+					&nbsp;&nbsp;<input type="radio" onclick="rowColCheck(7);" onkeypress="rowColCheck(7);" name="row" value="10" />WIC Participation<br />
+					&nbsp;&nbsp;<input type="radio" onclick="rowColCheck(8);" onkeypress="rowColCheck(8);" name="row" value="11" />Birth Place<br />
+					&nbsp;&nbsp;<input type="radio" onclick="rowColCheck(9);" onkeypress="rowColCheck(9);" name="row" value="12" />Pay Source<br />
+					&nbsp;&nbsp;<input type="radio" onclick="rowColCheck(10);" onkeypress="rowColCheck(10);" name="row" value="6" />Birth Outcome<br />
+					&nbsp;&nbsp;<input type="radio" onclick="rowColCheck(11);" onkeypress="rowColCheck(11);" name="row" value="1" />County / Areas<br />
+
+                    </td>
+                    <td style="width: 40%"><span style="font-style: italic;"><span style="text-decoration: underline;"><b>Columns</b></span>:</span><br />
+					&nbsp;&nbsp;<input type="radio" name="col" value="7" />Year<br />
+					&nbsp;&nbsp;<input type="radio" name="col" value="4" checked="checked" />Age Group<br />
+					&nbsp;&nbsp;<input type="radio" name="col" value="2" />Race <br />
+					&nbsp;&nbsp;<input type="radio" name="col" value="5" />Marital Status<br />
+					&nbsp;&nbsp;<input type="radio" name="col" value="3" />Hispanic Origin<br />
+					&nbsp;&nbsp;<input type="radio" name="col" value="8" />Education Level<br />
+					&nbsp;&nbsp;<input type="radio" name="col" value="9" />Birth Order<br />
+					&nbsp;&nbsp;<input type="radio" name="col" value="10" />WIC Participation<br />
+					&nbsp;&nbsp;<input type="radio" name="col" value="11" />Birth Place<br />
+					&nbsp;&nbsp;<input type="radio" name="col" value="12" />Pay Source<br />
+					&nbsp;&nbsp;<input type="radio" name="col" value="6" />Birth Outcome<br />
+					&nbsp;&nbsp;<input type="radio" name="col" value="1" />County / Areas<br />
+
+                    </td>
+					<td>
+                  </tr>
+				  <tr>
+				 <td style="vertical-align: top;" rowspan="1" colspan="1"> </td>
+
+
+				  </tr>
+
+                </tbody>
+              </table>
+              </td>
+
+
+              <td style="vertical-align: middle; white-space: nowrap;">
+              <table summary="layout">
+                <tbody>
+                <tr>
+                <td colspan="3">
+                   <label for="Ethnicity"></label><input type="radio" id="Hispanic" name="et" value="1" />Hispanic&nbsp;&nbsp;
+                <label for="Ethnicity"></label><input type="radio" id="Non-Hispanic" name="et" value="2" />Non-Hispanic&nbsp;&nbsp;
+				<label for="Ethnicity"></label><input id="Not-Stated" name="et" value="9" type="radio">Unkown
+                <label for="Ethnicity"></label><input type="radio" id="All" name="et" checked = "checked" value="3" />All
+                </td>
+                </tr>
+                  <tr>
+                    <td style="white-space: nowrap;">Age Group:
+                    </td>
+                    <td style="vertical-align: top;">
+                    <label for="age"></label><select name="ag" id="age">
+                    <option value="1">10-14 </option>
+                    <option value="2">15-17 </option>
+                    <option value="3">18-19 </option>
+                    <option value="4">20-24 </option>
+                    <option value="5">25-29 </option>
+                    <option value="6">30-34 </option>
+                    <option value="7">35 plus </option>
+ 					<option value="9">Unknown </option>
+                   <option value="8" selected="selected">All </option>
+                    </select>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td style="width: 35%;">Marital Status:
+                    <br>
+                    </td>
+                    <td style="vertical-align: top;">
+					<label for="marital"></label>
+                    <select name="ma" id="marital">
+                    <option value="1">Married </option>
+                    <option value="2">Not Married </option>
+					<option value="9">Unknown </option>
+                    <option value="4" selected="selected">All </option>
+                    </select>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td style="white-space: nowrap;">Race of Mother:
+                    </td>
+                    <td style="vertical-align: top;">
+                    <label for="race"></label><select name="ra" id="race">
+                    <option value="1">White </option>
+                    <option value="2">Black </option>
+                    <option value="3">Other </option>
+					<option value="9">Unknown </option>
+                    <option value="4" selected="selected">All </option>
+                    </select>
+                    </td>
+                  </tr>
+                 <tr>
+                    <td style="white-space: nowrap;">Education Level:
+                    </td>
+                    <td style="vertical-align: top;">
+                    <label for="educ"></label><select name="edu" id="educ">
+                    <option value="1">No HS Diploma/GED </option>
+                    <option value="2">HS Diploma/GED or Higher</option>
+					<option value="9">Unknown </option>
+                    <option value="3" selected="selected">All </option>
+                    </select>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td style="white-space: nowrap;">Birth Order:
+                    </td>
+                    <td style="vertical-align: top;">
+                    <label for="birord"></label><select name="biror" id="birord">
+                    <option value="1">First Birth </option>
+                    <option value="2">Second Birth </option>
+                    <option value="3">Third Birth </option>
+					<option value="4">Fourth Birth or Higher </option>
+					<option value="9">Unknown </option>
+                    <option value="5" selected="selected">All </option>
+                    </select>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td style="white-space: nowrap;">WIC Participation:
+                    </td>
+                    <td style="vertical-align: top;">
+                    <label for="wic"></label><select name="wicp" id="wic">
+                    <option value="1">Yes </option>
+                    <option value="2">No </option>
+					<option value="9">Unknown </option>
+                    <option value="3" selected="selected">All </option>
+                    </select>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td style="white-space: nowrap;">Birth Place:
+                    </td>
+                    <td style="vertical-align: top;">
+                    <label for="birplc"></label><select name="birpl" id="birplc">
+                    <option value="1">Hospital </option>
+                    <option value="2">Freestanding Birthing Center </option>
+                    <option value="3">Home </option>
+					<option value="6">Clinic/Doctor's Office </option>
+					<option value="7">Other </option>
+					<option value="9">Unknown </option>
+                    <option value="8" selected="selected">All </option>
+                    </select>
+                    </td>
+                  </tr>
+				  <tr>
+                    <td style="white-space: nowrap;">Pay Source:
+                    </td>
+                    <td style="vertical-align: top;">
+                    <label for="pay"></label><select name="paysrc" id="pay">
+                    <option value="1">Medicaid </option>
+                    <option value="2">Private/Employer Insurance </option>
+                    <option value="3">Self-Pay </option>
+					<option value="4">Indian Health Service </option>
+					<option value="5">CAMPUS/TRICARE </option>
+					<option value="6">Other Government </option>
+					<option value="8">Other </option>
+					<option value="9">Unknown </option>
+                    <option value="10" selected="selected">All </option>
+                    </select>
+                    </td>
+                  </tr>
+				  <tr>
+                    <td style="vertical-align: top;" rowspan="1" colspan="2">
+					</td>
+                  </tr>
+                </tbody>
+
+              </table>
+									  <tr><td><span class="dropt" title="Mouseover Help">Help & Notes
+  <span style="width:500px;">Step 1. If you want see your results by a geographic area, you must select county as a row or column variable.  If you want to see statistics broken out by year or other variable, you will need to make that variable a row or column variable.  You cannot make a variable both a row or column variable.  If you select age-group, there are breakouts possible within some age-groups by clicking on the age-group.</span>
+</span></td><td><span class="dropt" title="Mouseover Help">Help & Notes
+  <span style="width:500px; margin-left:600px;">Step 2. These selections allow you to filter the resulting table to a specific subcategory. If one of  Step 2 variables is also a row or column variable, then applying the filter will have no affect on the output table.</span>
+</span></td></tr>
+              </td>
+            </tr>
+           <tr>
+              <td style="vertical-align: top;">
+              <table class="queryhead" style="max-width: 470px;" summary="layout">
+                <tbody>
+                  <tr>
+                    <td <div id="healthmissionwrapper"> STEP 3 </div> </td>
+
+                  </tr>
+                </tbody>
+              </table>
+              </td>
+              <td style="vertical-align: top;">
+              <table class="queryhead" style="max-width: 470px;" summary="layout">
+                <tbody>
+                  <tr>
+                    <td <div id="healthmissionwrapper"> STEP 4 - 4.A & 4.B must be completed</div> </td>
+                  </tr>
+                </tbody>
+              </table>
+              </td>
+            </tr>
+            <tr>
+              <td style="vertical-align: top;"><span style="vertical-align: top; white-space: normal; font-style: italic; font-weight: bold; color: rgb(0, 0, 102);">Which year(s) would you like to include in your query?</td>
+              <td style="vertical-align: top; max-width: 470px;"><span style="vertical-align: top; white-space: normal; font-style: italic; font-weight: bold; color: rgb(0, 0, 102);">4.A - Category Selection: Select button for State, County, Region or Peer Group Statistics.
+			  <!-- Scroll to that category in the list below and then highlight the area or group of areas of interest. To select multiple areas in a given category hold 'Ctrl' Key down while making choices. See "Help & Notes" for further instructions. -->
+			  </span></td>
+            </tr>
+             <tr>
+              <td style="vertical-align: top;">
+              <table cellpadding="2" cellspacing="2" border="0" style="white-space: nowrap; width: 90%;" summary="layout">
+       <tbody>
+	   
+        <tr>
+			<td style="vertical-align: top; width: 25%; text-align: center;"><label for="1990"></label><input name="yr[]" id="1990" value="1990" type="checkbox">1990</td>
+            <td style="vertical-align: top; width: 25%; text-align: center;"><label for="1991"></label><input name="yr[]" id="1991" value="1991" type="checkbox">1991</td>
+            <td style="vertical-align: top; width: 25%; text-align: center;"><label for="1992"></label><input name="yr[]" id="1992" value="1992" type="checkbox">1992</td>
+            <td style="vertical-align: top; width: 25%; text-align: center;"><label for="1993"></label><input name="yr[]" id="1993" value="1993" type="checkbox">1993</td>
+            <td style="vertical-align: top; width: 25%; text-align: center;"><label for="1994"></label><input name="yr[]" id="1994" value="1994" type="checkbox">1994</td>
+        </tr>
+		
+        <tr>
+            <td style="vertical-align: top; width: 25%; text-align: center;"><label for="1995"></label><input name="yr[]" id="1995" value="1995" type="checkbox">1995</td>
+            <td style="vertical-align: top; width: 25%; text-align: center;"><label for="1996"></label><input name="yr[]" id="1996" value="1996" type="checkbox">1996</td>
+            <td style="vertical-align: top; width: 25%; text-align: center;"><label for="1997"></label><input name="yr[]" id="1997" value="1997" type="checkbox">1997</td>
+            <td style="vertical-align: top; width: 25%; text-align: center;"><label for="1998"></label><input name="yr[]" id="1998" value="1998" type="checkbox">1998</td>
+            <td style="vertical-align: top; width: 25%; text-align: center;"><label for="1999"></label><input name="yr[]" id="1999" value="1999" type="checkbox">1999</td>
+        </tr>
+        <tr>
+            <td style="vertical-align: top; width: 25%; text-align: center;"><label for="2000"></label><input name="yr[]" id="2000" value="2000" type="checkbox">2000</td>
+            <td style="vertical-align: top; width: 25%; text-align: center;"><label for="2001"></label><input name="yr[]" id="2001" value="2001" type="checkbox">2001</td>
+ 			<td style="vertical-align: top; width: 25%; text-align: center;"><label for="2002"></label><input name="yr[]" id="2002" value="2002" type="checkbox">2002</td>
+            <td style="vertical-align: top; width: 25%; text-align: center;"><label for="2003"></label><input type="checkbox" name="yr[]" id="2003" value="2003" />2003<br /></td>
+            <td style="vertical-align: top; width: 25%; text-align: center;"><label for="2004"></label><input type="checkbox" name="yr[]" id="2004" value="2004" />2004<br /></td>
+       </tr> 
+
+		<tr>
+            <td style="vertical-align: top; width: 25%; text-align: center;"><label for="2005"></label><input type="checkbox" name="yr[]" id="2005" value="2005" />2005<br /></td>
+			<td style="vertical-align: top; width: 25%; text-align: center;"><label for="2006"></label><input type="checkbox" name="yr[]" id="2006" value="2006" />2006<br /></td>
+            <td style="vertical-align: top; width: 25%; text-align: center;"><label for="2007"></label><input type="checkbox" name="yr[]" id="2007" value="2007" />2007<br /></td>
+            <td style="vertical-align: top; width: 25%; text-align: center;"><label for="2008"></label><input type="checkbox" name="yr[]" id="2008" value="2008" />2008<br /></td>
+            <td style="vertical-align: top; width: 25%; text-align: center;"><label for="2009"></label><input type="checkbox" name="yr[]" id="2009" value="2009" />2009<br /></td>
+		</tr>
+		<tr>
+			<td style="vertical-align: top; width: 25%; text-align: center;"><label for="2010"></label><input type="checkbox" name="yr[]" id="2010" value="2010" />2010<br /></td>
+			<td style="vertical-align: top; width: 25%; text-align: center;"><label for="2011"></label><input type="checkbox" name="yr[]" id="2011" value="2011" />2011<br /></td>
+			<td style="vertical-align: top; width: 25%; text-align: center;"><label for="2012"></label><input type="checkbox" name="yr[]" id="2012" value="2012" />2012<br /></td>
+			<td style="vertical-align: top; width: 25%; text-align: center;"><label for="2013"></label><input type="checkbox" name="yr[]" id="2013" value="2013" />2013<br /></td>
+			<td style="vertical-align: top; width: 25%; text-align: center;"><label for="2014"></label><input type="checkbox" name="yr[]" id="2014" value="2014" />2014<br /></td>
+        </tr>
+		<tr>
+			<td style="vertical-align: top; width: 25%; text-align: center;"><label for="2015"></label><input type="checkbox" name="yr[]" id="2015" value="2015" />2015<br /></td>
+			<td style="vertical-align: top; width: 25%; text-align: center;"><label for="2016"></label><input type="checkbox" name="yr[]" id="2016" value="2016" />2016<br /></td>
+			<td style="vertical-align: top; width: 25%; text-align: center;"><label for="2017"></label><input type="checkbox" name="yr[]" id="2017" value="2017" />2017<br /></td>
+			<td style="vertical-align: top; width: 25%; text-align: center;"><label for="2018"></label><input type="checkbox" name="yr[]" id="2018" value="2018" />2018<br /></td>
+			<td style="vertical-align: top; width: 25%; text-align: center;"><label for="2019"></label><input type="checkbox" name="yr[]" id="2019" value="2019" />2019<br /></td>
+		</tr>
+		<tr>
+			<td style="vertical-align: top; width: 25%; text-align: center;"><label for="2020"></label><input type="checkbox" name="yr[]" id="2020" value="2020"/>2020<br /></td>
+			<td style="vertical-align: top; width: 25%; text-align: center;"><label for="2021"></label><input type="checkbox" name="yr[]" id="2021" value="2021" />2021<br /></td>
+			<td style="vertical-align: top; width: 25%; text-align: center;"><label for="2022"></label><input type="checkbox" name="yr[]" id="2022" value="2022" />2022<br /></td>
+			<td style="vertical-align: top; width: 25%; text-align: center;"><label for="2023"></label><input type="checkbox" name="yr[]" id="2023" value="2023" />2023<br /></td>
+
+			<td style="vertical-align: top; width: 25%; text-align: center;"><label for="2024"></label><input type="checkbox" name="yr[]" id="2024" value="2024" checked="checked" />2024<br /></td>
+        <tr>
+              <td style="white-space: nowrap; text-align: center;"> <a href="javascript:check_all(2);">All Years</a><span style="visibility: hidden;">|</span></td>
+              <td style="white-space: nowrap; text-align: center;"><a href="javascript:check_all(3);">Clear All</a> </td>
+        </tr>
+       </tbody>
+              </table>
+              </td>
+
+			<td style="vertical-align: top; "width: 40%;">
+				<input type="radio" name="areas" id="rstate" onclick="state()" onkeypress="state()">State</input>&nbsp;&nbsp;&nbsp;
+				<input type="radio" name="areas" id="rcounty" onclick="cnty()" onkeypress="cnty()">Counties</input>&nbsp;&nbsp;&nbsp;
+				<input type="radio" name="areas" id="rkhpr" onclick="phprgns()" onkeypress="phprgns()">Kansas Health Preparedness Regions</input><br />
+				<input type="radio" name="areas" id="rgrdo" onclick="grgns()" onkeypress="grgns()">Geographical Regions (District Offices)</input>&nbsp;&nbsp;&nbsp;
+				<input type="radio" name="areas" id="rprgp" onclick="prgrps()" onkeypress="prgrps()">Peer Groups</input>
+				<br/>
+				<br/>
+				<span style="vertical-align: top; white-space: normal; font-style: italic; font-weight: bold; color: rgb(0, 0, 102);">4.B - Scroll to the above selected category in the list below and select the area or group of areas of interest. NOTE: Area lists will be "greyed out" and non-selectable except for the areas related to the category selected above. To select multiple areas in a give category, hold "Ctrl" Key down while making choices. See "Help & Notes" for further instructions.<span>
+
+			<script>
+			function state(){
+				document.getElementById("state").disabled=false;
+				document.getElementById("countys").disabled=true;
+				document.getElementById("georgns").disabled=true;
+				document.getElementById("phrgns").disabled=true;
+				document.getElementById("peergrps").disabled=true;
+				}
+			function phprgns(){
+				document.getElementById("state").disabled=true;
+				document.getElementById("countys").disabled=true;
+				document.getElementById("georgns").disabled=true;
+				document.getElementById("phrgns").disabled=false;
+				document.getElementById("peergrps").disabled=true;
+				}
+			function cnty(){
+				document.getElementById("state").disabled=true;
+				document.getElementById("countys").disabled=false;
+				document.getElementById("georgns").disabled=true;
+				document.getElementById("phrgns").disabled=true;
+				document.getElementById("peergrps").disabled=true;
+				}
+			function grgns(){
+				document.getElementById("state").disabled=true;
+				document.getElementById("countys").disabled=true;
+				document.getElementById("georgns").disabled=false;
+				document.getElementById("phrgns").disabled=true;
+				document.getElementById("peergrps").disabled=true;
+				}
+			function prgrps(){
+				document.getElementById("state").disabled=true;
+				document.getElementById("countys").disabled=true;
+				document.getElementById("georgns").disabled=true;
+				document.getElementById("phrgns").disabled=true;
+				document.getElementById("peergrps").disabled=false;
+				}
+			</script>
+			<br/>
+			<br/>
+
+			<!-- <td style="vertical-align: top;"> -->
+			<div>
+              <label for="county"></label>
+			  <select name="ct[]" multiple="multiple" id="county" size="12">
+			  <optgroup style="color:red" label="State">
+			  <option id="state" value="920">State of Kansas</option>
+			  </optgroup>
+				<optgroup id="countys" label="Counties">
+				<option value="001">Allen County</option>
+				<option value="003">Anderson County</option>
+				<option value="005">Atchison County</option>
+				<option value="007">Barber County</option>
+				<option value="009">Barton County</option>
+				<option value="011">Bourbon County</option>
+				<option value="013">Brown County</option>
+				<option value="015">Butler County</option>
+				<option value="017">Chase County</option>
+				<option value="019">Chautauqua County</option>
+				<option value="021">Cherokee County</option>
+				<option value="023">Cheyenne County</option>
+				<option value="025">Clark County</option>
+				<option value="027">Clay County</option>
+				<option value="029">Cloud County</option>
+				<option value="031">Coffey County</option>
+				<option value="033">Comanche County</option>
+				<option value="035">Cowley County</option>
+				<option value="037">Crawford County</option>
+				<option value="039">Decatur County</option>
+				<option value="041">Dickinson County</option>
+				<option value="043">Doniphan County</option>
+				<option value="045">Douglas County</option>
+				<option value="047">Edwards County</option>
+				<option value="049">Elk County</option>
+				<option value="051">Ellis County</option>
+				<option value="053">Ellsworth County</option>
+				<option value="055">Finney County</option>
+				<option value="057">Ford County</option>
+				<option value="059">Franklin County</option>
+				<option value="061">Geary County</option>
+				<option value="063">Gove County</option>
+				<option value="065">Graham County</option>
+				<option value="067">Grant County</option>
+				<option value="069">Gray County</option>
+				<option value="071">Greeley County</option>
+				<option value="073">Greenwood County</option>
+				<option value="075">Hamilton County</option>
+				<option value="077">Harper County</option>
+				<option value="079">Harvey County</option>
+				<option value="081">Haskell County</option>
+				<option value="083">Hodgeman County</option>
+				<option value="085">Jackson County</option>
+				<option value="087">Jefferson County</option>
+				<option value="089">Jewell County</option>
+				<option value="091">Johnson County</option>
+				<option value="093">Kearny County</option>
+				<option value="095">Kingman County</option>
+				<option value="097">Kiowa County</option>
+				<option value="099">Labette County</option>
+				<option value="101">Lane County</option>
+				<option value="103">Leavenworth County</option>
+				<option value="105">Lincoln County</option>
+				<option value="107">Linn County</option>
+				<option value="109">Logan County</option>
+				<option value="111">Lyon County</option>
+				<option value="113">McPherson County</option>
+				<option value="115">Marion County</option>
+				<option value="117">Marshall County</option>
+				<option value="119">Meade County</option>
+				<option value="121">Miami County</option>
+				<option value="123">Mitchell County</option>
+				<option value="125">Montgomery County</option>
+				<option value="127">Morris County</option>
+				<option value="129">Morton County</option>
+				<option value="131">Nemaha County</option>
+				<option value="133">Neosho County</option>
+				<option value="135">Ness County</option>
+				<option value="137">Norton County</option>
+				<option value="139">Osage County</option>
+				<option value="141">Osborne County</option>
+				<option value="143">Ottawa County</option>
+				<option value="145">Pawnee County</option>
+				<option value="147">Phillips County</option>
+				<option value="149">Pottawatomie County</option>
+				<option value="151">Pratt County</option>
+				<option value="153">Rawlins County</option>
+				<option value="155">Reno County</option>
+				<option value="157">Republic County</option>
+				<option value="159">Rice County</option>
+				<option value="161">Riley County</option>
+				<option value="163">Rooks County</option>
+				<option value="165">Rush County</option>
+				<option value="167">Russell County</option>
+				<option value="169">Saline County</option>
+				<option value="171">Scott County</option>
+				<option value="173">Sedgwick County</option>
+				<option value="175">Seward County</option>
+				<option value="177">Shawnee County</option>
+				<option value="179">Sheridan County</option>
+				<option value="181">Sherman County</option>
+				<option value="183">Smith County</option>
+				<option value="185">Stafford County</option>
+				<option value="187">Stanton County</option>
+				<option value="189">Stevens County</option>
+				<option value="191">Sumner County</option>
+				<option value="193">Thomas County</option>
+				<option value="195">Trego County</option>
+				<option value="197">Wabaunsee County</option>
+				<option value="199">Wallace County</option>
+				<option value="201">Washington County</option>
+				<option value="203">Wichita County</option>
+				<option value="205">Wilson County</option>
+				<option value="207">Woodson County</option>
+				<option value="209">Wyandotte County</option>
+				<option value="999">Unknown</option>
+			  </optgroup>
+			  <optgroup id="phrgns" style="color:green" label="Kansas Health Preparedness Regions">
+			  <option value="501">Central Kansas Region</option>
+			  <option value="502">East Central Coalition</option>
+			  <!--<option value="503">Ellis County Health Department (No Region Affiliation)</option>-->
+			  <option value="504">KC Metro Region</option>
+			  <option value="506">Lower 8 of South East Kansas Region</option>
+			  <option value="507">North Central Kansas Public Health Initiative Region</option>
+			  <option value="509">North East Corner Regional Initiative Region</option>
+			  <option value="508">Northwest Bioterrorism Group Region</option>
+			  <!--<option value="510">Rush County (No Region Affiliation)</option>-->
+			  <option value="511">South Central Coalition Region</option>
+			  <option value="505">South Central Metro Region</option>
+			  <option value="512">South East Kansas Multi County Region</option>
+			  <option value="513">Southwest Kansas Health Initiative Region</option>
+			  <option value="514">Southwest Surveillance Region</option>
+			  <option value="515">West Central Public Health Initiative Region</option>
+			  <option value="516">Western Pyramid Region</option>
+			  <option value="517">Wildcat Region</option>
+			  <option value="999">Unknown</option>
+			  </optgroup>
+			  <optgroup id="georgns" style="color:blue" label="Geographical Regions (District Offices)">
+			  <option value="302">North Central Kansas Region</option>
+			  <option value="303">Northeast Kansas Region</option>
+			  <option value="301">Northwest Kansas Region</option>
+			  <option value="305">South Central Kansas Region</option>
+			  <option value="306">Southeast Kansas Region</option>
+			  <option value="304">Southwest Kansas Region</option>
+			  <option value="999">Unknown</option>
+			  </optgroup>
+			  <optgroup id="peergrps" style="color:brown" label="Peer County Groups">
+			  <option value="401">Frontier Group</option>
+			  <option value="402">Rural Group</option>
+			  <option value="403">Densely-Settled Rural Group</option>
+			  <option value="404">Semi-Urban Group</option>
+			  <option value="405">Urban Group</option>
+			  <option value="999">Unknown</option>
+			  </optgroup>
+			  </select>
+		</div>
+			<!-- </td> -->
+			<br/>
+			<span style="width:500px;">
+			NOTE: Counties in a region/group can be determined by viewing the <a href="OHA/ksmap.html">resource maps</a> page.
+			</span>
+			</td>
+
+				<tr>
+				<td>
+				<span class="dropt" title="Mouseover Help">Help & Notes
+				<span style="width:500px;">Step 3. If year is a row or column variable, then the table will display results by single year.  If year is not a row or column variable, than the resulting table will aggregate the number of years you check. Data for new years will be added as it becomes available.</span>
+				</span>
+				<td><span class="dropt" title="Mouseover Help">Help & Notes
+				<span style="width:500px; margin-left:600px;">Step 4. You must select a geographic category and then highlight the county, region or state value(s) associated with that category each time you make a query, even if you have used your back button from prior results. If you returned to the query page with your back button, reactivate your geographic selection, by clicking on your original category radio button. You can't select areas from more than one category at a time. Create a new query in order to create statistics for a different geographic category.</span>
+				</span>
+				</td>
+				</tr>
+              </td>
+            </tr>
+            <tr>
+              <td style="vertical-align: top;">
+              <table class="queryhead" style="max-width: 470px;" summary="layout">
+                <tbody>
+                  <tr>
+                    <td <div id="healthmissionwrapper"> STEP 5 </div> </td>
+                  </tr>
+                </tbody>
+              </table>
+              </td>
+              <td style="vertical-align: top;">
+              <table class="queryhead" style="max-width: 470px;" summary="layout">
+                <tbody>
+                  <tr>
+                    <td <div id="healthmissionwrapper"> STEP 6 </div> </td>
+                  </tr>
+                </tbody>
+              </table>
+              </td>
+            </tr>
+
+            <tr>
+              <td style="vertical-align: top; width:50%"><span style="vertical-align: top; font-style: italic; font-weight: bold; color: rgb(0, 0, 102); white-space: normal;">
+			  Select which 'Birth Outcome' you wish to view from the following list. If you have
+			  selected 'Birth Outcome' as your row variable, you may select multiple outcomes
+		      by holding down the control key and selecting the ones you want with the
+			  mouse pointer.</span></td>
+			  <td style="vertical-align: top;"><span style="vertical-align: top; font-style: italic; font-weight: bold; color: rgb(0, 0, 102); white-space: normal;">
+			  You can pick how you want to view the data:</span> </td>
+
+            </tr>
+            <tr>
+              <td style="vertical-align: top;">
+              <label for="display"></label>
+			  <select name="to[]" multiple="multiple" size="10" id="display">
+				<option value="00" selected="selected">All Births </option>
+				<option value="01">Birth Plurality: Single </option>
+				<option value="08">Prenatal Care (Kotelchuck Index): Adequate </option>
+				<option value="12">Prenatal Care Started In 1st Trimester </option>
+				<option value="19">Mom Weight Gain Normal </option>
+				<option value="23">Birth Route: Vaginal </option>
+				<option value="28">Vaginal Birth after C-Section </option>
+				<option value="30">Birth Spacing: Less Than 18 Months Apart </option>
+				<option value="37">Birth Weight: Normal </option>
+				<option value="44">Gestation: Full Term, 39-40 Weeks </option>
+				<option value="50">Mother Smoked While Pregnant </option>
+				<option value="55">Breastfeeding Initiated: Yes </option>
+				<option value="60">Small For Gestational Age: Less Than 10th Percentile </option>
+				<option value="63">Diabetes: None (Prior To & During Pregnancy) </option>
+				<option value="70">Hypertension: Gestational Onset </option>
+				<option value="75">Mother's Pre-pregnancy BMI: 18.5-24.9 (Normal Weight) </option>
+				<option value="04">All Unknowns per Birth Outcome Group </option>
+            </select>
+		</td>
+
+              <td style="white-space: nowrap; vertical-align: top;">
+			  <input type="radio" name="geo" value="0" checked="checked" />Frequencies only <br />
+			  <input type="radio" name="geo" value="3" />Frequencies and Rates - per 100 <br></td>
+            </tr>
+			<tr>
+			<td><span class="dropt" title="Mouseover Help">Help & Notes
+			  <span style="width:500px;">Step 5. Select which 'Birth Outcome' you wish to view from the following list. If you have
+			  selected 'Birth Outcome' as your row variable, you may select multiple procedures by holding down the control key and selecting the ones you want with the mouse pointer. To view rates, "All Births" must not be part of the "Birth Outcome" selection.</span>
+			</span></td>
+			<td><span class="dropt" title="Mouseover Help">Help & Notes
+			  <span style="width:500px; margin-left:600px;">Step 6. A table of counts is one way of displaying results, another is rates. Rates per 100 are essentially percentages and enable comparison of time periods or geographic areas of different sizes.</span>
+			</span></td>
+			</tr>
+              </td>
+            </tr>
+              <td style="vertical-align: top;">
+              <table class="queryhead" style="max-width: 470px;" summary="layout">
+                <tbody>
+                  <tr>
+                    <td <div id="healthmissionwrapper"> STEP 7 </div> </td>
+                  </tr>
+                </tbody>
+              </table>
+              </td>
+
+			 <tr>
+              <td style="vertical-align: top;"><span style="vertical-align: top; font-style: italic; font-weight: bold; color: rgb(0, 0, 102); white-space: normal;">Your search is ready.&nbsp; Click the submit button.<br /><br />** You must select an item from both columns in Step 4 **
+				</span></td>
+            </tr>
+           <tr>
+
+              <td style="vertical-align: middle; white-space: nowrap; text-align: center;">
+              <div style="text-align: center;"> </div>
+              <input type="submit" name="submitbutton" onclick="javascript:region();" onkeypress="javascript:region();" /></td>
+            </tr>
+          </tbody>
+        </table>
+        </td>
+      </tr>
+    </tbody>
+  </table>
+</form>
+        </td>
+        </tr>
+
+</table>
+<br/>
+<!-- Bottom of page starts here -->
+<p style="font-size: 10px; text-align:center;">This page updated January 30, 2026.
+<!--<br/>
+<script src="./promo_link.js"></script> -->
+</p>
+
+
+<div class="clear"></div>
+</div>
+</div>
+</body>
+<div class="footer">
+<br>
+<script src="js_kdhe/footer-2013.js" type="text/javascript" language="JavaScript1.2"></script>
+</div>
+</html>

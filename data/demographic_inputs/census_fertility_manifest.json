@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "source_id": "census_np2023_a1",
+  "source_url": "https://www2.census.gov/programs-surveys/popproj/datasets/2023/2023-popproj/np2023_a1.csv",
+  "layout_url": "https://www2.census.gov/programs-surveys/popproj/technical-documentation/file-layouts/2023/np2023_a1.pdf",
+  "methodology_url": "https://www2.census.gov/programs-surveys/popproj/technical-documentation/methodology/methodstatement23.pdf",
+  "retrieved": "2026-10-21",
+  "release_label": "2023 National Population Projections, November 2023",
+  "source_file": "census_np2023_a1.csv",
+  "source_sha256": "c692bbdf86982d9d1317b825a8926bf82b197d060252dd53324e90b6f8280223",
+  "normalized_file": "census_fertility_rates.json",
+  "normalized_sha256": "118af1a0766b66e56941c1785cbc8efdf57aba1074a04e7a03223e9b5a46eebb",
+  "group": 0,
+  "group_label": "Total",
+  "geography": "United States",
+  "unit": "births per woman-year",
+  "rate_multiplier": 1,
+  "year_start": 2023,
+  "year_end": 2100,
+  "age_start": 14,
+  "age_end": 54,
+  "year_count": 78,
+  "age_count": 41,
+  "record_count": 3198,
+  "period_basis": "YEAR y means July 1 of y-1 through June 30 of y",
+  "calendar_alignment": "If using calendar-year KDHE births, a half-weight average of source years y and y+1 is an analyst approximation. Preserve original periods here.",
+  "validation": {
+    "complete_year_age_grid": true,
+    "duplicate_total_group_years": 0,
+    "rates_between_zero_and_one": true
+  },
+  "method": "Select published total group only; unpivot ASFR_14 through ASFR_54 without rounding, interpolation, rescaling or race/nativity weighting.",
+  "limitations": [
+    "National proxy, not Kansas or county official fertility forecast.",
+    "Census main/high/low/zero immigration variants use the same fertility inputs; analyst fertility sensitivities are not Census scenarios or confidence intervals.",
+    "Published schedules use rounded rates. Zero-rate ages require explicit denominator handling if forming relative changes.",
+    "The schedule was released in November 2023 and is future information for earlier forecast origins.",
+    "ACS five-year female age counts are period estimates, not annual midyear exposure; local calibration must label this approximation."
+  ]
+}

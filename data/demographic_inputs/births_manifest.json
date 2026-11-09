@@ -1,0 +1,96 @@
+{
+  "schema_version": 1,
+  "source_agency": "U.S. Census Bureau, Population Division",
+  "source_product": "CO-EST2025-ALLDATA",
+  "vintage": 2025,
+  "release_month": "2026-03",
+  "source_kind": "Census estimated births, not unprocessed birth-registry records",
+  "sources": {
+    "births_co-est2025-alldata.csv": {
+      "source_url": "https://www2.census.gov/programs-surveys/popest/datasets/2020-2025/counties/totals/co-est2025-alldata.csv",
+      "retrieved_at_utc": "2026-10-21T16:43:45.046726+00:00",
+      "sha256": "4f5a499d851e2cb48fd7a5405e5a9235453a8a66933657aacd10df0e264f35d5",
+      "bytes": 2071735,
+      "http_last_modified": "Thu, 26 Mar 2026 12:15:28 GMT"
+    },
+    "births_co-est2025-layout.pdf": {
+      "source_url": "https://www2.census.gov/programs-surveys/popest/technical-documentation/file-layouts/2020-2025/CO-EST2025-ALLDATA.pdf",
+      "retrieved_at_utc": "2026-10-21T16:43:45.205623+00:00",
+      "sha256": "e4505092c49ce54a3b73867f446b341655c8cc137e3d61ed7cce6b4423e6fb90",
+      "bytes": 77003,
+      "http_last_modified": "Thu, 26 Mar 2026 12:30:32 GMT"
+    }
+  },
+  "normalized_file": "births_county_2021_2025.json",
+  "normalized_sha256": "70d6d0d63fa2c2bef5e22f7997195e18cf70708979c89f6165878d1c8f05119e",
+  "preprocessing": {
+    "tool": "vault shared preprocess.py / MarkItDown",
+    "csv_companion_sha256": "6261a5a2e301119a59f648048f46d1eed35bf275e7a0bb7064a95518f246c2de",
+    "layout_companion_sha256": "dbf6bf8054ecc26fe2ed53a06da207dc6b64af9dedf2be6ed235afeedb455718",
+    "encoding_copy": "births_co-est2025-alldata.utf8.csv",
+    "encoding_copy_sha256": "bb9bb8da424c8ca0728c411b9efcac184d8be298247a1b06dd1dba71c8941872",
+    "note": "Original Latin-1 CSV conversion failed with ASCII decoding. Reversible UTF8-BOM copy converted successfully; raw bytes retained. Companion truncation is not a data slice; normalization streams the full original CSV."
+  },
+  "periods": {
+    "2021": {
+      "source_variable": "BIRTHS2021",
+      "start": "2020-07-01",
+      "end": "2021-06-30"
+    },
+    "2022": {
+      "source_variable": "BIRTHS2022",
+      "start": "2021-07-01",
+      "end": "2022-06-30"
+    },
+    "2023": {
+      "source_variable": "BIRTHS2023",
+      "start": "2022-07-01",
+      "end": "2023-06-30"
+    },
+    "2024": {
+      "source_variable": "BIRTHS2024",
+      "start": "2023-07-01",
+      "end": "2024-06-30"
+    },
+    "2025": {
+      "source_variable": "BIRTHS2025",
+      "start": "2024-07-01",
+      "end": "2025-06-30"
+    }
+  },
+  "excluded_period": {
+    "source_variable": "BIRTHS2020",
+    "start": "2020-04-01",
+    "end": "2020-06-30",
+    "reason": "Partial three-month interval"
+  },
+  "selection": "Streaming CSV; STATE=20 and SUMLEV=050 only; birth counts BIRTHS2021 through BIRTHS2025",
+  "validation": {
+    "counties": 105,
+    "county_year_rows": 525,
+    "years": [
+      2021,
+      2022,
+      2023,
+      2024,
+      2025
+    ],
+    "missing_values": 0,
+    "negative_values": 0,
+    "duplicate_county_years": 0,
+    "kansas_county_sums": {
+      "2021": 34178,
+      "2022": 34404,
+      "2023": 34681,
+      "2024": 33957,
+      "2025": 34416
+    },
+    "zero_birth_cells": 0
+  },
+  "interpretation": [
+    "Years label July\u2013June annual intervals ending in that year, not calendar years.",
+    "Values are Census population-estimates components, not unprocessed vital-registration counts.",
+    "All five annual estimates share Vintage2025; revisions must not be mixed across vintages.",
+    "County of residence estimates do not count births occurring at local hospitals."
+  ]
+}

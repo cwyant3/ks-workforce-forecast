@@ -1,0 +1,247 @@
+{
+  "sources": {
+    "female_acs2010_B01001_labels.json": {
+      "source_url": "https://api.census.gov/data/2010/acs/acs5/groups/B01001.json",
+      "retrieved_at_utc": "2026-10-21T17:23:40.152842+00:00",
+      "sha256": "f49cc83967847c8eb3d03023a0ac05fb5bdea9644e4cb921a6f711f986249655",
+      "bytes": 122831
+    },
+    "female_acs2010_B01001_response.json": {
+      "source_url": "https://api.census.gov/data/2010/acs/acs5?get=group%28B01001%29&for=county%3A%2A&in=state%3A20",
+      "retrieved_at_utc": "2026-10-21T17:23:40.998525+00:00",
+      "sha256": "2f8952fbbbca06ee04e2e8edc14a5371094ceea5cf911d0eb6e3f66483fe04b1",
+      "bytes": 117683
+    },
+    "female_acs2011_B01001_labels.json": {
+      "source_url": "https://api.census.gov/data/2011/acs/acs5/groups/B01001.json",
+      "retrieved_at_utc": "2026-10-21T17:23:41.070939+00:00",
+      "sha256": "d7feb3cd06622b7195e7eb737f3c54d771b3076054c276b759048fb3eaf1cf17",
+      "bytes": 207342
+    },
+    "female_acs2011_B01001_response.json": {
+      "source_url": "https://api.census.gov/data/2011/acs/acs5?get=group%28B01001%29&for=county%3A%2A&in=state%3A20",
+      "retrieved_at_utc": "2026-10-21T17:23:41.780646+00:00",
+      "sha256": "2f671f78e7f2c18b73aab736c6dae0416958362656d635b131413582de89fd1f",
+      "bytes": 117585
+    },
+    "female_acs2012_B01001_labels.json": {
+      "source_url": "https://api.census.gov/data/2012/acs/acs5/groups/B01001.json",
+      "retrieved_at_utc": "2026-10-21T17:23:41.849054+00:00",
+      "sha256": "fa284d634dc93e68e9ab3738afa17996fe287ce06730cd13f2a9c0cda28d7913",
+      "bytes": 219044
+    },
+    "female_acs2012_B01001_response.json": {
+      "source_url": "https://api.census.gov/data/2012/acs/acs5?get=group%28B01001%29&for=county%3A%2A&in=state%3A20",
+      "retrieved_at_utc": "2026-10-21T17:23:42.586419+00:00",
+      "sha256": "60dd752ff65f729a79009da9428266dd3305268ab1634de895c52269155f804c",
+      "bytes": 117483
+    },
+    "female_acs2013_B01001_labels.json": {
+      "source_url": "https://api.census.gov/data/2013/acs/acs5/groups/B01001.json",
+      "retrieved_at_utc": "2026-10-21T17:23:42.661742+00:00",
+      "sha256": "2d451b4ceda71216089294d498a1cbd2198d1965dfd2a7b06d36e35349dc7d33",
+      "bytes": 221248
+    },
+    "female_acs2013_B01001_response.json": {
+      "source_url": "https://api.census.gov/data/2013/acs/acs5?get=group%28B01001%29&for=county%3A%2A&in=state%3A20",
+      "retrieved_at_utc": "2026-10-21T17:23:43.340922+00:00",
+      "sha256": "c210876dcb29af7ed8331adef32b854d188e4ad0212f3a5af6d1747822d8e61b",
+      "bytes": 117408
+    },
+    "female_acs2014_B01001_labels.json": {
+      "source_url": "https://api.census.gov/data/2014/acs/acs5/groups/B01001.json",
+      "retrieved_at_utc": "2026-10-21T17:23:43.416657+00:00",
+      "sha256": "7fb80bcf249d9503bc03363cd52dcd3c0cc625a4b8b14cb902a385bda989061a",
+      "bytes": 221850
+    },
+    "female_acs2014_B01001_response.json": {
+      "source_url": "https://api.census.gov/data/2014/acs/acs5?get=group%28B01001%29&for=county%3A%2A&in=state%3A20",
+      "retrieved_at_utc": "2026-10-21T17:23:44.135255+00:00",
+      "sha256": "e0effe36bbcbf9e9a3d4bbf5edd107fe0f95e4e21ee1a14f045d3004a4b16905",
+      "bytes": 117558
+    },
+    "female_acs2015_B01001_labels.json": {
+      "source_url": "https://api.census.gov/data/2015/acs/acs5/groups/B01001.json",
+      "retrieved_at_utc": "2026-10-21T17:23:44.206260+00:00",
+      "sha256": "16b4c142ce871c6418013b3a9ea37147e6c03111676e295c25f10f51031e4d19",
+      "bytes": 221784
+    },
+    "female_acs2015_B01001_response.json": {
+      "source_url": "https://api.census.gov/data/2015/acs/acs5?get=group%28B01001%29&for=county%3A%2A&in=state%3A20",
+      "retrieved_at_utc": "2026-10-21T17:23:44.907035+00:00",
+      "sha256": "379a3662befc26c2b9d2531538991fbab6d349ae09b74843f60ed8da6bd268f3",
+      "bytes": 117348
+    },
+    "female_acs2016_B01001_labels.json": {
+      "source_url": "https://api.census.gov/data/2016/acs/acs5/groups/B01001.json",
+      "retrieved_at_utc": "2026-10-21T17:23:44.978146+00:00",
+      "sha256": "9ae9fef4624f8f82da9ccd3102296027c35e606b374e7d7610198605e1a709f1",
+      "bytes": 221896
+    },
+    "female_acs2016_B01001_response.json": {
+      "source_url": "https://api.census.gov/data/2016/acs/acs5?get=group%28B01001%29&for=county%3A%2A&in=state%3A20",
+      "retrieved_at_utc": "2026-10-21T17:23:45.667222+00:00",
+      "sha256": "904cdf5011e0d52f9ac536c7da4202963ef4e2c9b5ade397b521b8e6cdf8c1ea",
+      "bytes": 117375
+    },
+    "female_acs2017_B01001_labels.json": {
+      "source_url": "https://api.census.gov/data/2017/acs/acs5/groups/B01001.json",
+      "retrieved_at_utc": "2026-10-21T17:23:45.739548+00:00",
+      "sha256": "b8f1bc114a897888a54e03240173aed2000a9bbce70fb3ed3909d86ce14fc10d",
+      "bytes": 232038
+    },
+    "female_acs2017_B01001_response.json": {
+      "source_url": "https://api.census.gov/data/2017/acs/acs5?get=group%28B01001%29&for=county%3A%2A&in=state%3A20",
+      "retrieved_at_utc": "2026-10-21T17:23:46.454228+00:00",
+      "sha256": "70782d920f7d17e2d3eaa3712b750960a5571a212edb371a53eb597c101bbbb5",
+      "bytes": 117427
+    },
+    "female_acs2018_B01001_labels.json": {
+      "source_url": "https://api.census.gov/data/2018/acs/acs5/groups/B01001.json",
+      "retrieved_at_utc": "2026-10-21T17:23:46.530545+00:00",
+      "sha256": "4f1c018484983aa5d14343b312680ddc0ac1488f8d34061a24864ae8477552b4",
+      "bytes": 233948
+    },
+    "female_acs2018_B01001_response.json": {
+      "source_url": "https://api.census.gov/data/2018/acs/acs5?get=group%28B01001%29&for=county%3A%2A&in=state%3A20",
+      "retrieved_at_utc": "2026-10-21T17:23:47.240825+00:00",
+      "sha256": "f58f4a3d1fdbba74eec6fed6084f9c936d13d469eda8f5e92cb3910ef371b314",
+      "bytes": 117390
+    },
+    "female_acs2019_B01001_labels.json": {
+      "source_url": "https://api.census.gov/data/2019/acs/acs5/groups/B01001.json",
+      "retrieved_at_utc": "2026-10-21T17:23:47.309944+00:00",
+      "sha256": "e72144e30bf0814d36d1e844dca4b5cff9dd9d3cf1d5e439ed146755c25eb077",
+      "bytes": 234276
+    },
+    "female_acs2019_B01001_response.json": {
+      "source_url": "https://api.census.gov/data/2019/acs/acs5?get=group%28B01001%29&for=county%3A%2A&in=state%3A20",
+      "retrieved_at_utc": "2026-10-21T17:23:48.014859+00:00",
+      "sha256": "cba5854142d6896d03083164b2187878154b27bd3116a1c284f5485871b11249",
+      "bytes": 117419
+    },
+    "female_acs2020_B01001_labels.json": {
+      "source_url": "https://api.census.gov/data/2020/acs/acs5/groups/B01001.json",
+      "retrieved_at_utc": "2026-10-21T17:23:48.088033+00:00",
+      "sha256": "61796821a18caa01837ec91a3f10bc04c5fb3ebda312afed138a46802dc74e00",
+      "bytes": 241038
+    },
+    "female_acs2020_B01001_response.json": {
+      "source_url": "https://api.census.gov/data/2020/acs/acs5?get=group%28B01001%29&for=county%3A%2A&in=state%3A20",
+      "retrieved_at_utc": "2026-10-21T17:23:49.128051+00:00",
+      "sha256": "9709c32a01611f5279d29d1acce2a294ca71a5c40004b06a2da03511c75706d2",
+      "bytes": 117532
+    },
+    "female_acs2021_B01001_labels.json": {
+      "source_url": "https://api.census.gov/data/2021/acs/acs5/groups/B01001.json",
+      "retrieved_at_utc": "2026-10-21T17:23:49.199228+00:00",
+      "sha256": "376fea51134dffa53e8ffbc8e70c2bf16b67d7ace5cc713f5dcba424342d9b0b",
+      "bytes": 242746
+    },
+    "female_acs2021_B01001_response.json": {
+      "source_url": "https://api.census.gov/data/2021/acs/acs5?get=group%28B01001%29&for=county%3A%2A&in=state%3A20",
+      "retrieved_at_utc": "2026-10-21T17:23:49.942075+00:00",
+      "sha256": "7011766c7388dd5995ddf0dab2d6d7e881013eccdb414fe6bf84c217b929065a",
+      "bytes": 117620
+    },
+    "female_acs2022_B01001_labels.json": {
+      "source_url": "https://api.census.gov/data/2022/acs/acs5/groups/B01001.json",
+      "retrieved_at_utc": "2026-10-21T17:23:50.015252+00:00",
+      "sha256": "91cbdece50caebd874b890818580256b873a55c5848377b65cc3b4b7546f70ee",
+      "bytes": 248614
+    },
+    "female_acs2022_B01001_response.json": {
+      "source_url": "https://api.census.gov/data/2022/acs/acs5?get=group%28B01001%29&for=county%3A%2A&in=state%3A20",
+      "retrieved_at_utc": "2026-10-21T17:23:50.907863+00:00",
+      "sha256": "fc774dc8acd63389f817a0ab342090141a45c36d99fd28a4b425d268ed90cbc1",
+      "bytes": 117626
+    },
+    "female_acs2023_B01001_labels.json": {
+      "source_url": "https://api.census.gov/data/2023/acs/acs5/groups/B01001.json",
+      "retrieved_at_utc": "2026-10-21T17:23:50.981461+00:00",
+      "sha256": "361dab49e9df46d0bf6a80f46cdb4e7c1185b8ff475cef1968616ec630c027a9",
+      "bytes": 250938
+    },
+    "female_acs2023_B01001_response.json": {
+      "source_url": "https://api.census.gov/data/2023/acs/acs5?get=group%28B01001%29&for=county%3A%2A&in=state%3A20",
+      "retrieved_at_utc": "2026-10-21T17:23:51.858949+00:00",
+      "sha256": "c1abfaef14449b9002780b2d558bbc3af1ecc95d97d3e8f8efc65c3d313e047a",
+      "bytes": 117586
+    },
+    "female_acs2024_B01001_labels.json": {
+      "source_url": "https://api.census.gov/data/2024/acs/acs5/groups/B01001.json",
+      "retrieved_at_utc": "2026-10-21T15:59:45.138754+00:00",
+      "sha256": "0f0422e346fdd3369363f040127fe61a3e35a47215755bcd300615bbfc7abcc6",
+      "bytes": 251518,
+      "reused_from": "acs2024_5yr_B01001_labels.json"
+    },
+    "female_acs2024_B01001_response.json": {
+      "source_url": "https://api.census.gov/data/2024/acs/acs5?get=group%28B01001%29&for=county%3A%2A&in=state%3A20",
+      "retrieved_at_utc": "2026-10-21T15:59:46.006545+00:00",
+      "sha256": "fc9db9670b586bb4ec11a3941176f129f97394cb2ce778bf42f612e28d7abdee",
+      "bytes": 117548,
+      "reused_from": "acs2024_5yr_B01001_response.json"
+    }
+  },
+  "schema_version": 1,
+  "acs_product": "ACS 5-year B01001",
+  "geography": "105 Kansas counties",
+  "year_meaning": "Ending year of the ACS five-year period",
+  "years": [
+    2010,
+    2011,
+    2012,
+    2013,
+    2014,
+    2015,
+    2016,
+    2017,
+    2018,
+    2019,
+    2020,
+    2021,
+    2022,
+    2023,
+    2024
+  ],
+  "exposure_basis": "Rolling ACS five-year resident estimate; not exact annual female exposure",
+  "caveats": [
+    "Adjacent vintages overlap four years; these are not independent annual population measurements.",
+    "Historical vintages were retrieved now; this is not a real-time availability or publication-date backtest.",
+    "For pooled 2020\u20132024 births, ACS2024 female estimate \u00d75 is an approximate period-aligned person-year denominator.",
+    "Summing ACS2020\u20262024 female estimates blends overlapping 2016\u20132024 windows, not exact annual exposure.",
+    "Age grouping sums exact source bands; no age splitting or future-vintage labels are used.",
+    "Sampling uncertainty is not propagated into the derived exposure counts; original MOEs remain in source responses."
+  ],
+  "items_requiring_verification": [
+    "[VERIFY] Suitability of rolling ACS exposure proxies for county age-specific fertility estimation remains a model assumption."
+  ],
+  "outputs": {
+    "female_history_2010_2024.json": {
+      "sha256": "1c386444e3c30a6f76fe1b813165c7c5ae16934a713feb86f40ee21bf5ef9d5f",
+      "rows": 14175
+    },
+    "female_native_age_sex_history_2010_2024.json": {
+      "sha256": "ff942c8453c8fdb9e05dfb7666f08ec49736978b0208eb0c205e3cd8757b2aa6",
+      "rows": 72450
+    }
+  },
+  "normalized_at_utc": "2026-10-21T17:24:22.306818+00:00",
+  "validation": {
+    "county_count": 105,
+    "years": 15,
+    "female_bands_per_county_year": 9,
+    "native_age_sex_bands_per_county_year": 46,
+    "unavailable_female_cells": 0,
+    "unavailable_native_cells": 0,
+    "zero_female_cells": 2,
+    "checks": [
+      "Same-vintage official age/sex labels",
+      "All 105 counties each year",
+      "Exact source-band sums",
+      "Native age sums reconcile to sex totals",
+      "Sex totals reconcile to county population",
+      "Cached original SHA256 verified before reuse"
+    ]
+  }
+}

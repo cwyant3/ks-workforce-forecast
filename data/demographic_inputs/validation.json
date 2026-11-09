@@ -1,0 +1,26 @@
+{
+  "population_rows": 4830,
+  "labor_force_rows": 7560,
+  "survival_rows": 120,
+  "county_count": 105,
+  "normalization_checks": [
+    "105 distinct Kansas counties",
+    "46 exhaustive population age-sex bands per county",
+    "13 population/civilian labor force pairs per sex and county",
+    "civilian labor force <= population",
+    "age-sex totals reconcile to published group totals",
+    "one Kansas statewide B23001 fallback record",
+    "120 unique survival ages 0\u2013119",
+    "valid qx, nonincreasing lx and rounded progression",
+    "original response hashes verified"
+  ],
+  "unavailable_population_cells": 0,
+  "unavailable_labor_force_cells": 0,
+  "zero_population_denominators": 8,
+  "survival_terminal_note": "Published qx119=0.926604, not1; model terminal-age handling must be explicit. Published lx rounds to0 at extreme ages.",
+  "normalized_sha256": {
+    "population_age_sex_bands.json": "faf85bd901d19ef85eb0545bd2c038773e1830368eb54f1f415ea6f481a6ffeb",
+    "labor_force_age_sex_bands.json": "486f9dba7f58c7e5541c067b2bc50dabd5fad912769f0680675a1edcae63a618",
+    "survival_age_sex.json": "6dee4437bf417b68657be05733c48ec3472491a0f7bd3962c68764b59fe46abc"
+  }
+}

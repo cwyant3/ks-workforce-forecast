@@ -1,0 +1,174 @@
+{
+  "schema_version": 1,
+  "source_agency": "U.S. Census Bureau, Population Division",
+  "years": [
+    2006,
+    2007,
+    2008,
+    2009,
+    2010,
+    2011,
+    2012,
+    2013,
+    2014,
+    2015,
+    2016,
+    2017,
+    2018,
+    2019,
+    2020,
+    2021,
+    2022,
+    2023,
+    2024,
+    2025
+  ],
+  "source_kind": "Census estimated births, not unprocessed birth-registry records",
+  "sources": {
+    "births_co-est2025-alldata.csv": {
+      "source_url": "https://www2.census.gov/programs-surveys/popest/datasets/2020-2025/counties/totals/co-est2025-alldata.csv",
+      "retrieved_at_utc": "2026-10-21T16:43:45.046726+00:00",
+      "sha256": "4f5a499d851e2cb48fd7a5405e5a9235453a8a66933657aacd10df0e264f35d5",
+      "bytes": 2071735,
+      "http_last_modified": "Thu, 26 Mar 2026 12:15:28 GMT"
+    },
+    "births_co-est2025-layout.pdf": {
+      "source_url": "https://www2.census.gov/programs-surveys/popest/technical-documentation/file-layouts/2020-2025/CO-EST2025-ALLDATA.pdf",
+      "retrieved_at_utc": "2026-10-21T16:43:45.205623+00:00",
+      "sha256": "e4505092c49ce54a3b73867f446b341655c8cc137e3d61ed7cce6b4423e6fb90",
+      "bytes": 77003,
+      "http_last_modified": "Thu, 26 Mar 2026 12:30:32 GMT"
+    },
+    "births_co-est2010-alldata.csv": {
+      "source_url": "https://www2.census.gov/programs-surveys/popest/datasets/2010/2010-eval-estimates/co-est2010-alldata.csv",
+      "retrieved_at_utc": "2026-10-21T16:48:01.771230+00:00",
+      "sha256": "b6fe1e3e21db9f4d6be6772e3022efcf4b7e402fa900034899ef944a32c34e1a",
+      "bytes": 4045144,
+      "http_last_modified": "Mon, 27 Jun 2016 20:16:46 GMT"
+    },
+    "births_co-est2010-layout.pdf": {
+      "source_url": "https://www2.census.gov/programs-surveys/popest/technical-documentation/file-layouts/2000-2010/co-est2010-alldata.pdf",
+      "retrieved_at_utc": "2026-10-21T16:48:01.880380+00:00",
+      "sha256": "82810b3c32d9cd1f02fcba63f534523c30818d4f21150e9204c1e98876e36a4c",
+      "bytes": 12016,
+      "http_last_modified": "Tue, 06 Sep 2016 21:19:12 GMT"
+    },
+    "births_co-est2020-alldata.csv": {
+      "source_url": "https://www2.census.gov/programs-surveys/popest/datasets/2010-2020/counties/totals/co-est2020-alldata.csv",
+      "retrieved_at_utc": "2026-10-21T16:48:02.117166+00:00",
+      "sha256": "983708e1b68c8e7c4ecbef4d45137bea34ee286abe07662ccc0d6dfc6411fe83",
+      "bytes": 4012355,
+      "http_last_modified": "Tue, 04 May 2021 15:42:59 GMT"
+    },
+    "births_co-est2020-layout.pdf": {
+      "source_url": "https://www2.census.gov/programs-surveys/popest/technical-documentation/file-layouts/2010-2020/co-est2020-alldata.pdf",
+      "retrieved_at_utc": "2026-10-21T16:48:02.227019+00:00",
+      "sha256": "f3ff25a1dc7fcf39c2604c82a48f7df76f8f7d2a8a706979bd963c5e0eea3ecf",
+      "bytes": 104916,
+      "http_last_modified": "Tue, 04 May 2021 15:40:37 GMT"
+    }
+  },
+  "correction_notice_url": "https://www.census.gov/programs-surveys/popest/technical-documentation/research/evaluation-estimates.2010.html",
+  "correction_notice": "Original March29,2012 CO-EST2010-ALLDATA had incorrect2009\u20132010 components; Census replaced it April6,2012. Current linked archive downloaded.",
+  "vintage_segments": {
+    "2010": {
+      "years": [
+        2006,
+        2007,
+        2008,
+        2009,
+        2010
+      ],
+      "series_type": "Vintage 2010 evaluation estimates; current corrected archive"
+    },
+    "2020": {
+      "years": [
+        2011,
+        2012,
+        2013,
+        2014,
+        2015,
+        2016,
+        2017,
+        2018,
+        2019,
+        2020
+      ],
+      "series_type": "Vintage 2020 population estimates"
+    },
+    "2025": {
+      "years": [
+        2021,
+        2022,
+        2023,
+        2024,
+        2025
+      ],
+      "series_type": "Vintage 2025 population estimates"
+    }
+  },
+  "normalized_file": "births_county_2006_2025.json",
+  "normalized_sha256": "a3bbe1700fa1b33b7632018128c847f2706b6760cdea0e3af3a204ffd57bc003",
+  "population_exposure_method": "Arithmetic mean of previous and current July1 resident populations, using the same vintage as each birth count",
+  "period_definition": "July1 of preceding year through June30 of named year; no partial April\u2013June observations",
+  "boundary_warnings": [
+    "Three source vintages are joined, not one harmonized intercensal series. Population denominators and estimation assumptions may shift at2011 and2021.",
+    "Vintage2010 evaluation estimates are not intercensal estimates. Current archive incorporates the documented April6,2012 correction.",
+    "Retrospective validation uses revised historical estimates, not data available in real time at each forecast origin.",
+    "Derived rate is a crude birth rate per all residents, not fertility per women of reproductive age."
+  ],
+  "validation": {
+    "counties": 105,
+    "county_year_rows": 2100,
+    "years": [
+      2006,
+      2007,
+      2008,
+      2009,
+      2010,
+      2011,
+      2012,
+      2013,
+      2014,
+      2015,
+      2016,
+      2017,
+      2018,
+      2019,
+      2020,
+      2021,
+      2022,
+      2023,
+      2024,
+      2025
+    ],
+    "missing_births_or_exposures": 0,
+    "duplicate_county_years": 0,
+    "published_rate_matches": 2100,
+    "max_rate_rounding_difference": 5.454547036265467e-09,
+    "zero_birth_cells": 0,
+    "kansas_county_sums": {
+      "2006": 39841,
+      "2007": 41645,
+      "2008": 41795,
+      "2009": 41593,
+      "2010": 41054,
+      "2011": 40118,
+      "2012": 39553,
+      "2013": 39703,
+      "2014": 39285,
+      "2015": 39003,
+      "2016": 38769,
+      "2017": 37219,
+      "2018": 36459,
+      "2019": 35805,
+      "2020": 35467,
+      "2021": 34178,
+      "2022": 34404,
+      "2023": 34681,
+      "2024": 33957,
+      "2025": 34416
+    },
+    "original_five_year_file_unchanged": true
+  }
+}

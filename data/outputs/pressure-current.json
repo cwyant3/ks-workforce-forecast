@@ -1,0 +1,1103 @@
+{
+  "schema_version": 1,
+  "release_id": "20261109T034237_d5325ec1",
+  "created_utc": "2026-11-09T03:42:37.598696+00:00",
+  "scope": {
+    "state": "20",
+    "pilot_counties": [
+      "20015",
+      "20035",
+      "20077",
+      "20079",
+      "20095",
+      "20173",
+      "20191"
+    ],
+    "coverage": "County demand and training pilot; ACS all Kansas counties. Inspect per-measure availability.",
+    "input_hashes": {
+      "acs-2024-b23025-ks.json": "5b265bcf3851528386281bcfcaa8febc7ca3e5358bf1939cb6ea87050c1f9b50",
+      "acs-2024-s2301-ks.json": "723bd9c7755f134a52f25330aa56551ef7d6098a7017ce215304b6d198589464",
+      "C2025_A.zip": "555c6522ccf011d54b06520b128badb8558aba3d0038c97f231f5efaa7161183",
+      "commute_snapshot.parquet": "8c267f1d49d443a95abaed20715e6e6333dab237c4f1f1d3e80ab17b2d78ea46",
+      "FLAGS2025.zip": "492379dec18320f9110cf4a3e53cf850a8ed93846565868eaecb8a43c9bc58a1",
+      "hd2025-full-source-scan-diagnosis.json": "2b21ad26c372a15c88152224f1bccaef6c7798f97fbfecedaab0975d127805cc",
+      "HD2025.zip": "aadad9277a2255c85813b6d206475ddbf8a7330d79cc0236c2ecae685b00f1bf",
+      "kansas-regional-2022-2032.xlsx": "784118a8623eddf7d809bb23db224f5f5674837af856588cf47314110fc9a111",
+      "laus-sedgwick-2026.json": "f62f36039a5eecec947d5c943ac7af310b5039fcce5f1452ab25b9d58149ac87",
+      "laus-southcentral-2026.json": "17b7e53b5edd74b25e6d88077d45e04147f202d3c0b9996832d0e7ca65f9890c",
+      "laus-sumner-2026.json": "63c11b37ce46f36748be37a49701c9b1c160cc39369a7f0c4ddeae19a80a706f",
+      "lodes_flows.parquet": "d6010b46455cf91d613d08228d079ad12e6e233ed77ac952e3b15fbb283c3724",
+      "lodes_observations.parquet": "7ee07692f449202d72226d69c20bf44ba36ec992c8d644271ba782a776c0eb7d",
+      "oews-wichita-2025-sample.json": "ea1863c70a8a45b745f0c4fe9f8b8133f8e3a851ce67c2a8d68184eba3dee235",
+      "qcew-20015-2025q1.csv": "91e8cd14976a38a70baed9e39c7ca60a4b3ace26e3a152b5d7ec701993fd7a89",
+      "qcew-20015-2026q1.csv": "5a68d25c585dbece8ac2f0386206cb584c3abb5ed9f19ee0d096703920859e7a",
+      "qcew-20035-2025q1.csv": "18e19b49fa0c269354510caad6053ae6056d3aff134efc95637c6b0b87abc7fd",
+      "qcew-20035-2026q1.csv": "ab04928f8912e58922b0fe7c973994627cc1fedbd806ea80650718a8bde8dfe7",
+      "qcew-20077-2025q1.csv": "76dd3f98c9a1adbb2edbd7345beeb00ec69821b1eb7eef78c2f4a4ef5b706dcf",
+      "qcew-20077-2026q1.csv": "22210eb63f8a8963b5b12a47a80782719498dd86ca8acf367d5ea3502a72929f",
+      "qcew-20079-2025q1.csv": "7e572d315905a6f1662616b9601de80c846e99c28d7e4482d445527b28d9fcb3",
+      "qcew-20079-2026q1.csv": "28adc9b2ff9ea372348fa0292a083640072277efd5b052ae1276ec34df9dc473",
+      "qcew-20095-2025q1.csv": "b8c6bfc39dcaf75ea8658c6cab314172da79d3a41a3a19a579df460456d99b0f",
+      "qcew-20095-2026q1.csv": "3650e2fa456d512a2714c7dfa1b5bc5262778adbce831f09f8ceccd62b84168c",
+      "qcew-20173-2025q1.csv": "353db64c37489b253b279c1192cf333cbe530cc39b159a563a16fbaf611ce909",
+      "qcew-20173-2026q1.csv": "68716dbca01ad8dc41e38654574202c1012507f54b583f378a68bf57898313ba",
+      "qcew-20191-2025q1.csv": "605ac356e68a896eaf432c4039883b497b2bd2c96fb734b6f9000445e3328735",
+      "qcew-20191-2026q1.csv": "679dec4a733956232f7ba385b5e39175910afe42cf8d2a5552b68fcbc6401255",
+      "qwi-2025-Q2-ks-manufacturing.json": "ce3bb147561c6164b84802ee206a1be73ff58fa43c67531d6390e823fb66c82a",
+      "qwi-2025-Q3-ks-manufacturing.json": "bb857217d70ceea35fbb78aa50e76907d6b3fb3eda6559415e2eae2356e185f9",
+      "qwi-2025q4-ks-manufacturing.json": "bcb950bd14ef7a45d04811fe8620411b382bd6b7bb290c2ef9c2a8b724199e9f",
+      "qwi-version.txt": "75d8e93ec50d0e0e6ea4925c28ae815d75175de0e8814b59551304028ab5a656"
+    },
+    "population_forecast": "projections_s20.parquet sha256 6bb08eedde6abbfe0bc323b9ad595d02c2890ec9a0aa461018407245b3dd72a8",
+    "geography_crosswalk_version": "2026-10-20",
+    "regional_context": "South Central 2022-2032; Wichita OEWS May2025 sample only",
+    "sector_correction": "retained from adopted release",
+    "composite_score": "not calculated"
+  },
+  "files": {
+    "pressure_observations.parquet": {
+      "sha256": "9eca7e09d1394aa48191256bc90ce0a6a9707fcb23d461092615956eb809ddc8",
+      "rows": 2888,
+      "columns": [
+        "geography_id",
+        "industry_code",
+        "ownership",
+        "measure_id",
+        "estimate",
+        "unit",
+        "availability_status",
+        "source_status",
+        "period_start",
+        "period_end",
+        "reference_label",
+        "geography_type",
+        "location_basis",
+        "industry_system",
+        "occupation_code",
+        "occupation_system",
+        "job_universe",
+        "age_group",
+        "sex_group",
+        "reporting_unit",
+        "program_code",
+        "award_level",
+        "seasonal_adjustment",
+        "firm_size",
+        "firm_age",
+        "frequency",
+        "method_type",
+        "source_url",
+        "release_id",
+        "coverage_note",
+        "quality_note",
+        "moe_confidence_level",
+        "preliminary",
+        "source_id",
+        "moe",
+        "rse",
+        "comparison_period_start",
+        "geography_name",
+        "population_universe",
+        "source_moe_status",
+        "source_hash",
+        "source_evidence_file",
+        "source_value",
+        "parser_version",
+        "provider_count",
+        "unitid",
+        "cipcode",
+        "majornum",
+        "awlevel",
+        "xctotalt",
+        "ctotalt",
+        "xctotalm",
+        "ctotalm",
+        "xctotalw",
+        "ctotalw",
+        "xcaiant",
+        "caiant",
+        "xcaianm",
+        "caianm",
+        "xcaianw",
+        "caianw",
+        "xcasiat",
+        "casiat",
+        "xcasiam",
+        "casiam",
+        "xcasiaw",
+        "casiaw",
+        "xcbkaat",
+        "cbkaat",
+        "xcbkaam",
+        "cbkaam",
+        "xcbkaaw",
+        "cbkaaw",
+        "xchispt",
+        "chispt",
+        "xchispm",
+        "chispm",
+        "xchispw",
+        "chispw",
+        "xcnhpit",
+        "cnhpit",
+        "xcnhpim",
+        "cnhpim",
+        "xcnhpiw",
+        "cnhpiw",
+        "xcwhitt",
+        "cwhitt",
+        "xcwhitm",
+        "cwhitm",
+        "xcwhitw",
+        "cwhitw",
+        "xc2mort",
+        "c2mort",
+        "xc2morm",
+        "c2morm",
+        "xc2morw",
+        "c2morw",
+        "xcunknt",
+        "cunknt",
+        "xcunknm",
+        "cunknm",
+        "xcunknw",
+        "cunknw",
+        "xcnralt",
+        "cnralt",
+        "xcnralm",
+        "cnralm",
+        "xcnralw",
+        "cnralw",
+        "completions",
+        "institution_name",
+        "stabbr",
+        "countycd",
+        "fips",
+        "countynm",
+        "cyactive",
+        "newid",
+        "closedat",
+        "county_fips3",
+        "state_fips_from_county",
+        "cip6",
+        "cip2",
+        "sector",
+        "credential_level",
+        "county_fips",
+        "county_fips5",
+        "state_fips",
+        "year",
+        "imputation_flag",
+        "stat_c",
+        "lock_c",
+        "prch_c",
+        "idx_c",
+        "pcc_f",
+        "imp_c",
+        "response_flag_status",
+        "parent_reporting_status",
+        "imputation_status",
+        "flags_availability_status",
+        "published_total",
+        "reconciled",
+        "directory_url",
+        "flags_url",
+        "geography_valid",
+        "source_series_id",
+        "oews_area_type",
+        "area_name",
+        "occupation_title",
+        "source_rse_series_id",
+        "rse_availability_status"
+      ]
+    },
+    "pressure_training_detail.parquet": {
+      "sha256": "a68253f0ea2a5304b3a66165a225dab54a74f34edf1688685120e60b1e35cfd1",
+      "rows": 3939,
+      "columns": [
+        "unitid",
+        "cipcode",
+        "majornum",
+        "awlevel",
+        "xctotalt",
+        "ctotalt",
+        "xctotalm",
+        "ctotalm",
+        "xctotalw",
+        "ctotalw",
+        "xcaiant",
+        "caiant",
+        "xcaianm",
+        "caianm",
+        "xcaianw",
+        "caianw",
+        "xcasiat",
+        "casiat",
+        "xcasiam",
+        "casiam",
+        "xcasiaw",
+        "casiaw",
+        "xcbkaat",
+        "cbkaat",
+        "xcbkaam",
+        "cbkaam",
+        "xcbkaaw",
+        "cbkaaw",
+        "xchispt",
+        "chispt",
+        "xchispm",
+        "chispm",
+        "xchispw",
+        "chispw",
+        "xcnhpit",
+        "cnhpit",
+        "xcnhpim",
+        "cnhpim",
+        "xcnhpiw",
+        "cnhpiw",
+        "xcwhitt",
+        "cwhitt",
+        "xcwhitm",
+        "cwhitm",
+        "xcwhitw",
+        "cwhitw",
+        "xc2mort",
+        "c2mort",
+        "xc2morm",
+        "c2morm",
+        "xc2morw",
+        "c2morw",
+        "xcunknt",
+        "cunknt",
+        "xcunknm",
+        "cunknm",
+        "xcunknw",
+        "cunknw",
+        "xcnralt",
+        "cnralt",
+        "xcnralm",
+        "cnralm",
+        "xcnralw",
+        "cnralw",
+        "award_level",
+        "completions",
+        "institution_name",
+        "stabbr",
+        "countycd",
+        "fips",
+        "countynm",
+        "cyactive",
+        "newid",
+        "closedat",
+        "county_fips3",
+        "state_fips_from_county",
+        "cip6",
+        "cip2",
+        "sector",
+        "credential_level",
+        "county_fips",
+        "county_fips5",
+        "state_fips",
+        "year",
+        "imputation_flag",
+        "availability_status",
+        "stat_c",
+        "lock_c",
+        "prch_c",
+        "idx_c",
+        "pcc_f",
+        "imp_c",
+        "response_flag_status",
+        "parent_reporting_status",
+        "imputation_status",
+        "flags_availability_status",
+        "published_total",
+        "reconciled",
+        "source_url",
+        "directory_url",
+        "flags_url",
+        "reference_label",
+        "source_status",
+        "reporting_unit",
+        "program_code",
+        "geography_id",
+        "location_basis",
+        "geography_valid",
+        "coverage_note"
+      ]
+    },
+    "pressure_regional.parquet": {
+      "sha256": "35749527ef58eb32e66f18bce8d91003ef9c4bc224315fee6658fb16ea79695a",
+      "rows": 30840,
+      "columns": [
+        "geography_id",
+        "region_id",
+        "region_name",
+        "occupation_code",
+        "occupation_title",
+        "occupation_level",
+        "measure_id",
+        "estimate",
+        "availability_status",
+        "period_start",
+        "period_end",
+        "unit",
+        "frequency",
+        "base_year",
+        "projection_year",
+        "reference_label",
+        "release_id",
+        "geography_type",
+        "location_basis",
+        "industry_code",
+        "industry_system",
+        "occupation_system",
+        "ownership",
+        "job_universe",
+        "age_group",
+        "sex_group",
+        "reporting_unit",
+        "program_code",
+        "award_level",
+        "seasonal_adjustment",
+        "firm_size",
+        "firm_age",
+        "source_status",
+        "method_type",
+        "source_url",
+        "coverage_note",
+        "quality_note",
+        "moe_confidence_level",
+        "preliminary",
+        "source_id",
+        "moe",
+        "rse"
+      ]
+    },
+    "ipeds_s20.parquet": {
+      "sha256": "a248b121e3d2280d3321da1f6a08472ce914e91ac89166d06982d4f8c7e6fb2b",
+      "rows": 41193,
+      "columns": [
+        "unitid",
+        "cipcode",
+        "majornum",
+        "awlevel",
+        "xctotalt",
+        "ctotalt",
+        "xctotalm",
+        "ctotalm",
+        "xctotalw",
+        "ctotalw",
+        "xcaiant",
+        "caiant",
+        "xcaianm",
+        "caianm",
+        "xcaianw",
+        "caianw",
+        "xcasiat",
+        "casiat",
+        "xcasiam",
+        "casiam",
+        "xcasiaw",
+        "casiaw",
+        "xcbkaat",
+        "cbkaat",
+        "xcbkaam",
+        "cbkaam",
+        "xcbkaaw",
+        "cbkaaw",
+        "xchispt",
+        "chispt",
+        "xchispm",
+        "chispm",
+        "xchispw",
+        "chispw",
+        "xcnhpit",
+        "cnhpit",
+        "xcnhpim",
+        "cnhpim",
+        "xcnhpiw",
+        "cnhpiw",
+        "xcwhitt",
+        "cwhitt",
+        "xcwhitm",
+        "cwhitm",
+        "xcwhitw",
+        "cwhitw",
+        "xc2mort",
+        "c2mort",
+        "xc2morm",
+        "c2morm",
+        "xc2morw",
+        "c2morw",
+        "xcunknt",
+        "cunknt",
+        "xcunknm",
+        "cunknm",
+        "xcunknw",
+        "cunknw",
+        "xcnralt",
+        "cnralt",
+        "xcnralm",
+        "cnralm",
+        "xcnralw",
+        "cnralw",
+        "award_level",
+        "completions",
+        "institution_name",
+        "stabbr",
+        "countycd",
+        "fips",
+        "countynm",
+        "cyactive",
+        "newid",
+        "closedat",
+        "county_fips3",
+        "state_fips_from_county",
+        "cip6",
+        "cip2",
+        "sector",
+        "credential_level",
+        "county_fips",
+        "county_fips5",
+        "state_fips",
+        "year",
+        "imputation_flag",
+        "availability_status",
+        "stat_c",
+        "lock_c",
+        "prch_c",
+        "idx_c",
+        "pcc_f",
+        "imp_c",
+        "response_flag_status",
+        "parent_reporting_status",
+        "imputation_status",
+        "flags_availability_status",
+        "coverage_note",
+        "published_total",
+        "reconciled",
+        "source_url",
+        "directory_url",
+        "flags_url",
+        "reference_label",
+        "source_status",
+        "reporting_unit",
+        "program_code",
+        "geography_id",
+        "location_basis",
+        "geography_valid"
+      ]
+    },
+    "ipeds_by_sector_s20.parquet": {
+      "sha256": "f220f10ef1d15bcfc2e8f3dd065836af83b05afb535fd60e63b2aaed24003528",
+      "rows": 1694,
+      "columns": [
+        "state_fips",
+        "county_fips",
+        "year",
+        "sector",
+        "completions",
+        "coverage_note"
+      ]
+    },
+    "pressure_lodes_flows.parquet": {
+      "sha256": "d6010b46455cf91d613d08228d079ad12e6e233ed77ac952e3b15fbb283c3724",
+      "rows": 18322,
+      "columns": [
+        "w_county_fips",
+        "h_county_fips",
+        "state_fips",
+        "year",
+        "jobs",
+        "job_type",
+        "partition",
+        "source_url",
+        "inbound_complete",
+        "outbound_complete"
+      ]
+    },
+    "commute_snapshot_s20.parquet": {
+      "sha256": "8c267f1d49d443a95abaed20715e6e6333dab237c4f1f1d3e80ab17b2d78ea46",
+      "rows": 105,
+      "columns": [
+        "state_fips",
+        "county_fips",
+        "w_county_fips",
+        "year",
+        "total_jobs_at_worksite",
+        "observed_jobs_at_worksite",
+        "jobs_workers_live_in_county",
+        "jobs_workers_imported",
+        "pct_workers_live_in_county",
+        "pct_workers_imported",
+        "top_feeder_counties",
+        "availability_status",
+        "job_type",
+        "outbound_availability_status",
+        "inbound_coverage_complete",
+        "outbound_coverage_complete"
+      ]
+    },
+    "participation_s20.parquet": {
+      "sha256": "d3ca72025e1acca24143d3b80668878ce23d254f7e1e5237f83d4e776b08b42f",
+      "rows": 420,
+      "columns": [
+        "state_fips",
+        "county_fips",
+        "year",
+        "working_age_pop",
+        "acs_lf_status_pop_18_64",
+        "acs_civilian_labor_force_18_64",
+        "acs_armed_forces_18_64",
+        "acs_lfpr_pct",
+        "ssdi_18_64",
+        "ssi_18_64",
+        "total_disabled_18_64",
+        "disability_rate_pct",
+        "disability_adjusted_pop",
+        "labor_force",
+        "lfpr_pct",
+        "lfpr_source",
+        "effective_labor_force",
+        "layers_used",
+        "participation_method",
+        "participation_universe",
+        "acs_age_basis",
+        "ssa_role"
+      ]
+    },
+    "projections_effective_s20.parquet": {
+      "sha256": "7d5356beb8fc026ea526f3dd0a99b0a346793fac6315755f9a9c7434fa441258",
+      "rows": 1050,
+      "columns": [
+        "year",
+        "p5",
+        "p10",
+        "p25",
+        "p50",
+        "p75",
+        "p90",
+        "p95",
+        "mean",
+        "retirements_p50",
+        "entries_p50",
+        "mig_mean_pct",
+        "mig_std_pct",
+        "county_fips",
+        "county_name",
+        "workforce_base",
+        "pop_total_base",
+        "state_fips",
+        "estimate_type",
+        "acs_overlap_note",
+        "base_year",
+        "random_seed",
+        "pct_change_p50",
+        "participation_adj_factor",
+        "eff_p5",
+        "eff_p10",
+        "eff_p25",
+        "eff_p50",
+        "eff_p75",
+        "eff_p90",
+        "eff_p95",
+        "eff_mean"
+      ]
+    },
+    "pressure_participation_migration.parquet": {
+      "sha256": "b618f0b18f21d82623c584af2ffe34ea312c450fd84921b83cfce88261411ba6",
+      "rows": 420,
+      "columns": [
+        "county_fips",
+        "year",
+        "previous_labor_force",
+        "effective_labor_force",
+        "change"
+      ]
+    },
+    "sector_projections_s20.parquet": {
+      "sha256": "7d54c25db6a2f0ee8f2744edd3f33b98d1de7f84d9a67a450bef17467222428b",
+      "rows": 5250,
+      "columns": [
+        "year",
+        "emp_proj",
+        "emp_ci_lo",
+        "emp_ci_hi",
+        "wage_proj",
+        "method",
+        "significant",
+        "note",
+        "county_fips",
+        "county_name",
+        "sector",
+        "state_fips",
+        "emp_base",
+        "base_year",
+        "history_last_year",
+        "history_usable_years",
+        "baseline_availability_status",
+        "model_quality"
+      ]
+    },
+    "state_sector_projection_s20.parquet": {
+      "sha256": "db3c78ee94f9f627dbc5bf0ff2a61d44bf091237af774cebde6e4563f3bb5e7e",
+      "rows": 50,
+      "columns": [
+        "sector",
+        "year",
+        "emp_proj",
+        "emp_ci_lo",
+        "emp_ci_hi",
+        "wage_proj",
+        "emp_base",
+        "base_year",
+        "method",
+        "significant",
+        "note",
+        "history_last_year",
+        "history_usable_years",
+        "baseline_availability_status",
+        "model_quality"
+      ]
+    }
+  },
+  "sources": [
+    {
+      "source_id": "acs_b23025",
+      "reference_period": "2024-12-31",
+      "release_id": "acs5-2024",
+      "adoption_status": "validated observations",
+      "verification_date": "2026-10-20",
+      "source_url": "https://api.census.gov/data/2024/acs/acs5"
+    },
+    {
+      "source_id": "acs_s2301",
+      "reference_period": "2024-12-31",
+      "release_id": "acs5-2024",
+      "adoption_status": "validated observations",
+      "verification_date": "2026-10-20",
+      "source_url": "https://api.census.gov/data/2024/acs/acs5/subject"
+    },
+    {
+      "source_id": "ipeds",
+      "reference_period": "2025-06-30",
+      "release_id": "IPEDS-C2025_A-PD",
+      "adoption_status": "validated observations",
+      "verification_date": "2026-10-20",
+      "source_url": "https://nces.ed.gov/ipeds/complete-data-files/C2025_A.zip"
+    },
+    {
+      "source_id": "laus",
+      "reference_period": "2026-08-31",
+      "release_id": "laus-reference-2026-01; laus-reference-2026-02; laus-reference-2026-03; laus-reference-2026-04; laus-reference-2026-05; laus-reference-2026-06; laus-reference-2026-07; laus-reference-2026-08",
+      "adoption_status": "validated observations",
+      "verification_date": "2026-10-20",
+      "source_url": "https://data.bls.gov/timeseries/LAUCN200150000000003; https://data.bls.gov/timeseries/LAUCN200150000000004; https://data.bls.gov/timeseries/LAUCN200150000000005; https://data.bls.gov/timeseries/LAUCN200150000000006; https://data.bls.gov/timeseries/LAUCN200350000000003; https://data.bls.gov/timeseries/LAUCN200350000000004; https://data.bls.gov/timeseries/LAUCN200350000000005; https://data.bls.gov/timeseries/LAUCN200350000000006; https://data.bls.gov/timeseries/LAUCN200770000000003; https://data.bls.gov/timeseries/LAUCN200770000000004; https://data.bls.gov/timeseries/LAUCN200770000000005; https://data.bls.gov/timeseries/LAUCN200770000000006; https://data.bls.gov/timeseries/LAUCN200790000000003; https://data.bls.gov/timeseries/LAUCN200790000000004; https://data.bls.gov/timeseries/LAUCN200790000000005; https://data.bls.gov/timeseries/LAUCN200790000000006; https://data.bls.gov/timeseries/LAUCN200950000000003; https://data.bls.gov/timeseries/LAUCN200950000000004; https://data.bls.gov/timeseries/LAUCN200950000000005; https://data.bls.gov/timeseries/LAUCN200950000000006; https://data.bls.gov/timeseries/LAUCN201730000000003; https://data.bls.gov/timeseries/LAUCN201730000000004; https://data.bls.gov/timeseries/LAUCN201730000000005; https://data.bls.gov/timeseries/LAUCN201730000000006; https://data.bls.gov/timeseries/LAUCN201910000000003; https://data.bls.gov/timeseries/LAUCN201910000000004; https://data.bls.gov/timeseries/LAUCN201910000000005; https://data.bls.gov/timeseries/LAUCN201910000000006"
+    },
+    {
+      "source_id": "lodes",
+      "reference_period": "2023-12-31",
+      "release_id": "LODES8",
+      "adoption_status": "validated observations",
+      "verification_date": "2026-10-20",
+      "source_url": "https://lehd.ces.census.gov/data/lodes/LODES8/ks/od/"
+    },
+    {
+      "source_id": "oews",
+      "reference_period": "2025-05-31",
+      "release_id": "OEWS-May-2025",
+      "adoption_status": "validated observations",
+      "verification_date": "2026-10-20",
+      "source_url": "https://api.bls.gov/publicAPI/v2/timeseries/data/OEUM004862000000000000001?startyear=2025&endyear=2025; https://api.bls.gov/publicAPI/v2/timeseries/data/OEUM004862000000000000004?startyear=2025&endyear=2025; https://api.bls.gov/publicAPI/v2/timeseries/data/OEUM004862000000000000013?startyear=2025&endyear=2025; https://api.bls.gov/publicAPI/v2/timeseries/data/OEUM004862000000029206101?startyear=2025&endyear=2025; https://api.bls.gov/publicAPI/v2/timeseries/data/OEUM004862000000029206104?startyear=2025&endyear=2025; https://api.bls.gov/publicAPI/v2/timeseries/data/OEUM004862000000029206113?startyear=2025&endyear=2025; https://api.bls.gov/publicAPI/v2/timeseries/data/OEUM004862000000047211101?startyear=2025&endyear=2025; https://api.bls.gov/publicAPI/v2/timeseries/data/OEUM004862000000047211104?startyear=2025&endyear=2025; https://api.bls.gov/publicAPI/v2/timeseries/data/OEUM004862000000047211113?startyear=2025&endyear=2025; https://api.bls.gov/publicAPI/v2/timeseries/data/OEUM004862000000051412101?startyear=2025&endyear=2025; https://api.bls.gov/publicAPI/v2/timeseries/data/OEUM004862000000051412104?startyear=2025&endyear=2025; https://api.bls.gov/publicAPI/v2/timeseries/data/OEUM004862000000051412113?startyear=2025&endyear=2025"
+    },
+    {
+      "source_id": "qcew",
+      "reference_period": "2026-03-31",
+      "release_id": "2025Q1; 2026Q1",
+      "adoption_status": "validated observations",
+      "verification_date": "2026-10-20",
+      "source_url": "https://data.bls.gov/cew/data/api/2025/1/area/20015.csv; https://data.bls.gov/cew/data/api/2025/1/area/20035.csv; https://data.bls.gov/cew/data/api/2025/1/area/20077.csv; https://data.bls.gov/cew/data/api/2025/1/area/20079.csv; https://data.bls.gov/cew/data/api/2025/1/area/20095.csv; https://data.bls.gov/cew/data/api/2025/1/area/20173.csv; https://data.bls.gov/cew/data/api/2025/1/area/20191.csv; https://data.bls.gov/cew/data/api/2026/1/area/20015.csv; https://data.bls.gov/cew/data/api/2026/1/area/20035.csv; https://data.bls.gov/cew/data/api/2026/1/area/20077.csv; https://data.bls.gov/cew/data/api/2026/1/area/20079.csv; https://data.bls.gov/cew/data/api/2026/1/area/20095.csv; https://data.bls.gov/cew/data/api/2026/1/area/20173.csv; https://data.bls.gov/cew/data/api/2026/1/area/20191.csv"
+    },
+    {
+      "source_id": "qwi",
+      "reference_period": "2025-12-31",
+      "release_id": "R2026Q3",
+      "adoption_status": "validated observations",
+      "verification_date": "2026-10-20",
+      "source_url": "https://api.census.gov/data/timeseries/qwi/sa?get=Emp%2CHirA%2CSep%2CEarnS%2CsEmp%2CsHirA%2CsSep%2CsEarnS&for=county%3A%2A&in=state%3A20&time=2025-Q2&sex=0&agegrp=A00&industry=31-33&ownercode=A05&seasonadj=U&firmsize=0&firmage=0; https://api.census.gov/data/timeseries/qwi/sa?get=Emp%2CHirA%2CSep%2CEarnS%2CsEmp%2CsHirA%2CsSep%2CsEarnS&for=county%3A%2A&in=state%3A20&time=2025-Q3&sex=0&agegrp=A00&industry=31-33&ownercode=A05&seasonadj=U&firmsize=0&firmage=0; https://api.census.gov/data/timeseries/qwi/sa?get=Emp%2CHirA%2CSep%2CEarnS%2CsEmp%2CsHirA%2CsSep%2CsEarnS&for=county%3A%2A&in=state%3A20&time=2025-Q4&sex=0&agegrp=A00&industry=31-33&ownercode=A05&seasonadj=U&firmsize=0&firmage=0"
+    },
+    {
+      "source_id": "apprenticeship",
+      "adoption_status": "disabled: aggregate export/geography unresolved",
+      "verification_date": "2026-10-20"
+    },
+    {
+      "source_id": "pseo",
+      "adoption_status": "disabled: Kansas not in verified coverage",
+      "verification_date": "2026-10-20"
+    },
+    {
+      "source_id": "bgi",
+      "adoption_status": "disabled: applicable proprietary reuse terms unverified",
+      "verification_date": "2026-10-20"
+    }
+  ],
+  "coverage": [
+    {
+      "source_id": "acs_b23025",
+      "measure_id": "armed_forces_16_plus",
+      "latest_reference": "2024-12-31",
+      "latest_usable": "2024-12-31",
+      "statuses": {
+        "published": 105
+      }
+    },
+    {
+      "source_id": "acs_b23025",
+      "measure_id": "civilian_employed_16_plus",
+      "latest_reference": "2024-12-31",
+      "latest_usable": "2024-12-31",
+      "statuses": {
+        "published": 105
+      }
+    },
+    {
+      "source_id": "acs_b23025",
+      "measure_id": "civilian_labor_force_16_plus",
+      "latest_reference": "2024-12-31",
+      "latest_usable": "2024-12-31",
+      "statuses": {
+        "published": 105
+      }
+    },
+    {
+      "source_id": "acs_b23025",
+      "measure_id": "civilian_unemployed_16_plus",
+      "latest_reference": "2024-12-31",
+      "latest_usable": "2024-12-31",
+      "statuses": {
+        "published": 105
+      }
+    },
+    {
+      "source_id": "acs_b23025",
+      "measure_id": "labor_force_16_plus",
+      "latest_reference": "2024-12-31",
+      "latest_usable": "2024-12-31",
+      "statuses": {
+        "published": 105
+      }
+    },
+    {
+      "source_id": "acs_b23025",
+      "measure_id": "not_in_labor_force_16_plus",
+      "latest_reference": "2024-12-31",
+      "latest_usable": "2024-12-31",
+      "statuses": {
+        "published": 105
+      }
+    },
+    {
+      "source_id": "acs_b23025",
+      "measure_id": "population_16_plus",
+      "latest_reference": "2024-12-31",
+      "latest_usable": "2024-12-31",
+      "statuses": {
+        "published": 105
+      }
+    },
+    {
+      "source_id": "acs_s2301",
+      "measure_id": "labor_force_participation_rate_16_plus",
+      "latest_reference": "2024-12-31",
+      "latest_usable": "2024-12-31",
+      "statuses": {
+        "published": 105
+      }
+    },
+    {
+      "source_id": "ipeds",
+      "measure_id": "credential_awards_by_program",
+      "latest_reference": "2025-06-30",
+      "latest_usable": "2025-06-30",
+      "statuses": {
+        "published": 790
+      }
+    },
+    {
+      "source_id": "ipeds",
+      "measure_id": "credentials_awarded",
+      "latest_reference": "2025-06-30",
+      "latest_usable": "2025-06-30",
+      "statuses": {
+        "published": 4,
+        "not_reported": 3
+      }
+    },
+    {
+      "source_id": "laus",
+      "measure_id": "employed",
+      "latest_reference": "2026-08-31",
+      "latest_usable": "2026-08-31",
+      "statuses": {
+        "published": 56
+      }
+    },
+    {
+      "source_id": "laus",
+      "measure_id": "labor_force",
+      "latest_reference": "2026-08-31",
+      "latest_usable": "2026-08-31",
+      "statuses": {
+        "published": 56
+      }
+    },
+    {
+      "source_id": "laus",
+      "measure_id": "unemployed",
+      "latest_reference": "2026-08-31",
+      "latest_usable": "2026-08-31",
+      "statuses": {
+        "published": 56
+      }
+    },
+    {
+      "source_id": "laus",
+      "measure_id": "unemployment_rate",
+      "latest_reference": "2026-08-31",
+      "latest_usable": "2026-08-31",
+      "statuses": {
+        "published": 56
+      }
+    },
+    {
+      "source_id": "lodes",
+      "measure_id": "jobs_workers_imported",
+      "latest_reference": "2023-12-31",
+      "latest_usable": "2023-12-31",
+      "statuses": {
+        "published": 7
+      }
+    },
+    {
+      "source_id": "lodes",
+      "measure_id": "pct_workers_imported",
+      "latest_reference": "2023-12-31",
+      "latest_usable": "2023-12-31",
+      "statuses": {
+        "published": 7
+      }
+    },
+    {
+      "source_id": "lodes",
+      "measure_id": "resident_outbound_jobs",
+      "latest_reference": "2023-12-31",
+      "latest_usable": null,
+      "statuses": {
+        "incomplete": 7
+      }
+    },
+    {
+      "source_id": "lodes",
+      "measure_id": "total_jobs_at_worksite",
+      "latest_reference": "2023-12-31",
+      "latest_usable": "2023-12-31",
+      "statuses": {
+        "published": 7
+      }
+    },
+    {
+      "source_id": "oews",
+      "measure_id": "oews_employment",
+      "latest_reference": "2025-05-31",
+      "latest_usable": "2025-05-31",
+      "statuses": {
+        "published": 4
+      }
+    },
+    {
+      "source_id": "oews",
+      "measure_id": "oews_mean_annual_wage",
+      "latest_reference": "2025-05-31",
+      "latest_usable": "2025-05-31",
+      "statuses": {
+        "published": 4
+      }
+    },
+    {
+      "source_id": "oews",
+      "measure_id": "oews_median_annual_wage",
+      "latest_reference": "2025-05-31",
+      "latest_usable": "2025-05-31",
+      "statuses": {
+        "published": 4
+      }
+    },
+    {
+      "source_id": "qcew",
+      "measure_id": "qcew_employment",
+      "latest_reference": "2026-03-31",
+      "latest_usable": "2026-03-31",
+      "statuses": {
+        "published": 84,
+        "suppressed": 40,
+        "not_reported": 2
+      }
+    },
+    {
+      "source_id": "qcew",
+      "measure_id": "qcew_employment_yoy_pct",
+      "latest_reference": "2026-03-31",
+      "latest_usable": "2026-03-31",
+      "statuses": {
+        "incomplete": 88,
+        "published": 38
+      }
+    },
+    {
+      "source_id": "qcew",
+      "measure_id": "qcew_establishments",
+      "latest_reference": "2026-03-31",
+      "latest_usable": "2026-03-31",
+      "statuses": {
+        "published": 84,
+        "suppressed": 40,
+        "not_reported": 2
+      }
+    },
+    {
+      "source_id": "qcew",
+      "measure_id": "qcew_establishments_yoy_pct",
+      "latest_reference": "2026-03-31",
+      "latest_usable": "2026-03-31",
+      "statuses": {
+        "incomplete": 88,
+        "published": 38
+      }
+    },
+    {
+      "source_id": "qcew",
+      "measure_id": "qcew_weekly_wage",
+      "latest_reference": "2026-03-31",
+      "latest_usable": "2026-03-31",
+      "statuses": {
+        "published": 84,
+        "suppressed": 40,
+        "not_reported": 2
+      }
+    },
+    {
+      "source_id": "qcew",
+      "measure_id": "qcew_weekly_wage_yoy_pct",
+      "latest_reference": "2026-03-31",
+      "latest_usable": "2026-03-31",
+      "statuses": {
+        "incomplete": 88,
+        "published": 38
+      }
+    },
+    {
+      "source_id": "qwi",
+      "measure_id": "qwi_employment",
+      "latest_reference": "2025-12-31",
+      "latest_usable": "2025-12-31",
+      "statuses": {
+        "published": 21
+      }
+    },
+    {
+      "source_id": "qwi",
+      "measure_id": "qwi_employment_yoy_pct",
+      "latest_reference": "2025-12-31",
+      "latest_usable": null,
+      "statuses": {
+        "incomplete": 21
+      }
+    },
+    {
+      "source_id": "qwi",
+      "measure_id": "qwi_hires",
+      "latest_reference": "2025-12-31",
+      "latest_usable": "2025-12-31",
+      "statuses": {
+        "published": 21
+      }
+    },
+    {
+      "source_id": "qwi",
+      "measure_id": "qwi_hires_per_100_beginning_jobs",
+      "latest_reference": "2025-12-31",
+      "latest_usable": "2025-12-31",
+      "statuses": {
+        "published": 21
+      }
+    },
+    {
+      "source_id": "qwi",
+      "measure_id": "qwi_hires_trailing4q",
+      "latest_reference": "2025-12-31",
+      "latest_usable": null,
+      "statuses": {
+        "incomplete": 21
+      }
+    },
+    {
+      "source_id": "qwi",
+      "measure_id": "qwi_hires_yoy_pct",
+      "latest_reference": "2025-12-31",
+      "latest_usable": null,
+      "statuses": {
+        "incomplete": 21
+      }
+    },
+    {
+      "source_id": "qwi",
+      "measure_id": "qwi_separations",
+      "latest_reference": "2025-12-31",
+      "latest_usable": "2025-09-30",
+      "statuses": {
+        "published": 14,
+        "cannot_compute": 7
+      }
+    },
+    {
+      "source_id": "qwi",
+      "measure_id": "qwi_separations_trailing4q",
+      "latest_reference": "2025-12-31",
+      "latest_usable": null,
+      "statuses": {
+        "incomplete": 21
+      }
+    },
+    {
+      "source_id": "qwi",
+      "measure_id": "qwi_separations_yoy_pct",
+      "latest_reference": "2025-12-31",
+      "latest_usable": null,
+      "statuses": {
+        "incomplete": 21
+      }
+    },
+    {
+      "source_id": "qwi",
+      "measure_id": "qwi_stable_earnings",
+      "latest_reference": "2025-12-31",
+      "latest_usable": "2025-09-30",
+      "statuses": {
+        "published": 14,
+        "cannot_compute": 7
+      }
+    },
+    {
+      "source_id": "qwi",
+      "measure_id": "qwi_stable_earnings_yoy_pct",
+      "latest_reference": "2025-12-31",
+      "latest_usable": null,
+      "statuses": {
+        "incomplete": 21
+      }
+    }
+  ],
+  "previous_release_id": "20261020T215651_b4a47fdc"
+}

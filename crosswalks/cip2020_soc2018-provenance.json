@@ -1,0 +1,14 @@
+{
+  "source_url": "https://nces.ed.gov/ipeds/cipcode/Files/CIP2020_SOC2018_Crosswalk.xlsx",
+  "retrieved": "2026-10-21",
+  "source_sheet": "CIP-SOC",
+  "original_sha256": "ba3d59a191b9d977a5c457a66b9348c4f2f7963aafacf72c0b80113b46bf0ab8",
+  "normalized_sha256": "ba6cba810dd7e7a631bec81d9878611155ad148e73a300677819118431af5a8d",
+  "raw_rows": 6097,
+  "normalized_relationships": 5723,
+  "programs": 1948,
+  "occupations": 687,
+  "unmatched_rows": 374,
+  "duplicate_pairs": 0,
+  "method": "Full-sheet scan after shared preprocessing; exclude NO MATCH sentinel records; preserve exact detailed CIP/SOC strings; deduplicate code pairs; never concatenate reverse or supplemental sheets"
+}

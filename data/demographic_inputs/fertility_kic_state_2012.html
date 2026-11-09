@@ -1,0 +1,130 @@
+<html>
+<head>
+<STYLE type="text/css">
+<!--
+th.mrk1 {font-family: helvetica;font-size: 8pt}
+th.mrk2 {font-family: roman;font-size: 9pt}
+p.mrk1 {font-family: helvetica;font-size: 8pt}
+th.mrk1 {font-family: helvetica;font-size: 8pt}
+td.mrk1 {font-family: helvetica;font-size: 8pt}
+th.mrk2 {font-family: roman;font-size: 9pt}
+tr.clr1 {background: #fbf8a9;  }
+div.clr2 {background: Red; }
+div.clr3 {background: #aaffaa;}
+div.clr4 {background: #aaaaff;}
+TABLE {border-collapse: collapse }
+.repi1 {font-family: helvetica;font-size: 12pt }
+-->
+
+</STYLE>
+<meta http-equiv="Content-Script-Type" content="text/html">
+<link href="css/style.css" rel="stylesheet" type="text/css">
+<script type="text/javascript" src="libs/engin2ce.js"></script>
+<script src="libs/TSortertst.js" type="text/javascript"></script>
+<script>
+/**********************************************************************
+*This column SORT functionality is temprarily disabled. Un-comment this
+*for future use.
+***********************************************************************/
+function init()
+{
+        if (document.getElementById('outTbl')) {
+         var Table1Sorter = new TSorter;
+	 Table1Sorter.init('outTbl');
+        }
+}
+window.onload = init;
+if (typeof HTMLElement != 'undefined') {
+ HTMLElement.prototype.click = function() {
+  var evt = this.ownerDocument.createEvent('MouseEvents');
+  evt.initMouseEvent('click', true, true, this.ownerDocument.defaultView, 1, 0, 0, 0, 0, false, false, false, false, 0, null);
+  this.dispatchEvent(evt);
+ }
+}
+/***********************************************************************/
+function show(id1,id2,id3,id4) {
+  if (id1 == 'one') {
+    document.getElementById('fireAjax').click();
+  }
+  document.getElementById(id1).style.display='block';
+  document.getElementById(id2).style.display='none';
+  document.getElementById(id3).className='current';
+  document.getElementById(id4).className='';
+}
+
+</script>
+
+</head>
+<body bgcolor="DDFFDD">
+<script type="text/javascript" src="death_table_files/kicdataheader.js"></script>
+<!----------------------------------------------------------------------
+-- Un-Comment the following section to enable the tabs on top of the
+--result table.
+------------------------------------------------------------------------
+<table align="center" cellspacing=0 cellpading=0 border=1>
+<tr><td valign="bottom">
+<div id="header">
+ <ul>
+  <li id="tbl" class="current"><a href="javascript:show('main','one','tbl','grph')">Data Table</a></li>
+  <li id="grph"><a href="javascript:show('one','main','grph','tbl')">Bar Chart</a></li>
+ </ul>
+</div>
+</td>
+</tr>
+<tr>
+<td>
+</td>
+</tr>
+</table>
+------------------------------------------------------------------------>
+
+<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN" "http://www.w3.org/TR/REC-html40/loose.dtd">
+<html><body><center><div id="one" class="dva"></div></center><div id="contnr"><div id="main"><center><table class="sortab" border="1" id="outTbl">
+<tr class="mrktt"><th align="center" colspan="10" id="ttl"> Births: Residents of Kansas </th></tr>
+<tr class="mrkc"><th align="center" colspan="10" id="emn">Years=2012</th></tr> 
+<tr class="mrkc"><th align="center" colspan="10" id="fmn">Indicators: = All Births</th></tr> 
+<tbody><tr class="mrkc"><th>&nbsp;</th><th id="coltop" colspan="9"> Age Group </th></tr> 
+<tr class="mrkc"><th>&nbsp;</th><th colspan="1">10 to 14</th>
+<th colspan="1">15 to 17</th>
+<th colspan="1">18 to 19</th>
+<th colspan="1">20 to 24</th>
+<th colspan="1">25 to 29</th>
+<th colspan="1">30 to 34</th>
+<th colspan="1">35 plus</th>
+<th colspan="1">Unknown</th>
+<th colspan="1">All Ages</th>
+</tr><tr class="sortable" id="dmm"><th id="rowtop" abbr="" style="cursor:pointer"> County </th><th style="cursor:pointer" abbr="number"> Number </th>
+<th style="cursor:pointer" abbr="number"> Number </th>
+<th style="cursor:pointer" abbr="number"> Number </th>
+<th style="cursor:pointer" abbr="number"> Number </th>
+<th style="cursor:pointer" abbr="number"> Number </th>
+<th style="cursor:pointer" abbr="number"> Number </th>
+<th style="cursor:pointer" abbr="number"> Number </th>
+<th style="cursor:pointer" abbr="number"> Number </th>
+<th style="cursor:pointer" id="dmn" abbr="number"> Number </th>
+</tr></tbody><tbody><tr><td class="mrkta">Kansas </td><td class="mrkn" data-fec-case="0"> 28 </td><td class="mrkn" data-fec-case="0"> 833 </td><td class="mrkn" data-fec-case="0"> 2,470 </td><td class="mrkn" data-fec-case="0"> 10,219 </td><td class="mrkn" data-fec-case="0"> 12,731 </td><td class="mrkn" data-fec-case="0"> 9,492 </td><td class="mrkn" data-fec-case="0"> 4,530 </td><td class="mrkn" data-fec-case="0">#</td><td class="mrkn" data-fec-case="0">#</td></tr> 
+</tbody> <tbody><tr class="mrkcf"><th colspan="10"> # Indicates Confidentiality Rule <br> 
+</th></tr> 
+<tr class="mrkc"><th colspan="5"> <a href="?&amp;row=1&amp;col=4&amp;sort=0&amp;geo=0&amp;configfile=configs/birth_config.php&amp;screen_id=&amp;bw=0&amp;uadj=1&amp;prob=0&amp;ra=4&amp;et=3&amp;ag=8&amp;ma=4&amp;edu=3&amp;biror=5&amp;wicp=3&amp;birpl=8&amp;paysrc=10&amp;ct%5B%5D=920&amp;yr%5B%5D=2012&amp;menu=0&amp;pasto=1&amp;to%5B%5D=00&amp;dwn=0;&amp;flip=1">Rotate</a> </th><th colspan="5"> <a href="?&amp;row=1&amp;col=4&amp;sort=0&amp;geo=0&amp;configfile=configs/birth_config.php&amp;screen_id=&amp;bw=0&amp;uadj=1&amp;prob=0&amp;ra=4&amp;et=3&amp;ag=8&amp;ma=4&amp;edu=3&amp;biror=5&amp;wicp=3&amp;birpl=8&amp;paysrc=10&amp;ct%5B%5D=920&amp;yr%5B%5D=2012&amp;menu=0&amp;pasto=1&amp;to%5B%5D=00&amp;dwn=2&amp;flip=0">Download</a> </th></tr>
+</tbody></table></center> 
+</div></div></body></html>
+
+
+<br />
+<br />
+
+
+<!--<p style="font-size: 12px; text-align:center;">NOTE: To see all indicators, click on  <u>underlined</u> Blue text.</p> -->
+<!-- KDHE UAT 2026-07-20 #11: note advertised a drill-down (visic()) that no longer exists in
+     any linked page — the widget lives only in the orphaned xmllist/ stack. Hidden, not deleted.
+<p style="font-size: 16px; background-color:powderblue; text-align:center;"><b>NOTE: Click on  <u>underlined</u> Blue text, to see all indicator categories.</b></p>
+-->
+
+<hr>
+<br />
+<div style="text-align: center;">
+<script type="text/javascript" src="js_kdhe/footer-2011rslts.js"></script>
+</div>
+<!---->
+</body>
+</html>

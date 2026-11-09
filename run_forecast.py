@@ -59,7 +59,7 @@ from fetch_oes      import fetch_oes_state, fetch_oes_by_sector
 from fetch_cbp           import fetch_cbp, sector_estab_summary
 from fetch_jolts         import fetch_jolts, compute_vacancy_rates
 from fetch_kdol_ui       import fetch_kdol_ui, sector_pulse
-from fetch_ksde          import fetch_ksde, apply_ksde_override
+from fetch_ksde          import fetch_ksde, fetch_ksde_grades, ksde_override_years, apply_ksde_override
 from fetch_ssa_disability import fetch_ssa_disability, compute_disability_rate
 from fetch_bls_proj      import (fetch_national_projections,
                                   sector_demand_outlook)
@@ -108,19 +108,28 @@ def main(state_fips: str = "20", api_key: str | None = None,
     acs_df.to_parquet(acs_out, index=False)
     print(f"  Saved: {acs_out.name}")
 
-    # ── 1b. KSDE youth cohort override (optional, KS-only) ────────────────
+    # ── 1b. KSDE youth cohort update (optional, KS-only) ──────────────────
+    # Grade-group enrollment feeds trend alerts; single grades move the ACS
+    # youth bands from the ACS period midpoint to the baseline year by ratio
+    # (see fetch_ksde.apply_ksde_override). Enrollment never replaces ACS levels.
     if run_ksde and state_fips.zfill(2) == "20":
-        print("\n=== STEP 1b: Applying KSDE K-12 enrollment override ===")
+        print("\n=== STEP 1b: Updating ACS youth cohorts with KSDE single-grade enrollment ===")
         ksde_df = fetch_ksde(state_fips=state_fips, cache_dir=KSDE_CACHE)
         if not ksde_df.empty:
-            acs_df = apply_ksde_override(acs_df, ksde_df)
             ksde_out = OUTPUT_DIR / "ksde.parquet"
             ksde_df.to_parquet(ksde_out, index=False)
             print(f"  Saved: {ksde_out.name}")
+        anchor_year, target_year = ksde_override_years(int(acs_df["year"].max()))
+        grades_df = fetch_ksde_grades([anchor_year, target_year], cache_dir=KSDE_CACHE)
+        if not grades_df.empty:
+            acs_df, ksde_diag = apply_ksde_override(acs_df, grades_df, return_diagnostics=True)
+            diag_out = OUTPUT_DIR / f"ksde_youth_adjustment_s{state_fips}.parquet"
+            ksde_diag.to_parquet(diag_out, index=False)
+            print(f"  Saved: {diag_out.name}")
         else:
-            print("  KSDE: no data — cohort model will use ACS youth cohorts unchanged")
+            print("  KSDE: no single-grade data — cohort model will use ACS youth cohorts unchanged")
     elif run_ksde:
-        print(f"\n=== STEP 1b: KSDE override — SKIPPED (KS-only; state={state_fips}) ===")
+        print(f"\n=== STEP 1b: KSDE youth update — SKIPPED (KS-only; state={state_fips}) ===")
 
     # ── 2. Run cohort model ────────────────────────────────────────────────
     print(f"\n=== STEP 2: Running cohort-component model ===")
@@ -328,7 +337,7 @@ def main(state_fips: str = "20", api_key: str | None = None,
                 print("  KDOL: no data loaded — see warning above for manual file path")
 
     # ── 14. Fetch KSDE K-12 enrollment trends (optional, already applied above) ─
-    # KSDE fetch + ACS override runs at Step 1b; here we only save additional
+    # KSDE fetch + ACS youth update runs at Step 1b; here we only save additional
     # trend output if KSDE data was loaded (ksde_df may not exist in scope).
 
     # ── 15. Fetch SSA disability counts (optional) ────────────────────────
@@ -548,7 +557,7 @@ if __name__ == "__main__":
     parser.add_argument("--kdol",  action="store_true",
                         help="Fetch Kansas KDOL UI claims (KS only; requires manual file if download fails)")
     parser.add_argument("--ksde", action="store_true",
-                        help="Fetch KSDE K-12 enrollment and override ACS youth cohorts (KS only)")
+                        help="Fetch KSDE K-12 enrollment; move ACS youth cohorts to the baseline year by single-grade ratios (KS only)")
     parser.add_argument("--ssa",  action="store_true",
                         help="Fetch SSA SSDI/SSI disability counts and build participation model Layer 2")
     parser.add_argument("--bls-proj", action="store_true", dest="bls_proj",

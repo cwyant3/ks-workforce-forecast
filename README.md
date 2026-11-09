@@ -268,7 +268,7 @@ by hand (see [§8.4](#84-monthly-refresh-and-manual-sources)).
 | 8 | **OES/OEWS** | BLS Occupational Employment & Wages | State + national industry | Occupation wage benchmarks | Bulk ZIP |
 | 9 | **SSA** | SSA OASDI (SSDI+SSI), 18–64 | County, data year 2024 | Disability decrement (participation) | **Manual** |
 | 10 | **KDOL labor force** | Kansas Dept. of Labor / KLIC (LMIS) | County, monthly | Current KS labor-market pulse | **Manual** (KS only) |
-| 11 | **KSDE / CCD** | K-12 enrollment via Urban Institute API | District→county | Youth-cohort override | API (KS only) |
+| 11 | **KSDE / CCD** | K-12 enrollment via Urban Institute API | District→county | Youth-cohort update: single-grade ratios move ACS youth bands to the baseline year (never replaces ACS levels) | API (KS only) |
 | 12 | **BLS Projections** | BLS national + KS employment projections | Sector; national 2025–35, KS 2024–34 | Demand outlook (display only) | **Manual** |
 | 13 | **Projections Central** | DOL/ETA state occupation projections | State | Multi-state demand outlook | API |
 

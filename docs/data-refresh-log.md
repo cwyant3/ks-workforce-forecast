@@ -2012,3 +2012,243 @@ Notes:          **FAULT 1 — the QCEW routine cannot fire while this session
                 Pinning would trade a known-good floating version for a
                 maintenance burden nobody has asked for. Revisit if a future
                 bump breaks something rather than pre-emptively.
+
+## [2026-09-29] BLS national projections | no-op
+Vintage before: 2025–35 (base_year 2025, proj_year 2035 in both
+                bls_proj_sector_outlook.parquet and bls_proj_occupations.parquet;
+                outputs written 2026-09-15, cycle adopted 2026-09-01)
+Vintage after:  unchanged
+Checked:        WebSearch (bls.gov): newest cycle is 2025–35, released
+                2026-08-27 (bls.gov/news.release/ecopro.nr0.htm). Its 170.3M
+                2025 total employment matches our file's 170,280.8K. The
+                2026–36 cycle is not expected until late August 2027. Cache
+                holds bls_proj_national_2025_2035.xlsx (2026-09-01) and its
+                parquet. The legacy bls_proj_national_manual.xlsx (2026-05-21)
+                is the 2024–34 fallback and is not read while the vintage-named
+                file is present.
+Outputs changed: none (`git status --short` empty)
+Validation:     n/a (no pipeline run)
+Notes:          Nothing to act on. Next scheduled check: 2027-08-29.
+
+## [2026-10-02] JOLTS | refreshed
+Vintage before: reference month 2026-07 (jolts.parquet, 4,309 rows)
+Vintage after:  reference month 2026-08 (jolts.parquet, 4,340 rows; +31 rows,
+                all 2026-08). jolts_vacancy_rates.parquet content unchanged —
+                expected: it is an annual table whose newest year is still
+                2025, and partial-year 2026 months do not add a row.
+Checked:        WebSearch (bls.gov): the release page bls.gov/news.release/jolts.htm
+                is titled "2026 M08 Results"; August 2026 published 2026-09-29
+                (openings 7.1M, rate 4.3%). Ran
+                `python refresh_dashboard.py --sources jolts --states 20`;
+                jolts_cache cleared (1 entry) and re-fetched live.
+Outputs changed: `git status --short` lists 34 data/outputs parquets (M),
+                including 31 per-state/other files: acs_combined_s20, cbp_*_s20,
+                commute_*_s20, ipeds*_s20, kdol_labforce_*_s20, ks_occ_*_s20,
+                ks_proj_*, ksde, laus_s20, lodes_s20, oes_*, participation_s20,
+                pc_occ_*_s20, projections*_s20, sector_projections_s20,
+                ssa_disability_s20, state_*projection_s20, bls_proj_*.
+                Content-diffed every one against HEAD with pandas `.equals`:
+                only jolts.parquet differs in data. The other 33 are identical
+                in content; their bytes moved only because the embedded
+                creator metadata changed (pandas 3.0.5 → 3.0.6, pyarrow
+                24.0.0 → 25.0.1) — the churn predicted in the 2026-08-20 entry.
+                Also pre-existing and not touched by this run: dashboard/app.py,
+                docs/data-source-release-calendar.md, and the 2026-09-29 entry
+                in this file (uncommitted work from another session).
+Validation:     pass (unit tests ran; validate_outputs passed; "REFRESH
+                COMPLETE — 1 state(s) regenerated and validated"; manual
+                sources all present and fresh)
+Notes:          Reviewer: committing only jolts.parquet is the minimal real
+                change. The 33 metadata-only parquets can be committed or
+                restored with `git checkout -- <file>` at your discretion; they
+                carry no data change. Next JOLTS release (Sep 2026 data)
+                expected around early November 2026 (estimate; not checked
+                against the BLS release schedule).
+
+## [2026-10-04] LAUS (county) | no-op
+Vintage before: annual averages (M13) 2015-2025; laus_s20.parquet max year 2025, 105 counties/year
+Vintage after:  unchanged
+Checked:        WebSearch: the BLS Metropolitan Area Employment and Unemployment
+                release for Jul 2026 came out 2026-09-02, and Aug 2026 was scheduled for
+                2026-09-30. Neither adds a usable vintage, because the layer
+                consumes annual averages (M13) and the 2026 annual average needs
+                Dec 2026 data (early 2027). bls.gov not fetched directly (403).
+Outputs changed: none from this run. The working tree was already dirty from
+                earlier uncommitted refreshes (laus_s20.parquet among them,
+                from the 2026-09-04 refresh), and this run left it untouched
+Validation:     n/a (no refresh run; cache not cleared)
+Notes:          Monthly runs will keep returning no-op until the 2026 annual
+                average publishes. Earlier refresh outputs are still waiting for a human commit.
+
+## [2026-10-19] IPEDS completions | blocked
+Vintage before: data/ipeds_cache holds completions_2015..2024_s{08,20,29,31,40}; collection year 2024 (AY2023-24) is the newest. `IPEDS_YEARS = range(2015, 2025)` in fetch_ipeds.py.
+Vintage after:  unchanged (cache NOT cleared, no refresh run)
+Checked:        NCES data-release-schedule page (read 2026-10-19): the 2025-26 fall
+                collection (IC, Completions, E12) lists a provisional data (PD)
+                release of **2026-07-28**, with a release memo confirming it
+                (collection window 2025-09-03 to 2025-10-15). So the release
+                the calendar was waiting on HAS happened. But the bulk files the
+                fetcher reads are not there: HEAD on
+                nces.ed.gov/ipeds/datacenter/data/C2025_A.zip and HD2025.zip -> 404
+                (also /ipeds/data-center/data/ and C2025_A_RV.zip -> 404);
+                C2024_A.zip -> 200 as a control. The memo says provisional data
+                are served through the "Use the Data" portal, so the bulk zips
+                may be posted under another name or later.
+Outputs changed: none from this run (tree was already dirty from earlier uncommitted refreshes).
+Validation:     n/a (no refresh run)
+Notes:          Two things need a human before this source can advance:
+                (1) Locate the actual download for 2025-26 provisional
+                completions + HD (Use the Data portal / Complete Data Files) and
+                confirm the file names. Running `refresh_dashboard.py --sources
+                ipeds` now would re-download 2015-2024 only: IPEDS_YEARS stops at
+                2024, so the refresh could not adopt 2025 even once the zips exist
+                (the same frozen-year-list defect as ACS/CBP; bump the list
+                first). It would also clear the cache for nothing.
+                (2) The memo reports file-structure changes in Completions:
+                "gender" -> "sex", "men/women" -> "male/female" in column and
+                documentation terms. The parser in fetch_ipeds.py likely keys on the
+                old names (CTOTALM/CTOTALW or similar) [VERIFY against the
+                2025 file before bumping]. Validation allowance: the
+                ANNUAL_VINTAGE_CHECKS IPEDS entry allows lag 2 from September, so
+                a 2024 vintage still passes until 2027 releases are due.
+                The calendar's "IPEDS provisional date" verification item is
+                now answered: PD 2026-07-28 (fall components).
+
+## [2026-11-02] JOLTS | no-op
+Vintage before: jolts.parquet newest reference month 2026-08 (2024-01..2026-08 monthly); jolts_vacancy_rates.parquet complete years through 2025
+Vintage after:  unchanged
+Checked:        WebSearch 2026-11-02: the BLS JOLTS news release (bls.gov/news.release/jolts.htm)
+                is the "2026 M08 Results" edition, published 2026-09-29. The next release
+                (Sep 2026 data) is scheduled for Tue 2026-11-03 10:00 ET, per the
+                release schedule and a secondary calendar (financecalendar.com).
+                bls.gov not fetched directly (403).
+Outputs changed: none from this run. jolts.parquet and jolts_vacancy_rates.parquet already
+                show as modified in the working tree from the earlier uncommitted
+                Aug 2026 refresh. This run left them untouched, and no per-state
+                parquets were touched either.
+Validation:     n/a (no refresh run; cache not cleared)
+Notes:          The routine fires on the 2nd, and this month the 2nd came a day before the
+                release, so Sep 2026 data will not be picked up until the 2026-12-02 run
+                unless someone triggers a manual run on or after 2026-11-03. If release
+                timing keeps landing just after the 2nd, consider moving the cron
+                to the 4th-5th. The earlier Aug 2026 refresh output is still awaiting a human commit.
+
+## [2026-11-08] KSDE youth cohorts | tooling — override rebuilt as a single-grade ratio update
+Vintage before: ksde.parquet grade groups 2010-2024; override wrote groups over ACS bands
+Vintage after:  unchanged grade groups; new ksde_cache/ksde_grades.parquet (single grades
+                K-12, CCD 2022 and 2024, 2,730 rows; totals match the grade-group cache
+                exactly: 460,067 and 452,185)
+Checked:        Urban Institute CCD API, ccd/enrollment/{year}/grade-{0..12} with fips=20;
+                directory filtered with fips=20 (the API ignores state_fips_code and was
+                returning all 19,636 U.S. districts; harmless, but about 20 pages).
+Outputs changed: none. data/outputs was NOT regenerated; the published projections still
+                carry the old override until a full --ksde/--all run is adopted.
+Validation:     pytest tests: 175 passed (five new KSDE tests replace the old one).
+Notes:          Why: the old apply_ksde_override replaced ACS youth bands with grade-group
+                enrollment one-for-one. Bands did not match (6-8, three grades, over ages
+                10-14, five ages: statewide 105,580 vs 206,240 ACS, -49%; 9-12, four grades,
+                over ages 15-17, three ages: +17%), public enrollment covers only ~81% of
+                resident children, and each district counted in its office county (Butler
+                enrollment = 1.30x resident children). The old test checked arithmetic only.
+                New method: ACS band x enrollment(2024, band grades)/enrollment(2022, band
+                grades), fall grade g = age g+5 (K-4 = 5-9, 5-9 = 10-14, 10-12 = 15-17).
+                Anchor = ACS period midpoint; target = baseline year capped at the latest
+                CCD year. ACS keeps level and residence geography; coverage cancels.
+                Anchor band < 100 keeps ACS (22 county-bands); ratios outside 0.85-1.15 are
+                clipped and flagged (17, all small counties). Diagnostics are written to
+                ksde_youth_adjustment_s20.parquet on the next run.
+                Effect (re-run of run_all_counties, seed 20260424, 2,000 draws; published
+                old override / ACS only / rebuilt): Kansas working age 2035 -4.25% / -1.03% /
+                -1.31%; counties declining 95 / 92 / 92; down >10% 74 / 62 / 62; 2035 entries
+                vs retirements 27,844 / 31,678 / 31,111 vs 29,642; four-county Wichita MSA
+                373,494 / 387,873 / 386,927; Butler +7.3 / -0.1 / -0.1; Sedgwick -3.2 / +1.8 /
+                +1.7. Needs a human decision to regenerate outputs and adopt a release.
+
+## [2026-11-08] Cohort population forecast (KSDE youth update) | refreshed
+Vintage before: projections_s20 / state_projection_s20 / county_summary_s20 from the
+                2026-10-02 --all run (old grade-group override)
+Vintage after:  same three files regenerated with the single-grade ratio update; new
+                ksde_youth_adjustment_s20.parquet (315 county-band rows). Kansas working age
+                2035 median 1,724,217 (-1.3%), 92 of 105 counties declining.
+Checked:        Chris approved regeneration in session (2026-11-08). Ran
+                `run_forecast.py --all --state 20 --sims 2000` (log .tmp/run_forecast_20261108_ksde.log),
+                after copying all 140 outputs to .tmp/outputs-snapshot-20261108-pre-ksde/.
+Outputs changed: the --all run changed 13 files. Ten were restored byte-for-byte from the
+                snapshot because their changes were NOT this fix: schema growth from other
+                uncommitted pipeline work (acs_combined 37->170 columns, lodes, commute,
+                participation, projections_effective, both sector files) and an IPEDS regression
+                (see Notes). Their regenerated copies are kept in .tmp/ksde-rebuild-run-20261108/
+                for whoever owns that work. Net change vs the pre-run tree: projections_s20,
+                state_projection_s20, county_summary_s20.csv (values only; schemas identical) and
+                the new diagnostics file. 137 files byte-identical.
+Validation:     pytest 175 passed. validate_outputs --pressure: pass. Legacy validate_outputs:
+                fails only on ks_occ_proj_state_s20 regional_in_demand, a file this run left
+                byte-identical (the known superseded any-region flags). Streamlit AppTest with the
+                staged release previewed: no exceptions in default, County Brief, Full Explorer,
+                Sedgwick.
+Notes:          (1) Staged, NOT adopted: pressure release 20261109T031552_270d1605. It differs from
+                the adopted 20261020T215651_b4a47fdc in projections_effective_s20 only (Kansas
+                eff_p50 2035 1,314,320 -> 1,355,104; four-county MSA 290,196 -> 300,711). Adopt with
+                `build_county_pressure.py` adopt path or rollback tooling after review.
+                (2) build_county_pressure.py fixes: the participation migration table read the
+                ADOPTED participation as "previous" after the first adoption (every change = 0);
+                it now reads the legacy file. Release scope now records the projections_s20
+                sha256 instead of the hard-coded "population_forecast: unchanged".
+                (3) IPEDS: the current fetch_ipeds.py (uncommitted edits) re-fetched because the
+                cache lacks 2015-2022 under its new year list, and nces.ed.gov/ipeds/complete-data-files/
+                HD2015..HD2022.zip return 404. The run wrote ipeds_s20 with 3 years (11,680 rows vs
+                16,502). Restored. Any further --all run will repeat this until the older-year URLs
+                are fixed; the adopted release's ipeds tables are unaffected.
+                (4) Legacy projections_effective_s20 and the legacy sector files still reflect the
+                old population run (restored, superseded by release tables).
+
+## [2026-11-08] IPEDS completions | tooling — two-path download fallback; 2015-2025 restored to the cache
+Vintage before: ipeds_cache had v3 detail only for 2023-2025; outputs ipeds_s20 legacy grain 2015-2024
+Vintage after:  ipeds_cache v3 detail for 2015-2025 (combined ipeds_detail_v3_s20_all.parquet, 41,193
+                rows, 100 institutions, all FLAGS published). data/outputs NOT changed.
+Checked:        HEAD requests 2026-11-08 for HD, C_A and FLAGS zips: complete-data-files serves
+                2023-2025 and 404s 2015-2022; datacenter/data serves 2015-2024 and 404s 2025.
+                fetch_ipeds.py now tries complete-data-files, then datacenter/data, and moves on
+                only on a 404 (a 5xx still raises). Older HD/C/FLAGS files parse under the v2/v3
+                schema with FLAGS published. Verified into .tmp/ipeds-fix-cache first, then the
+                2015-2022 per-year caches and the combined cache were copied into data/ipeds_cache.
+Outputs changed: none.
+Validation:     pytest tests: 179 passed (4 new in tests/test_fetch_ipeds_urls.py).
+Notes:          Found while verifying: the legacy outputs ipeds_s20 (and the years < 2025 that
+                the adopted pressure release copies from it) include every institution's CIP 99
+                grand-total row next to its program rows, so all-field sums are exactly 2x
+                (Kansas 2024: 110,502 vs 55,251). Release ipeds_s20 therefore shows 2015-2024 at
+                about 105-110K and 2025 at 56,560. Sector tables are correct (CIP 99 maps to no
+                sector) and the dashboard reads only ipeds_by_sector, so no chart was affected.
+                The v3 detail excludes CIP 99 and hierarchy subtotals. Fix needs a human decision:
+                regenerate ipeds_s20 / ipeds_by_sector_s20 from the v3 cache and restage the release
+                (build_county_pressure.py also labels earlier years "Legacy historical aggregation",
+                which would need updating). The vault's Part 1 State of the Trade deck quoted the
+                doubled four-county total and has been corrected (8,252 to 10,196).
+
+## [2026-11-08] Pressure release 20261109T034237_d5325ec1 | refreshed — adopted (KSDE youth update + IPEDS history)
+Vintage before: adopted 20261020T215651_b4a47fdc; outputs ipeds_s20 legacy grain 2015-2024 (CIP 99
+                totals included), ipeds_by_sector_s20 2015-2024
+Vintage after:  adopted 20261109T034237_d5325ec1. Outputs ipeds_s20 (41,193 rows, 96 columns,
+                2015-2025) and ipeds_by_sector_s20 (1,694 rows) regenerated from the v3 cache.
+Checked:        Chris approved folding the IPEDS fix into the release, then adopting (session
+                2026-11-08). By-sector values match the old file on all 1,469 overlapping rows; the
+                225 new rows are 2025 plus zero-award program cells the v3 detail keeps.
+Outputs changed: ipeds_s20.parquet, ipeds_by_sector_s20.parquet (in addition to the three population
+                files from the earlier entry). Pointer: data/outputs/pressure-current.json (previous
+                copy at .tmp/pressure-current.before-20261109T034237.json).
+Validation:     pytest 179 passed; validate_release pass; validate_outputs --pressure pass (before and
+                after adoption); legacy validate_outputs fails only on the known ks_occ_proj_state_s20
+                regional flag. Streamlit AppTest with the release previewed and after adoption: no
+                exceptions in default, County Brief, Full Explorer, Sedgwick, Butler, Greeley.
+Notes:          Release vs 20261020T215651_b4a47fdc: three tables changed. projections_effective_s20
+                (KSDE update; Kansas eff_p50 2035 1,314,320 -> 1,355,104). ipeds_s20 history no longer
+                doubled (Kansas 2024 110,502 -> 55,251; 2025 unchanged at 56,560, so the false 49% 2025
+                drop is gone). ipeds_by_sector_s20 totals unchanged (+70 zero cells). Other nine tables
+                byte-identical. build_county_pressure.py now reads IPEDS history and the participation
+                comparison from the legacy files (read_optional resolved through the adopted release and
+                copied the previous release forward) and labels v3 history accurately. The superseded
+                unadopted staging 20261109T031552_270d1605 was removed. Audit script now points at the v3
+                combined IPEDS cache. Roll back with:
+                `.venv/Scripts/python.exe build_county_pressure.py --rollback 20261020T215651_b4a47fdc`.
+                Nothing committed.

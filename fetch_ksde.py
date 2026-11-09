@@ -1,8 +1,14 @@
 """
 fetch_ksde.py
 Fetches Kansas K-12 enrollment data by district and aggregates to county FIPS.
-Used to replace ACS-derived youth cohort counts with actual enrollment figures,
-improving the near-term (4–14 year) workforce entry projection.
+Used to bring ACS youth cohorts forward from the ACS period midpoint to the
+baseline year with single-grade enrollment change ratios, improving the
+near-term (4–14 year) workforce entry projection. See apply_ksde_override.
+
+Enrollment never replaces ACS population levels. Rebuilt 2026-11-08: the
+original override wrote grade groups over ACS age bands of different widths
+(6-8, three grades, over ages 10-14, five ages), ignored the ~19% of children
+outside public schools, and counted each district in the county of its office.
 
 KS-ONLY MODULE.
 
@@ -21,10 +27,11 @@ Fallback: manually placed file at {cache_dir}/ksde_manual.csv
   Required columns: year, county_fips (3-digit or 5-digit), grade_group
                     (one of: 'k_5', '6_8', '9_12', 'total'), enrollment
 
-Grade → ACS cohort mapping:
-  9-12 (ages 14-17) → pop_15_17    — enters workforce in 1–3 years
-  6-8  (ages 11-13) → contributes to pop_10_14
-  K-5  (ages  5-10) → contributes to pop_5_9 / pop_10_14
+Grade → ACS cohort mapping (single grades; fall grade g is age g+5):
+  K-4   (ages  5-9)  → pop_5_9
+  5-9   (ages 10-14) → pop_10_14
+  10-12 (ages 15-17) → pop_15_17   — enters workforce in 1–3 years
+The k_5 / 6_8 / 9_12 grade groups below feed enrollment trend alerts only.
 
 Output DataFrame columns:
   state_fips (str), county_fips (3-digit str), year (int),
@@ -113,10 +120,12 @@ def _paginate(url: str, base_params: dict) -> list[dict]:
 def _fetch_leaid_county_map(year: int) -> dict[str, str]:
     """
     Fetch district directory for one year; return {leaid: county_fips_3digit}.
-    Uses state_fips_code=20 filter (directory uses this param; enrollment uses fips).
+    Filters with fips=20. Checked 2026-11-08: the API ignores state_fips_code
+    and returned all 19,636 U.S. districts (harmless, since leaids are unique,
+    but about 20 pages); fips=20 returns the 337 Kansas districts.
     """
     url = f"{_DIR_BASE}/{year}/"
-    rows = _paginate(url, {"state_fips_code": int(_KS_FIPS)})
+    rows = _paginate(url, {"fips": int(_KS_FIPS)})
     mapping: dict[str, str] = {}
     for row in rows:
         leaid = str(row.get("leaid", "")).strip()
@@ -178,6 +187,22 @@ def _fetch_year_all_groups(
         .assign(year=year, grade_group="total", state_fips=_KS_FIPS)
     )
     return pd.concat([df, totals], ignore_index=True)
+
+
+def _fetch_year_grades(year: int, leaid_county: dict[str, str]) -> pd.DataFrame:
+    """Fetch single grades K-12 for one year; aggregate to county x grade."""
+    out: dict[tuple[str, int], int] = {}
+    for grade in range(0, 13):
+        for row in _fetch_grade(year, grade):
+            county = leaid_county.get(str(row.get("leaid", "")))
+            enroll = row.get("enrollment")
+            # CCD codes suppressed/missing counts as negatives; never count them as zero.
+            if county is None or enroll is None or int(enroll) < 0:
+                continue
+            out[(county, grade)] = out.get((county, grade), 0) + int(enroll)
+        time.sleep(0.2)
+    return pd.DataFrame([{"state_fips": _KS_FIPS, "county_fips": c, "year": year, "grade": g, "enrollment": v}
+                         for (c, g), v in out.items()])
 
 
 # ── Manual file fallback ──────────────────────────────────────────────────────
@@ -351,80 +376,184 @@ def fetch_ksde(
     return df
 
 
-# ── ACS youth cohort override ─────────────────────────────────────────────────
+def fetch_ksde_grades(
+    years: list[int],
+    cache_dir: Path,
+    state_fips: str = "20",
+) -> pd.DataFrame:
+    """
+    Single-grade (K-12) CCD enrollment by county for the requested years.
+
+    Returns columns: state_fips, county_fips (3-digit), year, grade (0=K..12),
+    enrollment. Counties are the district office county, using the union of
+    the requested years' directories so a district that closed or merged
+    still maps in the year it reported. Cached at {cache_dir}/ksde_grades.parquet.
+    """
+    if state_fips.zfill(2) != _KS_FIPS:
+        raise ValueError(f"fetch_ksde_grades is Kansas-only (FIPS 20). Got: {state_fips}")
+    years = sorted({int(y) for y in years})
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    cache_file = cache_dir / "ksde_grades.parquet"
+    cached = load_fresh_cache(cache_file, years, "KSDE single-grade enrollment")
+    if cached is not None:
+        return cached[cached["year"].isin(years)].reset_index(drop=True)
+
+    leaid_county: dict[str, str] = {}
+    for year in years:  # later years win for districts present in both
+        leaid_county.update(_fetch_leaid_county_map(year))
+    if not leaid_county:
+        warnings.warn("KSDE single-grade enrollment unavailable: CCD directory fetch failed.", UserWarning, stacklevel=2)
+        return pd.DataFrame(columns=["state_fips", "county_fips", "year", "grade", "enrollment"])
+
+    frames = []
+    for year in years:
+        print(f"  KSDE/CCD single grades {year}…")
+        try:
+            frame = _fetch_year_grades(year, leaid_county)
+            if not frame.empty:
+                frames.append(frame)
+        except Exception as exc:
+            print(f"    Warning: CCD {year} single grades failed — {exc}")
+    if not frames:
+        return pd.DataFrame(columns=["state_fips", "county_fips", "year", "grade", "enrollment"])
+    df = pd.concat(frames, ignore_index=True).sort_values(["county_fips", "year", "grade"]).reset_index(drop=True)
+    save_if_complete(df, cache_file, years, sorted(df["year"].unique()), "KSDE single-grade enrollment")
+    return df
+
+
+# ── ACS youth cohort update ───────────────────────────────────────────────────
+
+# Fall grade g is age g+5 (Kansas kindergarten entry: age 5 by August 31), so
+# each ACS youth band has exactly as many grades as single years of age.
+BAND_GRADES: dict[str, list[int]] = {
+    "pop_5_9":   [0, 1, 2, 3, 4],
+    "pop_10_14": [5, 6, 7, 8, 9],
+    "pop_15_17": [10, 11, 12],
+}
+# Smallest anchor-year band enrollment that gives a usable ratio; smaller
+# counties keep their ACS band unchanged.
+MIN_ANCHOR_ENROLLMENT = 100
+# Bounds on the applied two-year change ratio. Real two-year band changes in
+# Kansas counties are a few percent; anything outside this range is treated
+# as a district reorganization or virtual-school shift, not a population change.
+RATIO_BOUNDS = (0.85, 1.15)
+
+
+def ksde_override_years(baseline_year: int, latest_ccd_year: int = max(KSDE_YEARS)) -> tuple[int, int]:
+    """(anchor, target): the ACS 5-year period midpoint and the CCD year the band is moved to."""
+    return baseline_year - 2, min(baseline_year, latest_ccd_year)
+
 
 def apply_ksde_override(
     acs_df: pd.DataFrame,
-    ksde_df: pd.DataFrame,
+    grades_df: pd.DataFrame,
     baseline_year: int | None = None,
-) -> pd.DataFrame:
+    anchor_year: int | None = None,
+    target_year: int | None = None,
+    return_diagnostics: bool = False,
+):
     """
-    Patch ACS youth cohort columns with KSDE enrollment values for the
-    baseline (most recent) ACS year. Only affects the baseline row per county;
-    historical ACS rows are left unchanged.
+    Move the baseline ACS youth bands from the ACS period midpoint to the
+    baseline year using single-grade enrollment change ratios.
 
-    Mapping:
-      KSDE 9-12 enrollment  → pop_15_17
-      KSDE 6-8  enrollment  → pop_10_14
-      KSDE K-5  enrollment  → pop_5_9
+        band_target = ACS band x enrollment(target year, band grades)
+                                / enrollment(anchor year, band grades)
+
+    ACS keeps the population level and residence geography; enrollment only
+    supplies the change between the midpoint of the 5-year ACS period and
+    the target year. Why a ratio, not a replacement:
+      - band widths match: single grades map one-to-one onto single ages;
+      - private and home-school children (~19% of Kansas ages 5-17) cancel,
+        assuming their share is stable over two years;
+      - the district-office county assignment only affects a growth rate,
+        not a level, so a district that crosses county lines no longer moves
+        children into the wrong county.
+    Counties with an anchor band below MIN_ANCHOR_ENROLLMENT keep their ACS
+    value; ratios outside RATIO_BOUNDS are clipped and flagged. Only the
+    baseline ACS row is changed; historical rows are untouched.
 
     Parameters
     ----------
-    acs_df       : full ACS DataFrame from fetch_acs.fetch_all()
-    ksde_df      : output of fetch_ksde()
-    baseline_year: ACS year to patch (default: max year in acs_df)
+    acs_df        : full ACS DataFrame (fetch_acs.fetch_all output)
+    grades_df     : fetch_ksde_grades output (needs a `grade` column)
+    baseline_year : ACS year to patch (default: max year in acs_df)
+    anchor_year, target_year : default to ksde_override_years(baseline_year)
+    return_diagnostics : also return one row per county x band
 
     Returns
     -------
-    Patched copy of acs_df with an added 'ksde_override' column (True/False).
+    Patched copy of acs_df with 'ksde_override' (bool) and 'ksde_method'
+    columns; plus a diagnostics DataFrame when return_diagnostics is True.
     """
-    if ksde_df.empty:
-        acs_df = acs_df.copy()
-        acs_df["ksde_override"] = False
-        return acs_df
-
-    if baseline_year is None:
-        baseline_year = int(acs_df["year"].max())
-
-    ksde_years = sorted(ksde_df["year"].unique())
-    ksde_use_year = max((y for y in ksde_years if y <= baseline_year),
-                        default=max(ksde_years))
-
-    ksde_base = ksde_df[ksde_df["year"] == ksde_use_year]
-
-    group_to_col = {
-        "9_12": "pop_15_17",
-        "6_8":  "pop_10_14",
-        "k_5":  "pop_5_9",
-    }
-
     acs = acs_df.copy()
     acs["ksde_override"] = False
-    patched_cells = 0
+    acs["ksde_method"] = ""
+    diag_cols = ["county_fips", "band", "anchor_year", "target_year", "anchor_enrollment",
+                 "target_enrollment", "raw_ratio", "applied_ratio", "acs_value", "patched_value", "status"]
+    if grades_df is None or grades_df.empty:
+        return (acs, pd.DataFrame(columns=diag_cols)) if return_diagnostics else acs
+    if "grade" not in grades_df.columns:
+        raise ValueError("apply_ksde_override needs single-grade enrollment (fetch_ksde_grades). "
+                         "Grade-group data cannot be mapped onto ACS age bands.")
 
-    for group, col in group_to_col.items():
+    if baseline_year is None:
+        baseline_year = int(acs["year"].max())
+    default_anchor, default_target = ksde_override_years(baseline_year, int(grades_df["year"].max()))
+    anchor_year = default_anchor if anchor_year is None else anchor_year
+    target_year = default_target if target_year is None else target_year
+
+    have = set(pd.to_numeric(grades_df["year"]).astype(int))
+    if target_year <= anchor_year or not {anchor_year, target_year} <= have:
+        print(f"  KSDE update skipped: need CCD {anchor_year} and a later target year "
+              f"(target {target_year}; have {sorted(have)}). ACS youth bands unchanged.")
+        return (acs, pd.DataFrame(columns=diag_cols)) if return_diagnostics else acs
+
+    g = grades_df.copy()
+    g["county_fips"] = g["county_fips"].astype(str).str[-3:].str.zfill(3)
+    g["grade"] = pd.to_numeric(g["grade"]).astype(int)
+    g["year"] = pd.to_numeric(g["year"]).astype(int)
+    pivot = g.pivot_table(index=["county_fips", "grade"], columns="year", values="enrollment", aggfunc="sum").fillna(0)
+
+    lo, hi = RATIO_BOUNDS
+    bl_mask = acs["year"] == baseline_year
+    rows = []
+    for col, grades in BAND_GRADES.items():
         if col not in acs.columns:
             continue
-        grp_df = ksde_base[ksde_base["grade_group"] == group][
-            ["county_fips", "enrollment"]
-        ].set_index("county_fips")["enrollment"]
+        acs[col] = acs[col].astype(float)
+        for county in acs.loc[bl_mask, "county_fips"].unique():
+            mask = bl_mask & (acs["county_fips"] == county)
+            acs_value = float(acs.loc[mask, col].iloc[0])
+            idx = [(county, gr) for gr in grades if (county, gr) in pivot.index]
+            a = float(pivot.loc[idx, anchor_year].sum()) if idx else 0.0
+            t = float(pivot.loc[idx, target_year].sum()) if idx else 0.0
+            raw = t / a if a > 0 else float("nan")
+            if a < MIN_ANCHOR_ENROLLMENT or not np.isfinite(raw) or t <= 0:
+                applied, status = 1.0, "kept_acs_small_or_missing"
+            elif raw < lo or raw > hi:
+                applied, status = min(max(raw, lo), hi), "clipped"
+            else:
+                applied, status = raw, "applied"
+            patched = acs_value * applied
+            acs.loc[mask, col] = patched
+            if status != "kept_acs_small_or_missing":
+                acs.loc[mask, "ksde_override"] = True
+                acs.loc[mask, "ksde_method"] = f"ccd_ratio_{anchor_year}_{target_year}"
+            rows.append({"county_fips": county, "band": col, "anchor_year": anchor_year, "target_year": target_year,
+                         "anchor_enrollment": a, "target_enrollment": t, "raw_ratio": raw, "applied_ratio": applied,
+                         "acs_value": acs_value, "patched_value": patched, "status": status})
 
-        bl_mask = acs["year"] == baseline_year
-        for county_fips, enroll_val in grp_df.items():
-            county_mask = bl_mask & (acs["county_fips"] == county_fips)
-            if county_mask.any():
-                acs.loc[county_mask, col]             = float(enroll_val)
-                acs.loc[county_mask, "ksde_override"] = True
-                patched_cells += int(county_mask.sum())
-
-    bl_mask = acs["year"] == baseline_year
     youth_cols = ["pop_under_5", "pop_5_9", "pop_10_14", "pop_15_17"]
     if all(c in acs.columns for c in youth_cols):
+        acs["pop_youth"] = acs["pop_youth"].astype(float) if "pop_youth" in acs.columns else float("nan")
         acs.loc[bl_mask, "pop_youth"] = acs.loc[bl_mask, youth_cols].sum(axis=1)
     total_parts = ["pop_youth", "pop_working_age", "pop_retirement"]
     if all(c in acs.columns for c in total_parts):
+        acs["pop_total"] = acs["pop_total"].astype(float) if "pop_total" in acs.columns else float("nan")
         acs.loc[bl_mask, "pop_total"] = acs.loc[bl_mask, total_parts].sum(axis=1)
 
-    print(f"  KSDE override applied: {patched_cells} county-cohort cells patched "
-          f"(ACS year {baseline_year} <- KSDE year {ksde_use_year})")
-    return acs
+    diag = pd.DataFrame(rows, columns=diag_cols)
+    counts = diag["status"].value_counts().to_dict()
+    print(f"  KSDE youth update: ACS {baseline_year} bands moved from CCD {anchor_year} to {target_year} "
+          f"with single-grade ratios ({counts})")
+    return (acs, diag) if return_diagnostics else acs

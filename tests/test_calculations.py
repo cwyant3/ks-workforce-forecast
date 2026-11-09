@@ -233,7 +233,7 @@ def test_migration_estimator_uses_age_structured_residual_when_cohorts_exist():
     assert math.isclose(model.mig_mean, 0.02, rel_tol=1e-12)
 
 
-def test_participation_model_prefers_acs_lfpr_over_laus_proxy():
+def test_participation_model_prefers_acs_count_and_rate_over_laus_proxy():
     acs = pd.DataFrame(
         {
             "state_fips": ["20"],
@@ -258,41 +258,73 @@ def test_participation_model_prefers_acs_lfpr_over_laus_proxy():
     part = build_participation_table(acs, laus_df=laus)
 
     assert part.loc[0, "lfpr_pct"] == 72.5
-    assert part.loc[0, "effective_labor_force"] == 725
+    # Use the age-compatible ACS count, not LFPR times a different population.
+    assert part.loc[0, "effective_labor_force"] == 710
     assert part.loc[0, "lfpr_source"] == "ACS_B23001_civilian_18_64"
     assert "ACS_LFPR" in part.loc[0, "layers_used"]
     assert "LAUS_CONTEXT" in part.loc[0, "layers_used"]
 
 
-def test_ksde_override_recalculates_youth_and_total_population():
-    acs = pd.DataFrame(
-        {
-            "county_fips": ["001"],
-            "year": [2023],
-            "pop_under_5": [50],
-            "pop_5_9": [100],
-            "pop_10_14": [100],
-            "pop_15_17": [60],
-            "pop_youth": [310],
-            "pop_working_age": [1000],
-            "pop_retirement": [200],
-            "pop_total": [1510],
-        }
-    )
-    ksde = pd.DataFrame(
-        {
-            "county_fips": ["001", "001", "001"],
-            "year": [2023, 2023, 2023],
-            "grade_group": ["k_5", "6_8", "9_12"],
-            "enrollment": [120, 80, 70],
-        }
-    )
+def _ksde_acs(**overrides):
+    row = {"county_fips": "001", "year": 2024, "pop_under_5": 500, "pop_5_9": 1000, "pop_10_14": 1000,
+           "pop_15_17": 600, "pop_youth": 3100, "pop_working_age": 6000, "pop_retirement": 1500, "pop_total": 10600}
+    row.update(overrides)
+    return pd.DataFrame([row])
 
-    out = apply_ksde_override(acs, ksde, baseline_year=2023)
 
-    assert out.loc[0, "pop_youth"] == 320
-    assert out.loc[0, "pop_total"] == 1520
-    assert out.loc[0, "ksde_override"]
+def _ksde_grades(per_grade_2022, per_grade_2024, county="001"):
+    """Single-grade enrollment; each argument maps grade -> enrollment or is one value for all grades."""
+    rows = []
+    for year, spec in ((2022, per_grade_2022), (2024, per_grade_2024)):
+        for grade in range(13):
+            value = spec.get(grade, 0) if isinstance(spec, dict) else spec
+            rows.append({"county_fips": county, "year": year, "grade": grade, "enrollment": value})
+    return pd.DataFrame(rows)
+
+
+def test_ksde_update_keeps_acs_levels_when_enrollment_is_flat():
+    # Grade-group widths differ from ACS bands (6-8 is three grades, 10-14 is five ages).
+    # Single grades plus a ratio must leave ACS unchanged when enrollment does not move.
+    out = apply_ksde_override(_ksde_acs(), _ksde_grades(80, 80))
+    assert out.loc[0, ["pop_5_9", "pop_10_14", "pop_15_17"]].tolist() == [1000, 1000, 600]
+    assert out.loc[0, "pop_youth"] == 3100 and out.loc[0, "pop_total"] == 10600
+
+
+def test_ksde_update_is_invariant_to_public_school_coverage():
+    # Private and home-school children are missing from both years, so they cancel.
+    full = apply_ksde_override(_ksde_acs(), _ksde_grades(100, {g: 110 if 5 <= g <= 9 else 100 for g in range(13)}))
+    partial = apply_ksde_override(_ksde_acs(), _ksde_grades(80, {g: 88 if 5 <= g <= 9 else 80 for g in range(13)}))
+    assert full.loc[0, "pop_10_14"] == pytest.approx(1100)
+    assert partial.loc[0, "pop_10_14"] == pytest.approx(1100)
+    assert full.loc[0, "pop_5_9"] == pytest.approx(1000) and full.loc[0, "pop_15_17"] == pytest.approx(600)
+    assert full.loc[0, "pop_youth"] == pytest.approx(3200) and full.loc[0, "ksde_override"]
+
+
+def test_ksde_update_keeps_residence_level_when_a_district_is_counted_elsewhere():
+    # A district enrolling twice the county's resident children (office-county assignment)
+    # changes nothing if its enrollment is stable: ACS keeps the residence-based level.
+    out = apply_ksde_override(_ksde_acs(), _ksde_grades(400, 400))
+    assert out.loc[0, "pop_10_14"] == pytest.approx(1000)
+
+
+def test_ksde_update_guards_small_counties_and_extreme_ratios():
+    small = apply_ksde_override(_ksde_acs(), _ksde_grades(5, 10))  # anchor band below the minimum
+    assert small.loc[0, "pop_5_9"] == 1000 and not small.loc[0, "ksde_override"]
+    jump, diag = apply_ksde_override(_ksde_acs(), _ksde_grades(100, {g: 200 if g >= 10 else 100 for g in range(13)}),
+                                     return_diagnostics=True)
+    assert jump.loc[0, "pop_15_17"] == pytest.approx(600 * 1.15)
+    assert diag.set_index("band").loc["pop_15_17", "status"] == "clipped"
+
+
+def test_ksde_update_rejects_grade_group_data_and_leaves_history_alone():
+    groups = pd.DataFrame({"county_fips": ["001"] * 3, "year": [2024] * 3,
+                           "grade_group": ["k_5", "6_8", "9_12"], "enrollment": [120, 80, 70]})
+    with pytest.raises(ValueError, match="single-grade"):
+        apply_ksde_override(_ksde_acs(), groups)
+    acs = pd.concat([_ksde_acs(year=2019), _ksde_acs()], ignore_index=True)
+    out = apply_ksde_override(acs, _ksde_grades(100, 90))
+    assert out.loc[0, "pop_5_9"] == 1000  # 2019 row untouched
+    assert out.loc[1, "pop_5_9"] == pytest.approx(900)
 
 
 def test_state_aggregate_uses_percentile_of_aggregate_simulations():
@@ -469,9 +501,9 @@ def test_demand_flags_from_legacy_combined_book(tmp_path):
     by_soc = flags.set_index("soc_code")
     assert int(by_soc.loc["29-1141", "in_demand"]) == 1
     assert int(by_soc.loc["47-2111", "in_demand"]) == 0
-    assert int(by_soc.loc["51-3022", "regional_in_demand"]) == 1
-    assert int(by_soc.loc["47-2111", "regional_in_demand"]) == 1
-    assert int(by_soc.loc["29-1141", "regional_in_demand"]) == 0
+    assert pd.isna(by_soc.loc["51-3022", "regional_in_demand"])
+    assert pd.isna(by_soc.loc["47-2111", "regional_in_demand"])
+    assert pd.isna(by_soc.loc["29-1141", "regional_in_demand"])
 
 
 def test_demand_flags_from_split_statewide_and_regional_books(tmp_path):
@@ -488,8 +520,8 @@ def test_demand_flags_from_split_statewide_and_regional_books(tmp_path):
     assert vintage == "2026"
     by_soc = flags.set_index("soc_code")
     assert int(by_soc.loc["29-1141", "in_demand"]) == 1
-    assert int(by_soc.loc["51-3022", "regional_in_demand"]) == 1
-    assert int(by_soc["regional_in_demand"].sum()) == 1
+    assert pd.isna(by_soc.loc["51-3022", "regional_in_demand"])
+    assert by_soc["regional_in_demand"].isna().all()
 
 
 def test_demand_flags_read_the_real_2026_statewide_layout(tmp_path):
@@ -515,7 +547,7 @@ def test_demand_flags_read_the_real_2026_statewide_layout(tmp_path):
     assert vintage == "2026"
     assert int(by_soc.loc["35-3023", "in_demand"]) == 1
     assert int(by_soc.loc["51-3022", "in_demand"]) == 0
-    assert int(by_soc.loc["51-3022", "regional_in_demand"]) == 1
+    assert pd.isna(by_soc.loc["51-3022", "regional_in_demand"])
 
 
 def test_demand_flags_regional_book_with_2026_headers(tmp_path):
@@ -530,8 +562,8 @@ def test_demand_flags_regional_book_with_2026_headers(tmp_path):
     }, layout="2026")
     flags, _ = load_demand_flags(statewide, regional)
     by_soc = flags.set_index("soc_code")
-    assert int(by_soc.loc["51-3022", "regional_in_demand"]) == 1
-    assert int(by_soc["regional_in_demand"].sum()) == 1
+    assert pd.isna(by_soc.loc["51-3022", "regional_in_demand"])
+    assert by_soc["regional_in_demand"].isna().all()
 
 
 def test_demand_flags_statewide_only_book_refuses_to_zero_regional(tmp_path):
@@ -541,7 +573,7 @@ def test_demand_flags_statewide_only_book_refuses_to_zero_regional(tmp_path):
     with pytest.raises(RuntimeError, match="Kansas Regions"):
         load_demand_flags(statewide)
     flags, _ = load_demand_flags(statewide, allow_no_regional=True)
-    assert int(flags["regional_in_demand"].sum()) == 0
+    assert flags["regional_in_demand"].isna().all()
 
 
 def test_demand_flags_regional_book_ignores_its_own_kansas_sheet(tmp_path):
@@ -559,7 +591,7 @@ def test_demand_flags_regional_book_ignores_its_own_kansas_sheet(tmp_path):
     assert vintage == "2026"
     assert int(by_soc.loc["29-1141", "in_demand"]) == 1
     assert int(by_soc.loc["51-3022", "in_demand"]) == 0
-    assert int(by_soc.loc["51-3022", "regional_in_demand"]) == 1
+    assert pd.isna(by_soc.loc["51-3022", "regional_in_demand"])
 
 
 def test_select_demand_workbooks_pairs_newest_statewide_with_newest_regional():
@@ -609,6 +641,7 @@ def test_demand_flags_validator_passes_when_populated_and_skips_other_states(tmp
         "soc_code": ["29-1141", "51-3022"],
         "in_demand": [1, 0],
         "regional_in_demand": [0, 1],
+        "regional_demand_region_id": ["KS-SW", "KS-SW"],
         "demand_rank": [1, 2],
     }).to_parquet(tmp_path / "ks_occ_proj_state_s20.parquet")
     assert _failures_for_ks_demand_flags(tmp_path, state="20") == []

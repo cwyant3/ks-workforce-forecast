@@ -109,7 +109,7 @@ def render_outlook(frame, detail, flows, regional, proj, effective, sectors, sum
     with st.expander("Explore all programs, institutions and commuting origins"):
         train_tab, commute_tab = st.tabs(["Training capacity", "Recruiting geography"])
         with train_tab:
-            training(frame, detail, county, "outlook_all_training_")
+            training(frame, detail, county, "outlook_all_training_", industry)
         with commute_tab:
             movement(frame, flows, county, names, "outlook_all_movement_")
 

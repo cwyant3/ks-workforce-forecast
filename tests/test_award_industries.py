@@ -43,6 +43,20 @@ def test_allocation_conserves_awards_and_labels_residuals():
     assert mix[NO_OCCUPATION] == pytest.approx(7)
 
 
+def test_program_share_matches_industry_bar():
+    from dashboard.award_industries import program_industry_share
+    crosswalk = pd.DataFrame({"program_code": ["48.0508", "48.0508", "51.3801"],
+                              "occupation_code": ["51-4121", "51-4122", "29-1141"]})
+    weights = pd.DataFrame({"occupation_code": ["51-4121", "51-4121", "51-4122"],
+                            "industry": ["31-33", OTHER_INDUSTRIES, "31-33"], "weight": [.75, .25, 1.0]})
+    detail = pd.DataFrame({"program_code": ["48.0508", "51.3801", "24.0101"], "completions": [40, 5, 7]})
+    share = program_industry_share(detail.program_code, crosswalk, weights, "31-33")
+    assert share["48.0508"] == pytest.approx(.875)
+    assert share["51.3801"] == 0 and share["24.0101"] == 0
+    tied = (detail.completions * detail.program_code.map(share)).sum()
+    assert tied == pytest.approx(allocate_awards(detail, crosswalk, weights)["31-33"])
+
+
 def test_empty_detail_returns_empty():
     assert allocate_awards(pd.DataFrame({"program_code": [], "completions": []}),
                            pd.DataFrame({"program_code": [], "occupation_code": []}),

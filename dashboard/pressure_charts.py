@@ -242,52 +242,88 @@ def pay(frame,county,key):
     evidence(rows)
 
 
-def training(frame,detail,county,key):
+def _industry_weights():
+    from dashboard.award_industries import load_industry_weights
+    try:
+        return load_industry_weights()
+    except (OSError,ValueError):
+        return None,None
+
+
+def training(frame,detail,county,key,industry=None):
     st.markdown("### Entry and training")
     st.caption("Credentials awarded at institutions in the county · academic year 2024–2025 · provisional IPEDS collection 2025.")
-    metric_card(frame,series(frame,"ipeds","credentials_awarded",county),"Reported credential awards",key+"total")
     selected=detail[detail.geography_id.eq(county)].copy() if not detail.empty else detail
+    weights,year=_industry_weights() if industry else (None,None)
+    focus=industry is not None and weights is not None and not selected.empty
+    if focus:
+        from dashboard.award_industries import program_industry_share
+        from dashboard.training_pathways import load_crosswalk
+        share=program_industry_share(selected.program_code,load_crosswalk(),weights,industry)
+        selected["industry_awards"]=pd.to_numeric(selected.completions,errors="coerce")*selected.program_code.map(share).fillna(0)
+    total_col,focus_col=st.columns(2) if focus else (st.container(),None)
+    with total_col:
+        metric_card(frame,series(frame,"ipeds","credentials_awarded",county),"Reported credential awards · all programs",key+"total")
     if selected.empty:
         st.info("No reporting institution observations for this county in the adopted collection. This does not establish that no training providers exist.")
         return
+    if industry and weights is None:
+        st.info("The national occupation-by-industry employment file is unavailable, so awards cannot be tied to the selected industry. All reported awards are shown.")
     provider=st.selectbox("Training institution",["All reported institutions",*sorted(selected.institution_name.unique())],key=key+"provider")
     if provider!="All reported institutions":selected=selected[selected.institution_name.eq(provider)]
-    groups=selected.groupby("credential_level",dropna=False).completions.sum(min_count=1).dropna().sort_values(ascending=False)
+    name=INDUSTRIES.get(industry,industry)
+    if focus:
+        with focus_col:
+            st.metric(f"Estimated awards related to {name}",f"{selected.industry_awards.sum():,.0f}",
+                      help="Estimate. Each award is split across its program's related occupations, then by each occupation's national share of employment in this industry.")
+        scope=st.radio("Awards shown",[f"Related to {name} (estimate)","All reported awards"],horizontal=True,key=key+"scope")
+        focus=scope!="All reported awards"
+    measure,unit_label="industry_awards" if focus else "completions",f"Estimated {name} awards" if focus else "Awards"
+    groups=selected.groupby("credential_level",dropna=False)[measure].sum(min_count=1).dropna()
+    groups=groups[groups.round(0)>0].sort_values(ascending=False)
     if not groups.empty:
-        st.markdown("#### Awards by credential level")
-        draw(horizontal(groups.tolist(),[str(x).replace("_"," ").capitalize() for x in groups.index],"Awards",color=TEAL),key+"credentials")
-    top=selected.groupby("program_code").completions.sum(min_count=1).dropna().sort_values(ascending=False).head(10)
+        st.markdown("#### Awards by credential level" + (f" · related to {name}" if focus else ""))
+        draw(horizontal(groups.round(0).tolist(),[str(x).replace("_"," ").capitalize() for x in groups.index],unit_label,color=TEAL),key+"credentials")
+    top=selected.groupby("program_code")[measure].sum(min_count=1).dropna()
+    top=top[top.round(0)>0].sort_values(ascending=False).head(10)
     if not top.empty:
-        st.markdown("#### Largest reported programs")
+        st.markdown("#### Largest reported programs" + (f" · related to {name}" if focus else ""))
         titles = program_titles()
         labels = [titles.get(str(code), f"Title unavailable (CIP {code})") for code in top.index]
         wrapped = ["<br>".join(wrap(label, width=34)) for label in labels]
-        fig = horizontal(top.tolist(), top.index.tolist(), "Awards · top 10 programs", color=BLUE,
+        fig = horizontal(top.round(0).tolist(), top.index.tolist(), f"{unit_label} · top 10 programs", color=BLUE,
                          height=max(420, sum(max(1, label.count("<br>")+1)*20+16 for label in wrapped)+65))
         fig.update_yaxes(type="category", tickmode="array", tickvals=top.index.tolist(), ticktext=wrapped)
         fig.update_traces(customdata=list(zip(labels, top.index)),
-                          hovertemplate="%{customdata[0]}<br>CIP %{customdata[1]}<br>%{x:,.0f} awards<extra></extra>")
+                          hovertemplate="%{customdata[0]}<br>CIP %{customdata[1]}<br>%{x:,.0f} "+("estimated awards" if focus else "awards")+"<extra></extra>")
         draw(fig,key+"programs")
+    elif focus:
+        st.info(f"No reported programs here relate to {name} occupations through the crosswalk.")
+    if focus:
+        st.caption(f"ESTIMATE · Awards are tied to {name} by splitting each award equally across its program's related occupations (NCES CIP 2020–SOC 2018), "
+                   f"then keeping each occupation's national share of employment in {name} (BLS OEWS {year}). "
+                   "A program with 100 awards whose occupations are 40% employed in this industry contributes 40. "
+                   "This reflects the national industry mix of related occupations, not where graduates work or local hiring.")
     st.caption("Awards may exceed the number of people. They do not establish local placements or new workers. Program titles use the NCES CIP 2020 classification; hover for the CIP code. The ranking is award volume, not employment demand or program quality.")
     st.caption("Program title source: [NCES Classification of Instructional Programs](https://nces.ed.gov/ipeds/cipcode/Files/CIPCode2020.csv).")
-    award_industry_chart(selected,key+"industries")
+    award_industry_chart(selected,key+"industries",industry)
     evidence(selected,"Institution totals, reporting flags and program records")
 
 
-def award_industry_chart(selected,key):
+def award_industry_chart(selected,key,industry=None):
     """Estimated industry mix of awards; an allocation, never a placement record."""
-    from dashboard.award_industries import load_industry_weights, allocate_awards, OTHER_INDUSTRIES
+    from dashboard.award_industries import allocate_awards, OTHER_INDUSTRIES
     from dashboard.training_pathways import load_crosswalk
-    try:
-        weights,year=load_industry_weights()
-    except (OSError,ValueError):
+    weights,year=_industry_weights()
+    if weights is None:
         st.info("The national occupation-by-industry employment file is unavailable, so awards are not broken down by industry.")
         return
     mix=allocate_awards(selected,load_crosswalk(),weights)
     if mix.empty:return
     labels=[f"{INDUSTRIES[c]} (NAICS {c})" if c in INDUSTRIES else c for c in mix.index]
-    st.markdown("#### Estimated awards by related industry")
-    fig=horizontal(mix.round(0).tolist(),labels,"Estimated awards",color=GOLD,height=max(320,len(mix)*34+80))
+    colors=[GOLD if c==industry else "#C9CED6" for c in mix.index] if industry in mix.index else GOLD
+    st.markdown("#### Estimated awards by related industry" + (f" · {INDUSTRIES.get(industry,industry)} highlighted" if industry in mix.index else ""))
+    fig=horizontal(mix.round(0).tolist(),labels,"Estimated awards",color=colors,height=max(320,len(mix)*34+80))
     fig.update_traces(hovertemplate="%{y}<br>%{x:,.0f} estimated awards<extra></extra>")
     draw(fig,key)
     other=mix.get(OTHER_INDUSTRIES,0)/mix.sum()
@@ -377,7 +413,7 @@ def render_county_brief(frame,detail,flows,regional,county,county_name,names,ann
     with tabs[2]:
         demand(frame,county,industry,names,"brief_demand_")
         pay(frame,county,"brief_pay_")
-    with tabs[3]:training(frame,detail,county,"brief_training_")
+    with tabs[3]:training(frame,detail,county,"brief_training_",industry)
     with tabs[4]:movement(frame,flows,county,names,"brief_movement_")
     with tabs[5]:regional_view(regional,county,"brief_regional_")
     st.download_button("Download county observations with sources",frame[frame.geography_id.eq(county)].to_csv(index=False).encode(),f"{county}_workforce_observations.csv","text/csv",key="brief_source_download")

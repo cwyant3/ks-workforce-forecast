@@ -61,6 +61,24 @@ def load_industry_weights() -> tuple[pd.DataFrame, int]:
     return industry_weights(by_sector.loc[by_sector.year.eq(year)], national), year
 
 
+def program_industry_share(programs, crosswalk: pd.DataFrame, weights: pd.DataFrame,
+                           industry: str) -> pd.Series:
+    """Estimated share (0-1) of each program's awards related to one industry.
+
+    Uses the same equal occupation split and national mix as allocate_awards,
+    so summing completions * share over programs equals that industry's bar.
+    Programs with no crosswalk occupation or no mix get a share of 0.
+    """
+    programs = pd.Index(pd.unique(pd.Series(list(programs), dtype=str)))
+    links = crosswalk[["program_code", "occupation_code"]].drop_duplicates()
+    links = links.loc[links.program_code.isin(programs)].copy()
+    links["share"] = 1 / links.groupby("program_code").occupation_code.transform("count")
+    chosen = weights.loc[weights.industry.eq(industry), ["occupation_code", "weight"]]
+    links = links.merge(chosen, on="occupation_code", how="left").fillna({"weight": 0})
+    share = (links.share * links.weight).groupby(links.program_code).sum()
+    return share.reindex(programs, fill_value=0.0)
+
+
 def allocate_awards(detail: pd.DataFrame, crosswalk: pd.DataFrame,
                     weights: pd.DataFrame) -> pd.Series:
     """Split award rows across industries; the result sums to the input awards."""

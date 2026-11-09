@@ -204,15 +204,41 @@ def _figure(rows, color, label, band_label, baseline=None, limits=None):
                                 mode="markers", marker=dict(color=color, symbol="diamond", size=10),
                                 hovertemplate="%{x}: %{y:,.0f}<extra>Observed base estimate</extra>"))
     fig.update_layout(height=340, margin=dict(l=5, r=10, t=20, b=100),
-                      legend=dict(orientation="h", y=-.35, yanchor="top", font=dict(size=10)), yaxis=dict(rangemode="tozero", tickformat=",.0f"),
+                      legend=dict(orientation="h", y=-.35, yanchor="top", font=dict(size=10)),
+                      yaxis=dict(range=_zoom_range(rows, baseline), tickformat=",.0f"),
                       xaxis=dict(title="Reference year", dtick=2, range=limits))
     return fig
+
+
+def _zoom_range(rows, baseline=None):
+    """Fit the y-axis to the trend line so slopes are visible.
+
+    The axis does not start at zero. The uncertainty band is included only up to
+    one trend-span beyond the line, so a very wide band cannot flatten the trend;
+    a band that runs past the view is clipped, not hidden in the data.
+    """
+    values = [v for v in rows.value if pd.notna(v)] if not rows.empty else []
+    if baseline is not None and pd.notna(baseline[1]):
+        values.append(baseline[1])
+    if not values:
+        return None
+    low, high = min(values), max(values)
+    span = (high - low) or abs(high) * .02 or 1.0
+    lows = [v for v in rows.lower if pd.notna(v)] if not rows.empty else []
+    highs = [v for v in rows.upper if pd.notna(v)] if not rows.empty else []
+    if lows:
+        low = max(min(lows), low - span)
+    if highs:
+        high = min(max(highs), high + span)
+    pad = (high - low) * .08
+    return [low - pad, high + pad]
 
 
 def render_forecast(proj, effective, sectors, summary, county, industry, key="outlook_forecast_"):
     view = prepare_forecast(proj, effective, sectors, summary, county, industry)
     st.info(outlook_summary(view))
-    st.caption("PROJECTED · Existing model baselines and assumptions. Diamonds identify observed baseline estimates; dashed lines show modeled values.")
+    st.caption("PROJECTED · Existing model baselines and assumptions. Diamonds identify observed baseline estimates; dashed lines show modeled values. "
+               "Vertical axes are zoomed to the trend and do not start at zero; very wide ranges may be clipped at the chart edge.")
     years = [float(y) for name in ("population", "participation", "jobs") for y in view[name].year]
     years += [point[0] for point in (view["population_base"], view["jobs_base"]) if point]
     limits = [min(years) - .5, max(years) + .5] if years else None

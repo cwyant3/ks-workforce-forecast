@@ -1,10 +1,42 @@
-# County workforce pressure pilot
+# County workforce pressure release
 
-Local release: `20261109T034237_d5325ec1`, adopted 2026-11-08 (supersedes `20261020T215651_b4a47fdc`; it carries the KSDE single-grade youth update in `projections_effective_s20` and IPEDS 2015-2024 history rebuilt without CIP 99 double counting; see `docs/data-refresh-log.md`). This is a seven-county South Central demand pilot, with broader ACS, institution and inbound commuting coverage. It is not a statewide shortage score. On 2026-11-08 the maintainer approved committing it and deploying it to the project's Streamlit Community Cloud app.
+(The filename keeps "pilot" because other documents link to it. The scope has been statewide since 2026-11-10.)
 
-## Statewide staging (2026-11-10)
+## Current release
 
-A statewide release, `20261110T170437_16937bcf`, was adopted on 2026-11-10 (previous: `20261109T034237_d5325ec1`, rollback target). It is local until committed and deployed. It covers all 105 counties for QCEW, QWI, LAUS, LODES and IPEDS, and the Outlook and Brief pick each county's KDOL projection region from `crosswalks/county_areas_20261020.csv`. Occupation pay stays Wichita-only. Rebuild with `scripts/stage_statewide_sources.py` then `build_county_pressure.py --evidence-dir data/pressure_sources/2026-11-10 --statewide`; preview locally with `WORKFORCE_PRESSURE_PREVIEW_RELEASE`.
+Adopted release: `20261110T202805_ec5cdfee` (2026-11-10, commit 3da0ebc). Rollback target: `20261110T200509_c512f8b3`. Evidence folder: `data/pressure_sources/2026-11-10-kc-metro` (git-ignored, local only). Each step of 2026-11-10 is recorded in `docs/data-refresh-log.md`. It is not a statewide shortage score; no composite is calculated.
+
+Coverage, all 105 Kansas counties unless noted:
+
+- **Resident supply:** ACS 2020–2024 (B23025, S2301); BLS LAUS monthly, January–September 2026.
+- **Employer activity:** BLS QCEW 2025Q1 and 2026Q1, nine sectors, private. Where QCEW withholds a county's sector jobs, Census QWI and County Business Patterns 2023 appear as separately labeled alternatives. They never fill QCEW cells, growth, pay or rankings.
+- **Hiring:** Census QWI, nine sectors, 2024Q1–2026Q1, all from one LEHD release (R2026Q4). The release ID is read from the saved `qwi-version.txt`. Every quarter must be re-pulled together when LEHD publishes a new release.
+- **Commuting:** LODES8 2023 JT01. Inbound uses Kansas main+aux. Resident outbound uses Kansas main plus every other state's aux; Alaska and Michigan publish no 2023 files, and that gap is disclosed on every measure (Chris's decision, 2026-11-10).
+- **Training:** IPEDS 2025 provisional awards at reporting institutions (36 counties have one).
+- **Regional occupation outlook:** KDOL 2022–2032, all seven projection regions. Each county maps to its region in `crosswalks/county_areas_20261020.csv`.
+- **Occupation pay:** BLS OEWS May 2025 for Wichita (four-SOC sample) and the full Kansas City, MO-KS inventory (Johnson, Leavenworth, Linn, Miami, Wyandotte). Other Kansas areas are not adopted yet (see `TASKS.md` in the vault).
+- **Kansas City metro panel:** shown for the five Kansas metro counties. It compares all 14 counties of OEWS area 28140 with the same sources: ACS, LAUS, QCEW and working-age forecasts. Both states' forecasts use the same cohort model and the same NCES CCD single-grade youth update. The builder refuses forecasts whose seed or base year differ.
+
+## Rebuild the current release
+
+Each staging script resumes when rerun and never overwrites an adopted release. Run them from this repository (not a worktree), in this order, into a new dated evidence folder:
+
+```powershell
+.venv/Scripts/python.exe scripts/stage_statewide_sources.py --base data/pressure_sources/2026-10-20 --out data/pressure_sources/NEW
+.venv/Scripts/python.exe scripts/stage_oews_area.py --area 28140 --slug kansascity --out data/pressure_sources/NEW
+.venv/Scripts/python.exe scripts/stage_lodes_outbound.py --year 2023 --evidence-out data/pressure_sources/NEW --main-parquet PATH_TO_county_v2_20_main_JT01_2023.parquet
+.venv/Scripts/python.exe scripts/stage_qwi.py --out data/pressure_sources/NEW --periods 2024-Q1 ... 2026-Q1
+.venv/Scripts/python.exe scripts/stage_cbp.py --out data/pressure_sources/NEW
+.venv/Scripts/python.exe scripts/stage_kc_metro.py --base data/pressure_sources/NEW --out data/pressure_sources/NEW-kc-metro
+.venv/Scripts/python.exe build_county_pressure.py --evidence-dir data/pressure_sources/NEW-kc-metro
+```
+
+Notes for the steps above:
+
+- Save `qwi-version.txt` from https://lehd.ces.census.gov/data/qwi/latest_release/ks/version_qwi.txt before the QWI pull, and replace the copied QWI files rather than adding beside them.
+- Builds are statewide by default; `--pilot` builds the old seven-county scope.
+- Preview a staged release with `WORKFORCE_PRESSURE_PREVIEW_RELEASE=ID`, then adopt with the `--adopt` flag (or `refresh_dashboard.py --pressure-only DIR --adopt-pressure`, which runs the tests first).
+- BLS OEWS bulk files and web pages return 403 to scripts. Read OEWS area definitions in a browser and use the registered BLS API for data.
 
 ## Chart presentation
 
@@ -43,8 +75,8 @@ The server renders local validated outputs. It does not call agency APIs during 
 Save unmodified verified public source artifacts in a new dated folder under `data/pressure_sources/`. Do not overwrite an adopted release. Live adapter entry points are in `fetch_qwi.py`, `fetch_qcew.py`, `fetch_acs.py`, `fetch_laus.py`, `fetch_oes.py`, `fetch_lodes.py`, and `fetch_ipeds.py`. Source retrieval is explicit and separate from adoption; successful HTTP does not establish a valid response body.
 
 ```powershell
-.venv/Scripts/python.exe refresh_dashboard.py --pressure-only data/pressure_sources/2026-10-20 --dry-run
-.venv/Scripts/python.exe refresh_dashboard.py --pressure-only data/pressure_sources/2026-10-20
+.venv/Scripts/python.exe refresh_dashboard.py --pressure-only data/pressure_sources/NEW-kc-metro --dry-run
+.venv/Scripts/python.exe refresh_dashboard.py --pressure-only data/pressure_sources/NEW-kc-metro
 ```
 
 Default pressure refresh runs the unit tests, builds a staged release and leaves the pointer unchanged. Inspect the staged coverage, schemas, hashes and UI preview before adoption. Set `WORKFORCE_PRESSURE_PREVIEW_RELEASE` to the staged ID to preview it; remove the variable to return to the adopted release. A preview reads the staged manifest without re-checking file hashes (adoption does check them), so use it only locally.
@@ -70,7 +102,7 @@ Rollback validates the selected retained release before changing the pointer. `l
 
 `data_contracts.py` keys observations by source, measure, geography, period and applicable universe dimensions, including QWI seasonal adjustment, firm age and firm size. Published estimates must be finite. Suppressed/unavailable values must be null. ACS margins of error and OEWS RSE remain separate from model prediction intervals. Latest release and latest usable measure can differ.
 
-`geography.py` keeps South Central's seven counties distinct from Wichita OEWS's four. Area estimates are selected once at native area grain. `inbound_labor_shed` requires one year and complete main+aux JT01 coverage; it includes the threshold-crossing origin county. Outbound totals stay unavailable without complete destinations. IPEDS awards reconcile by reporting institution; CIP and award levels are preserved and cannot be treated as unique people.
+`geography.py` keeps KDOL projection regions, OEWS pay areas and the metro list separate. For example, Linn is in the Kansas City pay area but the Southeast projection region. Area estimates are selected once at native area grain. `inbound_labor_shed` requires one year and complete main+aux JT01 coverage; it includes the threshold-crossing origin county. Resident outbound publishes only when every destination state was retrieved; states that publish no file for the year are named on each measure, and any download failure leaves outbound unavailable. IPEDS awards reconcile by reporting institution; CIP and award levels are preserved and cannot be treated as unique people.
 
 ## Verification and remaining rollout gates
 
@@ -78,4 +110,14 @@ At the 2026-10-20 pilot milestone, 95 tests passed, five-county Streamlit runtim
 
 As of 2026-11-08 the full suite is 180 tests, all passing, and both `validate_outputs.py --state 20` and `--pressure` pass. That day's updates changed some original outputs on purpose (population forecast, IPEDS, JOLTS, KDOL demand flags); each change is recorded in `docs/data-refresh-log.md`.
 
-Missing QWI historical quarters, complete outbound commuting, nonmetropolitan OEWS, expanded demand coverage, apprenticeship and proprietary feeds remain gated. Hosted deployment was approved on 2026-11-08. Source files should be refreshed and their release identities reverified before future adoption. Do not label a successful cache rebuild as a new agency publication.
+As of 2026-11-10 the full suite is 209 tests, all passing, and `validate_outputs.py --state 20 --pressure` passes on the adopted release. Runtime checks covered metro and non-metro counties (Johnson, Linn, Wyandotte, Sedgwick, Greeley and others) in Workforce Outlook and County Brief.
+
+Still gated or unavailable:
+
+- OEWS pay outside Wichita and Kansas City (Topeka, Lawrence, Manhattan, St. Joseph, Joplin, nonmetro areas).
+- 155 county-sector job cells withheld in every source.
+- Alaska and Michigan commuting.
+- The newest quarter's QWI separations and earnings.
+- Apprenticeship, PSEO and proprietary feeds.
+
+The hosted Streamlit app shows a release only after it is redeployed. Source files should be refreshed and their release identities reverified before future adoption. Do not label a successful cache rebuild as a new agency publication.

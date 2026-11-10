@@ -1,8 +1,12 @@
 """Build a validated county pressure release without running the population forecast.
 
-    python build_county_pressure.py --evidence-dir data/pressure_sources/2026-10-20
+    python build_county_pressure.py --evidence-dir data/pressure_sources/2026-11-10-kc-metro
     python build_county_pressure.py --evidence-dir ... --adopt
     python build_county_pressure.py --rollback RELEASE_ID
+
+Builds cover all 105 Kansas counties by default (since 2026-11-10); ``--pilot``
+builds the original seven-county South Central scope and must never be adopted
+over a statewide release by accident.
 
 The input folder contains public downloaded source artifacts, not processed
 estimates. A failed build never changes the adopted pointer. Source discovery
@@ -48,10 +52,10 @@ def read_optional(outputs, name):
 
 def build(evidence_dir: Path, outputs: Path = OUTPUTS, *, correction_dir: Path | None = None,
           release_id: str | None = None, counties: list[str] | None = None) -> dict:
-    """Stage a release. ``counties`` defaults to the 7-county pilot; pass
-    ``statewide_counties()`` (CLI ``--statewide``) for all 105 Kansas counties."""
+    """Stage a release. ``counties`` defaults to all 105 Kansas counties; pass
+    ``PILOT`` (CLI ``--pilot``) for the original seven-county scope."""
     evidence_dir = Path(evidence_dir)
-    scope_counties = list(PILOT if counties is None else counties)
+    scope_counties = list(statewide_counties() if counties is None else counties)
     # Required sources fail closed. An optional layer gets a visible availability
     # record rather than blocking independently valid sources.
     demand = build_demand_indicators(evidence_dir, scope_counties)
@@ -201,7 +205,9 @@ def main():
     parser.add_argument("--outputs", type=Path, default=OUTPUTS)
     parser.add_argument("--correction-dir", type=Path)
     parser.add_argument("--adopt", action="store_true")
-    parser.add_argument("--statewide", action="store_true", help="Cover all 105 Kansas counties instead of the pilot")
+    scope = parser.add_mutually_exclusive_group()
+    scope.add_argument("--statewide", action="store_true", help="All 105 Kansas counties (the default; kept for older commands)")
+    scope.add_argument("--pilot", action="store_true", help="Only the original seven South Central counties")
     parser.add_argument("--rollback")
     args = parser.parse_args()
     if args.rollback:
@@ -211,7 +217,7 @@ def main():
     if args.evidence_dir is None:
         parser.error("--evidence-dir is required for a build")
     manifest = build(args.evidence_dir, args.outputs, correction_dir=args.correction_dir,
-                     counties=statewide_counties() if args.statewide else None)
+                     counties=PILOT if args.pilot else None)
     print(f"Staged {manifest['release_id']}: {len(manifest['files'])} validated tables")
     if args.adopt:
         adopt_release(args.outputs, manifest)

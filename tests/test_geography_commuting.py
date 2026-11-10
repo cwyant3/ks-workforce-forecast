@@ -82,3 +82,16 @@ def test_invalid_partition_is_cannot_compute_not_access_failed(tmp_path):
     status=dict(zip(coverage.partition,coverage.availability_status))
     assert status=={'main':'cannot_compute','aux':'published'}
     assert not flows.inbound_complete.any()
+
+
+def test_crosswalk_maps_every_kansas_county_to_one_projection_region():
+    from geography import county_region
+    relations = county_area_relations()
+    assert len(relations) == 105 and relations.county_fips5.is_unique
+    assert set(relations.projection_region_id) == {"KS-KC", "KS-NC", "KS-NE", "KS-NW", "KS-SC", "KS-SE", "KS-SW"}
+    assert set(SOUTH_CENTRAL_COUNTIES) == set(relations.loc[relations.projection_region_id.eq("KS-SC"), "county_fips5"])
+    region_id, name, members = county_region("20091")
+    assert (region_id, name) == ("KS-KC", "Kansas City") and "Johnson" in members and len(members) == 4
+    assert county_region("20999") == ("", "", [])
+    # Only the Wichita metropolitan OEWS area is adopted; other counties never inherit it.
+    assert set(relations.loc[relations.oews_area.ne(""), "county_fips5"]) == set(WICHITA_OEWS_COUNTIES)

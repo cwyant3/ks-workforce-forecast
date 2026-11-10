@@ -77,7 +77,7 @@ def render_demand(frame, county):
             area = area[area.occupation_code.eq(occupation)]
         show_observations(area, "oews_area")
     else:
-        st.info("This county is outside the Wichita OEWS area. Its nonmetropolitan occupation estimates have not been adopted in this pilot.")
+        st.info("Occupation pay for this county's OEWS area has not been adopted in this release; only the Wichita metropolitan area sample is available.")
 
 
 def render_supply(frame, county, annual_laus=None):
@@ -128,15 +128,13 @@ def render_regions(regional, county, key="regional_soc"):
     if regional is None or regional.empty:
         return
     st.markdown("### Published regional occupation context")
-    if county not in PILOT:
-        st.info("This pilot publishes the seven-county South Central region only.")
+    from geography import county_region
+    region_id, region_name, members = county_region(county)
+    if not region_id or not regional.geography_id.astype(str).eq(region_id).any():
+        st.info("No published regional occupation projection is linked to this county.")
         return
-    rows = regional.copy()
-    if "region_id" in rows:
-        rows = rows[rows.region_id.astype(str).isin(["KS-SC", "SC", "South Central", "south_central"])]
-    if "geography_id" in rows and rows.geography_id.astype(str).str.contains("SC|South Central", case=False).any():
-        rows = rows[rows.geography_id.astype(str).str.contains("SC|South Central", case=False)]
-    st.caption("South Central: Butler, Cowley, Harper, Harvey, Kingman, Sedgwick and Sumner. Regional projections retain their own 2022–2032 vintage; these are not county estimates. Wichita OEWS covers only Butler, Harvey, Sedgwick and Sumner.")
+    rows = regional[regional.geography_id.astype(str).eq(region_id)].copy()
+    st.caption(f"{region_name} projection region: {', '.join(members)}. Regional projections retain their own 2022–2032 vintage; these are not county estimates.")
     if "occupation_code" in rows:
         options = sorted(rows.occupation_code.dropna().unique())
         titles = rows.drop_duplicates("occupation_code").set_index("occupation_code").get("occupation_title", pd.Series(dtype=str)).to_dict()

@@ -33,21 +33,30 @@ OUTPUTS = ROOT / "data/outputs"
 PILOT = ["20015", "20035", "20077", "20079", "20095", "20173", "20191"]
 
 
+def statewide_counties() -> list[str]:
+    """All 105 Kansas county FIPS codes, from the versioned geography crosswalk."""
+    from geography import county_area_relations
+    return sorted(county_area_relations().county_fips5)
+
+
 def read_optional(outputs, name):
     path = resolve_output(outputs, name)
     return pd.read_parquet(path) if path.exists() else None
 
 
 def build(evidence_dir: Path, outputs: Path = OUTPUTS, *, correction_dir: Path | None = None,
-          release_id: str | None = None) -> dict:
+          release_id: str | None = None, counties: list[str] | None = None) -> dict:
+    """Stage a release. ``counties`` defaults to the 7-county pilot; pass
+    ``statewide_counties()`` (CLI ``--statewide``) for all 105 Kansas counties."""
     evidence_dir = Path(evidence_dir)
+    scope_counties = list(PILOT if counties is None else counties)
     # Required sources fail closed. An optional layer gets a visible availability
     # record rather than blocking independently valid sources.
-    demand = build_demand_indicators(evidence_dir)
+    demand = build_demand_indicators(evidence_dir, scope_counties)
     supply = build_supply_indicators(evidence_dir)
     if supply.empty:
         raise ValueError("Resident supply evidence is required")
-    training, detail = build_training_indicators(evidence_dir)
+    training, detail = build_training_indicators(evidence_dir, scope_counties)
     pieces = [demand, supply, training]
     if (evidence_dir / "oews-wichita-2025-sample.json").exists():
         pieces.append(build_oews_observations(evidence_dir))
@@ -60,7 +69,7 @@ def build(evidence_dir: Path, outputs: Path = OUTPUTS, *, correction_dir: Path |
             frequency="annual", estimate=None, unit="primary jobs", availability_status="not_reported",
             location_basis="home and workplace", job_universe="JT01", release_id="LODES8.4-20251202_1657",
             source_url="https://lehd.ces.census.gov/data/lodes/LODES8/ks/od/",
-            coverage_note="Complete scoped OD extract not yet adopted; legacy main-only data are not a complete shed.") for county in PILOT]))
+            coverage_note="Complete scoped OD extract not yet adopted; legacy main-only data are not a complete shed.") for county in scope_counties]))
     observations = normalize_observations(pd.concat(pieces, ignore_index=True))
     # Source payloads use mixed numeric/string flags. Preserve them as text,
     # rather than relying on Arrow's object-column type inference.
@@ -147,15 +156,18 @@ def build(evidence_dir: Path, outputs: Path = OUTPUTS, *, correction_dir: Path |
         {"source_id":"bgi", "adoption_status":"disabled: applicable proprietary reuse terms unverified", "verification_date":"2026-10-20"}])
     inputs = {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in evidence_dir.iterdir() if p.is_file()}
     return stage_release(outputs, tables, sources=sources, release_id=release_id, scope={
-        "state":"20", "pilot_counties":PILOT,
-        "coverage":"County demand and training pilot; ACS all Kansas counties. Inspect per-measure availability.",
+        "state":"20", "pilot_counties":scope_counties,
+        "coverage":("County demand, commuting and training evidence for all 105 Kansas counties; inspect per-measure availability."
+                    if len(scope_counties) > len(PILOT) else
+                    "County demand and training pilot; ACS all Kansas counties. Inspect per-measure availability."),
         # Record which legacy population forecast the effective table was built on,
         # rather than asserting it is unchanged (the KSDE youth update changed it 2026-11-08).
         "input_hashes":inputs,
         "population_forecast": ("projections_s20.parquet sha256 " + hashlib.sha256((outputs / "projections_s20.parquet").read_bytes()).hexdigest()
                                 if (outputs / "projections_s20.parquet").exists() else "not available"),
         "geography_crosswalk_version":"2026-10-20",
-        "regional_context":"South Central 2022-2032; Wichita OEWS May2025 sample only",
+        "regional_context":("KDOL projection regions 2022-2032 (all seven); Wichita OEWS May2025 sample only"
+                            if len(scope_counties) > len(PILOT) else "South Central 2022-2032; Wichita OEWS May2025 sample only"),
         "sector_correction":"reviewed rebuild" if correction_dir else "retained from adopted release" if "sector_projections_s20.parquet" in tables else "not included; legacy sector forecast withheld in pressure comparisons",
         "composite_score":"not calculated"})
 
@@ -166,6 +178,7 @@ def main():
     parser.add_argument("--outputs", type=Path, default=OUTPUTS)
     parser.add_argument("--correction-dir", type=Path)
     parser.add_argument("--adopt", action="store_true")
+    parser.add_argument("--statewide", action="store_true", help="Cover all 105 Kansas counties instead of the pilot")
     parser.add_argument("--rollback")
     args = parser.parse_args()
     if args.rollback:
@@ -174,7 +187,8 @@ def main():
         return
     if args.evidence_dir is None:
         parser.error("--evidence-dir is required for a build")
-    manifest = build(args.evidence_dir, args.outputs, correction_dir=args.correction_dir)
+    manifest = build(args.evidence_dir, args.outputs, correction_dir=args.correction_dir,
+                     counties=statewide_counties() if args.statewide else None)
     print(f"Staged {manifest['release_id']}: {len(manifest['files'])} validated tables")
     if args.adopt:
         adopt_release(args.outputs, manifest)

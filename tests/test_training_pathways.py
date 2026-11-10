@@ -60,7 +60,9 @@ def test_region_retains_native_soc_detail_and_excludes_other_regions():
     assert len(result)==1 and result.geography_id.iloc[0]=='KS-SC'
     assert result.estimate.iloc[0]==100
     assert regional_occupation_rows(regional,'20035').equals(result)
-    assert regional_occupation_rows(regional,'20091').empty
+    johnson=regional_occupation_rows(regional,'20091')  # Johnson County: Kansas City region, never South Central
+    assert johnson.geography_id.tolist()==['KS-KC'] and johnson.estimate.iloc[0]==900
+    assert regional_occupation_rows(regional,'20999').empty  # not a Kansas county
 
 
 def test_pay_requires_exact_occupation_and_adopted_area_not_broad_proxy():

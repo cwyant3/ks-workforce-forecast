@@ -126,7 +126,7 @@ def render_outlook(frame, detail, flows, regional, proj, effective, sectors, sum
     with st.expander("Coverage, definitions and source records"):
         st.write("Observed residents, workplace jobs, annual projected openings and institutional awards have different denominators. "
                  "No subtraction on this page produces a validated worker shortage. ACS sampling margins, model prediction bands and scenario assumptions remain distinct.")
-        st.write("County demand and regional occupation coverage is a South Central Kansas pilot. Missing or suppressed measures stay unavailable. "
+        st.write("County demand and regional occupation evidence is shown wherever the adopted release covers the county. Missing or suppressed measures stay unavailable. "
                  "Forecasts use their existing baselines; a newer observation is not silently treated as a model refresh. Sources are included in the detailed panels and downloadable observations.")
     st.download_button("Download county observations with sources",
                        frame[frame.geography_id.eq(county)].to_csv(index=False).encode(),

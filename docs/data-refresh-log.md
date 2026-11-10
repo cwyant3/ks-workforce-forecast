@@ -2297,3 +2297,40 @@ Notes:          Method. project_cohorts adds or removes residents ages 18-64. It
                 The deck's extract_forecast.py still passes PEP totals as annual_net_migrants; a refresh
                 should pass all_age_net_migrants=..., working_age_share=county_shares()[fips]["share_applied"].
                 The dashboard release was not republished.
+
+## [2026-11-10] Projections Central | no-op
+Vintage before: long-term cycle 2024–2034 for all five deployed states, read from
+                data/outputs/pc_occ_by_sector_s{08,20,29,31,40}.parquet and
+                pc_occ_proj_s* (base_year=2024, proj_year=2034, single cycle per
+                file). Occupation rows: KS 633, CO 709, MO 705, NE 782, OK 655.
+                data/pc_cache/pc_longterm_s* holds the same cycle and row counts.
+Vintage after:  unchanged — 2024–2034 for all five
+Checked:        Live probe of the PC REST API the fetcher uses
+                (public.projectionscentral.org/Projections/LongTermRestJson/{fips},
+                page 0, the pipeline's own UA). All five returned 200 JSON, and
+                every row on page 0 carried BaseYear 2024 / ProjYear 2034. The
+                pager total_items equals the cached row count exactly in every
+                state (633/709/705/782/655), so no state has re-filed or
+                restated within the cycle either.
+Outputs changed: none. `git status --short` was empty before the run and only
+                this log file changed.
+Validation:     n/a (no refresh attempted)
+Notes:          No state advanced, and none is behind any other: all five are on
+                the same 2024–2034 cycle, so the multi-state comparison is
+                currently like for like. That is a change from the fetcher's
+                docstring (fetch_projections_central.py:26-28), which says that
+                as of 2026-06 only Colorado had filed 2024–34 among the bloc
+                and KS/NE/MO/OK were gap states. That note is now stale: the
+                2026-08-27 entry shows MO/NE/OK populated, and today all five
+                are populated. No state is a gap state any more. The docstring
+                was not edited by this routine.
+                The next cycle (2025–2035) would be the first point at which
+                the states can split again. Expect it to arrive state by state.
+
+## [2026-11-10] pressure release | staged statewide (not adopted)
+Vintage before: adopted `20261109T034237_d5325ec1` (7-county pilot for QCEW, QWI, LAUS, LODES observations, IPEDS totals)
+Vintage after:  staged `20261110T170437_16937bcf` (all 105 counties); adopted pointer unchanged
+Checked:        evidence folder `data/pressure_sources/2026-11-10` built by `scripts/stage_statewide_sources.py` (BLS QCEW area slices 2025Q1/2026Q1 for 98 added counties; BLS LAUS API 420 series, 2026-01 to 2026-09; QWI and LODES flows already statewide, LODES observations regenerated for 105 counties; IPEDS totals now emitted for every county)
+Outputs changed: new release folder, `crosswalks/county_areas_20261020.csv` extended to 105 counties (KDOL projection regions; OEWS pay area stays Wichita-only), UI pilot gates removed, `scripts/extend_county_areas.py`, tests
+Validation:     pass (197 tests; `validate_outputs.py --state 20 --pressure`; Streamlit runtime check on 8 counties in both modes)
+Notes:          Coverage of published counties: QCEW 104, QWI 100, LAUS 105, LODES 105, IPEDS 36 (counties with no reporting institution show not_reported). Pilot-county values for QCEW, QWI and LODES are byte-for-byte equal to the adopted release; LAUS August 2026 values were revised by BLS and September added. Regional occupation tables already held all seven KDOL regions. To adopt after review, rerun the same build with `--adopt` (this creates a new release ID); roll back with `--rollback 20261109T034237_d5325ec1`.

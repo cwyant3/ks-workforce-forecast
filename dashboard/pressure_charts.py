@@ -204,19 +204,19 @@ def demand(frame,county,industry,names,key):
            ("qcew","qcew_weekly_wage","Average weekly pay")]
     for col,(src,m,title) in zip(st.columns(3),specs):
         with col:
-            metric_card(frame,series(frame,src,m,county,industry),title,key+m,peer_label="pilot counties")
+            metric_card(frame,series(frame,src,m,county,industry),title,key+m,peer_label="counties with published data")
     row=current(series(frame,"qcew","qcew_employment_yoy_pct",county,industry))
     matches=peers(frame,row)
     if not matches.empty:
         matches=matches.sort_values("estimate",ascending=False)
-        st.markdown("#### Employment growth across the pilot counties")
+        st.markdown("#### Employment growth across counties")
         draw(horizontal(matches.estimate.tolist(),[names.get(f,f) for f in matches.geography_id],
                         "Change from the same quarter a year earlier (%)",unit="percent",color=[BLUE if f==county else GRAY for f in matches.geography_id]),key+"growth")
         st.caption(f"{row.reference_label} · {len(matches)} counties with published matched-period values. Suppressed comparisons are omitted, not ranked at zero.")
     if industry=="31-33":
         st.markdown("#### Manufacturing hiring activity")
         for col,m,title in zip(st.columns(2),["qwi_hires","qwi_hires_per_100_beginning_jobs"],["Quarterly hires","Hires per 100 beginning-quarter jobs"]):
-            with col: metric_card(frame,series(frame,"qwi",m,county,industry),title,key+m,peer_label="pilot counties")
+            with col: metric_card(frame,series(frame,"qwi",m,county,industry),title,key+m,peer_label="counties with published data")
         st.caption("Hires count hiring events, not open vacancies. Four-quarter totals and some separation/earnings measures remain unavailable because their required history or source estimates are incomplete.")
     evidence(frame[frame.geography_id.eq(county)&frame.industry_code.eq(industry)&frame.source_id.isin(["qcew","qwi"])])
 
@@ -361,16 +361,17 @@ def movement(frame,flows,county,names,key):
 
 
 def regional_view(regional,county,key):
-    from geography import SOUTH_CENTRAL_COUNTIES
+    from geography import county_region
     st.markdown("### Regional growth and openings")
-    if county not in SOUTH_CENTRAL_COUNTIES or regional.empty:
-        st.info("Regional occupation charts in this pilot cover the seven-county South Central region.")
+    region_id,region_name,members=county_region(county)
+    if not region_id or regional.empty or not regional.geography_id.eq(region_id).any():
+        st.info("No published regional occupation projection is linked to this county.")
         return
-    rows=regional[regional.geography_id.eq("KS-SC")]
+    rows=regional[regional.geography_id.eq(region_id)]
     titles=rows.drop_duplicates("occupation_code").set_index("occupation_code").occupation_title.to_dict()
     soc=st.selectbox("Projected occupation",sorted(titles),format_func=lambda x:f"{titles[x]} ({x})",key=key+"soc")
     rows=rows[rows.occupation_code.eq(soc)]
-    st.caption("South Central Kansas · published 2022–2032 projections. The same regional estimate applies to all seven member counties; it is not allocated to the selected county.")
+    st.caption(f"{region_name} Kansas projection region · published 2022–2032 projections. The same regional estimate applies to all {len(members)} member counties ({', '.join(members)}); it is not allocated to the selected county.")
     values={r.measure_id:r for _,r in rows.iterrows()}
     labels={"ks_occ_annual_exits":"Labor-force exits", "ks_occ_annual_transfers":"Occupation transfers", "ks_occ_annual_change":"Employment growth"}
     available_rows=[(label,values[m]) for m,label in labels.items() if m in values and available(values[m])]
@@ -396,10 +397,10 @@ def render_county_brief(frame,detail,flows,regional,county,county_name,names,ann
     tabs=st.tabs(["Overview","Workforce","Employment & pay","Training","Movement","Regional outlook"])
     with tabs[0]:
         st.markdown("### Four signals for the conversation")
-        specs=[("qcew","qcew_employment_yoy_pct","Employment growth",industry,"pilot counties"),
+        specs=[("qcew","qcew_employment_yoy_pct","Employment growth",industry,"counties with published data"),
                ("acs_s2301","labor_force_participation_rate_16_plus","Resident participation",None,"Kansas counties"),
                ("ipeds","credentials_awarded","Credentials awarded",None,None),
-               ("lodes","pct_workers_imported","Incoming commuter share",None,"pilot counties")]
+               ("lodes","pct_workers_imported","Incoming commuter share",None,"counties with published data")]
         for col,(src,m,title,ind,peer) in zip(st.columns(4),specs):
             with col:metric_card(frame,series(frame,src,m,county,ind),title,"overview_"+m,peer_label=peer)
         st.caption("Each signal keeps its own period and unit. Comparison strips use only counties with published values in the same period and universe. These are observed measures, not a composite shortage index.")
@@ -407,7 +408,7 @@ def render_county_brief(frame,detail,flows,regional,county,county_name,names,ann
         st.markdown("**Employment:** Is the selected industry's employment expanding?  \n**Participation:** How many residents are engaged in the labor force?  \n**Training:** What credentials are institutions awarding?  \n**Movement:** How widely do employers already draw workers?")
         with st.expander("Coverage and source notes"):
             st.write("QCEW/QWI: workplace jobs and hiring. ACS/LAUS: residents. IPEDS: institution awards. LODES: primary-job commuting. Regional projections and OEWS retain their native geography. Missing data are never plotted as zero.")
-            st.write("Demand and credential totals are a seven-county pilot. ACS covers all 105 Kansas counties. Some QWI histories, complete outbound commuting, apprenticeship and nonmetropolitan occupation pay remain unavailable.")
+            st.write("Demand, commuting and credential evidence is staged for all 105 Kansas counties where this release covers them; suppressed or unreported values stay unavailable. Some QWI histories, complete outbound commuting, apprenticeship and nonmetropolitan occupation pay remain unavailable.")
             st.markdown("Presentation reference: [America's Skilled Trades Dashboard](https://skilledtradesreport.com/KS/all). Charts here use this dashboard's verified public observations and definitions.")
     with tabs[1]:workforce(frame,county,"brief_workforce_",annual_laus)
     with tabs[2]:

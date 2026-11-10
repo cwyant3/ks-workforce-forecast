@@ -1061,7 +1061,7 @@ def main():
                        annual_laus=_pressure_table(f"laus_s{state_fips}.parquet"))
         return
     elif view_mode == "Workforce Outlook":
-        st.info("The unified Workforce Outlook covers the adopted Kansas pilot. Existing state views are available below.")
+        st.info("The unified Workforce Outlook is available for Kansas only. Existing state views are available below.")
 
     if view_mode == "County Brief" and state_fips == "20" and ACTIVE_RELEASE:
         from dashboard.pressure_charts import render_county_brief
@@ -1076,7 +1076,7 @@ def main():
                            annual_laus=_pressure_table(f"laus_s{state_fips}.parquet"))
         return
     elif view_mode == "County Brief":
-        st.info("The new County Brief covers the adopted Kansas pilot. Existing state views are available below.")
+        st.info("The new County Brief is available for Kansas only. Existing state views are available below.")
 
     # ── Header ────────────────────────────────────────────────────────────
     st.markdown(f"""

@@ -107,7 +107,7 @@ def render_pathways(frame, detail, regional, county, key="outlook_pathways_"):
     """Render one exact SOC's regional outlook, area pay and related county awards."""
     rows = regional_occupation_rows(regional, county)
     if rows.empty:
-        st.info("Linked occupation outlook is available for the seven-county South Central region. No regional estimate is assigned to this county.")
+        st.info("No published regional occupation outlook is linked to this county.")
         return None
     crosswalk = load_crosswalk()
     titles = rows.drop_duplicates("occupation_code").set_index("occupation_code").occupation_title.to_dict()
@@ -117,7 +117,9 @@ def render_pathways(frame, detail, regional, county, key="outlook_pathways_"):
                               format_func=lambda code: f"{titles[code]} ({code})", key=key+"soc")
     st.caption("This occupation selector is independent of the industry selection above. No industry-to-occupation relationship is inferred.")
     chosen = rows.loc[rows.occupation_code.eq(occupation)]
-    st.caption("Outlook: South Central Kansas, 2022–2032. These regional estimates cover all seven counties and are not allocated to the selected county.")
+    from geography import county_region
+    _rid, _rname, _members = county_region(county)
+    st.caption(f"Outlook: {_rname} Kansas projection region, 2022–2032. These regional estimates cover all {len(_members)} member counties and are not allocated to the selected county.")
     pay = occupation_pay_rows(frame, county, occupation)
     cols = st.columns(3)
     with cols[0]:

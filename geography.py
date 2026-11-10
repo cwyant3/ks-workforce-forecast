@@ -11,6 +11,17 @@ def county_area_relations() -> pd.DataFrame:
     return pd.read_csv(Path(__file__).parent / "crosswalks/county_areas_20261020.csv", dtype=str).fillna("")
 
 
+def county_region(county) -> tuple[str, str, list[str]]:
+    """(region_id, region_name, member county names) for a five-digit county FIPS; blanks if unmapped."""
+    relations = county_area_relations()
+    row = relations.loc[relations.county_fips5.eq(str(county))]
+    if row.empty:
+        return "", "", []
+    region_id = row.iloc[0].projection_region_id
+    members = relations.loc[relations.projection_region_id.eq(region_id)]
+    return region_id, row.iloc[0].projection_region, sorted(members.county_name)
+
+
 def select_area_observations(observations: pd.DataFrame, counties, area_column="oews_area"):
     """Select each native area once, even when several selected counties belong to it."""
     relations = county_area_relations()

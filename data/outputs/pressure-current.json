@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "release_id": "20261110T191204_8be07183",
-  "created_utc": "2026-11-10T19:12:05.594139+00:00",
+  "release_id": "20261110T192715_83b8d358",
+  "created_utc": "2026-11-10T19:27:15.815760+00:00",
   "scope": {
     "state": "20",
     "pilot_counties": [
@@ -339,34 +339,88 @@
       "qcew-20207-2026q1.csv": "b593819dfeb99b2266ee58bdaa260678c4bfb6677a93a3b887eae936d9b7e355",
       "qcew-20209-2025q1.csv": "0120190421b4d2865b83b34e1ff49429d8855057c4185fd5b9be7d64477675ee",
       "qcew-20209-2026q1.csv": "cc97528e52795b811aca1be3e89af408f9ff0ed7b082251cc6c3506355eea50b",
+      "qwi-2024-Q1-ks-22.json": "538dff0cd4843b1db0a433f4d91072819b761d588ac6d9af95f2e91cd44b0820",
+      "qwi-2024-Q1-ks-23.json": "bdd298fd737860b27b6d17309ca186b70b5eecbbc6dda3ccec2837a13fde7be9",
+      "qwi-2024-Q1-ks-31-33.json": "ca3ce6a5d3d54eff167fb10ed2f2728b73db3d4a8c128961031ca24c25d4610f",
+      "qwi-2024-Q1-ks-51.json": "8f2c518d396e779734020fc130dcd991153d759dad30591b3da89391d9f73092",
+      "qwi-2024-Q1-ks-54.json": "3d0712a856903cdb84fc4eba30412343251ab8fdf110498d1ca3c2fc6ed7bd28",
+      "qwi-2024-Q1-ks-62.json": "005433ca99cdff4ba247a4dc7dd647bca161886c99083bca49ea8be794453195",
+      "qwi-2024-Q1-ks-71.json": "6e1e14483eabcc0f595cc59ddfb361fcbf86ede27fe2c5bc1b3f8c70f98ea593",
+      "qwi-2024-Q1-ks-72.json": "ee954ef198f1c343f6d3392ef2e210abb81896ac987f6e341fda6d700f3214c7",
+      "qwi-2024-Q1-ks-81.json": "d0ad378297e23e289cf57635109d1e053a29caaf354b6394dd5b34359a89836b",
+      "qwi-2024-Q2-ks-22.json": "341767cab48267855f09da4c15c51eba5e078c41c729ebed47e0aaf9c2e57a3d",
+      "qwi-2024-Q2-ks-23.json": "863b0af2215f07960a25724fc7c00c9f4dbffd8dfb14308c3cb301337ec57c5d",
+      "qwi-2024-Q2-ks-31-33.json": "ec39c9c4165244c47e9501a5f71f8140d97a714d0e9b41e64b6f0ecb9f7aa5aa",
+      "qwi-2024-Q2-ks-51.json": "cfc6705e5ab6273cf20da6059f90bd04455047c8eac728e0e9a5f7920f719720",
+      "qwi-2024-Q2-ks-54.json": "f17f4381becf273b20177beabd0ab37fd93c969b8415534d3838b91ba68e0888",
+      "qwi-2024-Q2-ks-62.json": "3287c1ca5a34b44b550c86f801745b940a66952e29970b4d93898aa3293d3e82",
+      "qwi-2024-Q2-ks-71.json": "a8c0d62de604e0fde062e5afafb3230eddf5e1b1804686db0a7467056774a23a",
+      "qwi-2024-Q2-ks-72.json": "b34d516afeedb0f7cf032455c926e266df9ea6d3c8e8387e067a8de57c86eb8f",
+      "qwi-2024-Q2-ks-81.json": "403bd6caceac99a9a15a109f75a2c46ea5349ebca04d8c8fbb6445170f60bbe7",
+      "qwi-2024-Q3-ks-22.json": "d9825374f48a16aa9cad00c293c4140d870b8f362743a1294468b172f104f742",
+      "qwi-2024-Q3-ks-23.json": "49407d1064cb923dbcbe36ff46c9ce2cd01eb47328b4f801da0af16891cff872",
+      "qwi-2024-Q3-ks-31-33.json": "84aca66f774102f1ee54c1c02e2a078c45ebc6791d66faa3c1e291417ba2b658",
+      "qwi-2024-Q3-ks-51.json": "b3009e3c15dd2548763882941dd0e3dd7325e35ea2762f5b1d60f580c7401a60",
+      "qwi-2024-Q3-ks-54.json": "cd87062f6d15c619e7cea10e3e795e170c0f509026af46096993b4f0ca1f8d22",
+      "qwi-2024-Q3-ks-62.json": "c4a3415562336632bbddb22b87004beef1cf58d4b345c952547fa96a9a013ef2",
+      "qwi-2024-Q3-ks-71.json": "30ce8797a35c1a60901346fbc03f930553f5c2d88d9cac6c054895a0449633c8",
+      "qwi-2024-Q3-ks-72.json": "e82a654b53fdbcdd40c6b5b845db7e1b50457ef1b1f1ae206ff9c319ae7c7afb",
+      "qwi-2024-Q3-ks-81.json": "b0119d5daa29877992ca6b0f08276bf51b97029d001f597d527a051b6b82342e",
+      "qwi-2024-Q4-ks-22.json": "87bf964258ecbc7d87e705773bee0610c66d0122aff70abc12a2c3a9b7af921f",
+      "qwi-2024-Q4-ks-23.json": "c5fc3ceefe37cc2ff60b6929ad841eef4652e769acbf64047b8a7587cf25f3dd",
+      "qwi-2024-Q4-ks-31-33.json": "a8d518ffaf6f6e631f63ac47331624ab2045ae6c400dbc0ac1625391a76951dc",
+      "qwi-2024-Q4-ks-51.json": "5b52f479ecee64d33a2a25c184c2022340c84feaddc4f3c821d241ac912bd7e0",
+      "qwi-2024-Q4-ks-54.json": "a256e0eb54e8a44eeb47fefa36fde32d7c0bc44174e79c5a7c874853921a845d",
+      "qwi-2024-Q4-ks-62.json": "1b84d4638e66b4c9e46d1d9800da381b7d8bee68437f557c3b2863b4b9b42df7",
+      "qwi-2024-Q4-ks-71.json": "33ad45f34cfef52754c4813ffac5fe7f30e1b4cf2e7306ddd9c4426ef630182a",
+      "qwi-2024-Q4-ks-72.json": "3fcfc1572e0c6e2042faeef6256fc287dfaf6d6bbacbb82be318bbb8fec00d83",
+      "qwi-2024-Q4-ks-81.json": "31321ebae5ff74eb5c2f4c846108396984c6e0fcb5052c126091310001739d10",
+      "qwi-2025-Q1-ks-22.json": "109849fe6a83d483c728c8f2fa2b033b57daa0300ebcff322ebbb15bb3ba894c",
+      "qwi-2025-Q1-ks-23.json": "a9bdba62e9a047547ee0fcba69a2bb28abed06342d948b54bbbf37580bbeef50",
+      "qwi-2025-Q1-ks-31-33.json": "5004ca2168992a44473c6ba770b9f7a6a93fee84146b2e86b1a51ebc2baa05b6",
+      "qwi-2025-Q1-ks-51.json": "e7069b8cea91beff120c09d9d66a6575145bd4602dc463bc0b79ff5a1bd9944e",
+      "qwi-2025-Q1-ks-54.json": "690c8a299e3ea7133bca1fbdf959666c9cf18a5a95ea2ea5d20371b1e7b896da",
+      "qwi-2025-Q1-ks-62.json": "a94c7e02b9aea8ba39ec65b700bd8146fda7220a5881cdb9314172c073bf34c1",
+      "qwi-2025-Q1-ks-71.json": "414bdc675ddf3af6650106ad0aa76c51a52a20fe5701d0b34108022041f300d5",
+      "qwi-2025-Q1-ks-72.json": "a93e9a0159a7771b1218af2a2e6e117e8ce7c8dafc66d0d95a8d4ab01bec56ea",
+      "qwi-2025-Q1-ks-81.json": "b3a8877ec62820d281c98061dae4e916a9d98900184938f05f36e1b191a4e9e6",
       "qwi-2025-Q2-ks-22.json": "d0cbef80ea99632f8cbdc927846dd744db36a68b8bd9b6d81211a71dc887406a",
       "qwi-2025-Q2-ks-23.json": "590ed2302058c408362373e7608ad531233c2fae112e2a3840976c69d2ef41db",
+      "qwi-2025-Q2-ks-31-33.json": "f47f5d5372b760147191a129b61d8c0ec048e759be08824ed2d58cb4c8ebca29",
       "qwi-2025-Q2-ks-51.json": "f9b9570148d1d24be394d8732c17d50bff58d33be994564d2bd776ab5e5ddd55",
       "qwi-2025-Q2-ks-54.json": "16c2cb7a3f760d6fe92ca0d6317a1a651e112acd9a6b0c74feb15a2cc0d1a673",
       "qwi-2025-Q2-ks-62.json": "74bd56d1917d1b9250fcbfde550b08bc2bb63084a03f9ec9a1e3a65b553f8c69",
       "qwi-2025-Q2-ks-71.json": "d68c4753626a61034acf1a356c64389511e36eb7ccf3bededfb0b97b694a49c8",
       "qwi-2025-Q2-ks-72.json": "12abc819bc47d12a356032828bfc5caa312896a22b115ca1a79852fc9d03d3ae",
       "qwi-2025-Q2-ks-81.json": "8a1d2767d21f4f8c3162a8c51f5a80fbad46194dc2b3b816b4d4ef1c46e6544c",
-      "qwi-2025-Q2-ks-manufacturing.json": "ce3bb147561c6164b84802ee206a1be73ff58fa43c67531d6390e823fb66c82a",
       "qwi-2025-Q3-ks-22.json": "2663b61cca9e1363521227f096b1c23d9718fdf3114e513a3df653019837627b",
       "qwi-2025-Q3-ks-23.json": "5d841a75f7645a87254f71ea1fb66b9df8b280a2e3d0e75cf2cad42561c70486",
+      "qwi-2025-Q3-ks-31-33.json": "88750087af7fd9d1cd15137aa36c719712d724645ce0c02e48ad39163a1ae556",
       "qwi-2025-Q3-ks-51.json": "33a70646defd86af2653e73c50032d0e47846cb21a2f4c87917a17cfb21d666a",
       "qwi-2025-Q3-ks-54.json": "c15eed05134664f84bbf30e8209c5dc127e6c93d6ae43c114e05531deb32fe9a",
       "qwi-2025-Q3-ks-62.json": "2b16cf5f63046ee4b29b55bd3bbf4aed1c2069c9bbd1cdec9b35c56791525b87",
       "qwi-2025-Q3-ks-71.json": "76966c2cd4915de7a26976075b00e62ad33982a3a7164b10d426f966538bb237",
       "qwi-2025-Q3-ks-72.json": "4aa9ed343fef9d3ba573df99a0f5846429b9d4b0de1d82dd95251eef38c9f2c0",
       "qwi-2025-Q3-ks-81.json": "e532f2beb1cd09c600004eed34638b13dc23c66a31442093e0a6d4deb113623f",
-      "qwi-2025-Q3-ks-manufacturing.json": "bb857217d70ceea35fbb78aa50e76907d6b3fb3eda6559415e2eae2356e185f9",
       "qwi-2025-Q4-ks-22.json": "5c237262a29dc6511b4beaf337f4308d8a4722a444c577037fd25d2cdae95f14",
       "qwi-2025-Q4-ks-23.json": "7f06342f2f3b8993084ed992f33872d23259100df5e09231d81c6e10d151331e",
+      "qwi-2025-Q4-ks-31-33.json": "1a82a4a496a436053f6a438b9aad86a45be11d7153346b0c94a489c80c3cb7c6",
       "qwi-2025-Q4-ks-51.json": "aee22bbbbdbfd9d63b625e8cc78810c5754debbd325cd0d3d4e9c3965fa6a126",
       "qwi-2025-Q4-ks-54.json": "8670a81694e238b7b856968e6c4a69e332308511039ecfd913f4c1748bf14349",
       "qwi-2025-Q4-ks-62.json": "e7cbfec9b10945299116c533be102d0879f62128b8d030161868f9a2a3595c27",
       "qwi-2025-Q4-ks-71.json": "80d6a66a3ff374407e79da935724d22896f5feded8713cd865d81ff7c374baf4",
       "qwi-2025-Q4-ks-72.json": "45d8e6c968f19e4f123c2e19b1b0a943a9110492364375f1f9961c7f88fedd73",
       "qwi-2025-Q4-ks-81.json": "ea2deccac893f36c24aec33cf971d34123ad1a8e115ec07dd59bebb2e0094dc4",
-      "qwi-2025q4-ks-manufacturing.json": "bcb950bd14ef7a45d04811fe8620411b382bd6b7bb290c2ef9c2a8b724199e9f",
-      "qwi-version.txt": "75d8e93ec50d0e0e6ea4925c28ae815d75175de0e8814b59551304028ab5a656"
+      "qwi-2026-Q1-ks-22.json": "80724206ed92e551add7e84be1322641e9d75e6faf2b2dfe488f7d1422b51c68",
+      "qwi-2026-Q1-ks-23.json": "9dcfa7915a9f040d4ce04dfbc1e0c4b8c08923f42a2879b97be1d72744ab21d7",
+      "qwi-2026-Q1-ks-31-33.json": "f4449516d1636f5aef2a49992980ff1e2586223c0daef606a12ae4f7df2d93a0",
+      "qwi-2026-Q1-ks-51.json": "a286c5328b9c9127c1ae01b8a489d619f2d615f8536b9404c6f9650d023947a1",
+      "qwi-2026-Q1-ks-54.json": "9d26852ba0633fbeb5eff47deb8208de142e3b8d3c437263bcc04943dceb9988",
+      "qwi-2026-Q1-ks-62.json": "494c73a83a8fe118c6f08c5219bf8a70da0088ba57c1ff4dc0d596a1cc4acff7",
+      "qwi-2026-Q1-ks-71.json": "8c2c098eb9c930be0d7ba717a827fa04baeecdb8e5e84dc9c41076b9ca84d685",
+      "qwi-2026-Q1-ks-72.json": "b7f9e22375b28546256cb8b5003793c07b2a9cf5bc6d94121a5bd753e781e37f",
+      "qwi-2026-Q1-ks-81.json": "bd254324d3bf8657497e56fefedba7327c1ed4dc7cd0f45b02dd7e97fe3ddbcc",
+      "qwi-version.txt": "4143de0f8d7b53df5ebc0464165759d4748e2261206d28a3dd26ae0b5ec84e4c"
     },
     "population_forecast": "projections_s20.parquet sha256 6bb08eedde6abbfe0bc323b9ad595d02c2890ec9a0aa461018407245b3dd72a8",
     "geography_crosswalk_version": "2026-10-20",
@@ -376,8 +430,8 @@
   },
   "files": {
     "pressure_observations.parquet": {
-      "sha256": "00552345d34502dc666f1d5b35c8d199409d8a6af0696dab96262c21a8b5133b",
-      "rows": 54369,
+      "sha256": "fa9dbf3ef5f9ea59e8c0309b0534e2f5a123bebdbd6d26be5391acef9781bfbe",
+      "rows": 116739,
       "columns": [
         "geography_id",
         "industry_code",
@@ -1054,11 +1108,11 @@
     },
     {
       "source_id": "qwi",
-      "reference_period": "2025-12-31",
-      "release_id": "R2026Q3",
+      "reference_period": "2026-03-31",
+      "release_id": "R2026Q4",
       "adoption_status": "validated observations",
       "verification_date": "2026-10-20",
-      "source_url": "https://api.census.gov/data/timeseries/qwi/sa?get=Emp%2CHirA%2CSep%2CEarnS%2CsEmp%2CsHirA%2CsSep%2CsEarnS&for=county%3A%2A&in=state%3A20&time=2025-Q2&sex=0&agegrp=A00&industry=22&ownercode=A05&seasonadj=U&firmsize=0&firmage=0; https://api.census.gov/data/timeseries/qwi/sa?get=Emp%2CHirA%2CSep%2CEarnS%2CsEmp%2CsHirA%2CsSep%2CsEarnS&for=county%3A%2A&in=state%3A20&time=2025-Q2&sex=0&agegrp=A00&industry=23&ownercode=A05&seasonadj=U&firmsize=0&firmage=0; https://api.census.gov/data/timeseries/qwi/sa?get=Emp%2CHirA%2CSep%2CEarnS%2CsEmp%2CsHirA%2CsSep%2CsEarnS&for=county%3A%2A&in=state%3A20&time=2025-Q2&sex=0&agegrp=A00&industry=31-33&ownercode=A05&seasonadj=U&firmsize=0&firmage=0; https://api.census.gov/data/timeseries/qwi/sa?get=Emp%2CHirA%2CSep%2CEarnS%2CsEmp%2CsHirA%2CsSep%2CsEarnS&for=county%3A%2A&in=state%3A20&time=2025-Q2&sex=0&agegrp=A00&industry=51&ownercode=A05&seasonadj=U&firmsize=0&firmage=0; https://api.census.gov/data/timeseries/qwi/sa?get=Emp%2CHirA%2CSep%2CEarnS%2CsEmp%2CsHirA%2CsSep%2CsEarnS&for=county%3A%2A&in=state%3A20&time=2025-Q2&sex=0&agegrp=A00&industry=54&ownercode=A05&seasonadj=U&firmsize=0&firmage=0; https://api.census.gov/data/timeseries/qwi/sa?get=Emp%2CHirA%2CSep%2CEarnS%2CsEmp%2CsHirA%2CsSep%2CsEarnS&for=county%3A%2A&in=state%3A20&time=2025-Q2&sex=0&agegrp=A00&industry=62&ownercode=A05&seasonadj=U&firmsize=0&firmage=0; https://api.census.gov/data/timeseries/qwi/sa?get=Emp%2CHirA%2CSep%2CEarnS%2CsEmp%2CsHirA%2CsSep%2CsEarnS&for=county%3A%2A&in=state%3A20&time=2025-Q2&sex=0&agegrp=A00&industry=71&ownercode=A05&seasonadj=U&firmsize=0&firmage=0; https://api.census.gov/data/timeseries/qwi/sa?get=Emp%2CHirA%2CSep%2CEarnS%2CsEmp%2CsHirA%2CsSep%2CsEarnS&for=county%3A%2A&in=state%3A20&time=2025-Q2&sex=0&agegrp=A00&industry=72&ownercode=A05&seasonadj=U&firmsize=0&firmage=0; https://api.census.gov/data/timeseries/qwi/sa?get=Emp%2CHirA%2CSep%2CEarnS%2CsEmp%2CsHirA%2CsSep%2CsEarnS&for=county%3A%2A&in=state%3A20&time=2025-Q2&sex=0&agegrp=A00&industry=81&ownercode=A05&seasonadj=U&firmsize=0&firmage=0; https://api.census.gov/data/timeseries/qwi/sa?get=Emp%2CHirA%2CSep%2CEarnS%2CsEmp%2CsHirA%2CsSep%2CsEarnS&for=county%3A%2A&in=state%3A20&time=2025-Q3&sex=0&agegrp=A00&industry=22&ownercode=A05&seasonadj=U&firmsize=0&firmage=0; https://api.census.gov/data/timeseries/qwi/sa?get=Emp%2CHirA%2CSep%2CEarnS%2CsEmp%2CsHirA%2CsSep%2CsEarnS&for=county%3A%2A&in=state%3A20&time=2025-Q3&sex=0&agegrp=A00&industry=23&ownercode=A05&seasonadj=U&firmsize=0&firmage=0; https://api.census.gov/data/timeseries/qwi/sa?get=Emp%2CHirA%2CSep%2CEarnS%2CsEmp%2CsHirA%2CsSep%2CsEarnS&for=county%3A%2A&in=state%3A20&time=2025-Q3&sex=0&agegrp=A00&industry=31-33&ownercode=A05&seasonadj=U&firmsize=0&firmage=0; https://api.census.gov/data/timeseries/qwi/sa?get=Emp%2CHirA%2CSep%2CEarnS%2CsEmp%2CsHirA%2CsSep%2CsEarnS&for=county%3A%2A&in=state%3A20&time=2025-Q3&sex=0&agegrp=A00&industry=51&ownercode=A05&seasonadj=U&firmsize=0&firmage=0; https://api.census.gov/data/timeseries/qwi/sa?get=Emp%2CHirA%2CSep%2CEarnS%2CsEmp%2CsHirA%2CsSep%2CsEarnS&for=county%3A%2A&in=state%3A20&time=2025-Q3&sex=0&agegrp=A00&industry=54&ownercode=A05&seasonadj=U&firmsize=0&firmage=0; https://api.census.gov/data/timeseries/qwi/sa?get=Emp%2CHirA%2CSep%2CEarnS%2CsEmp%2CsHirA%2CsSep%2CsEarnS&for=county%3A%2A&in=state%3A20&time=2025-Q3&sex=0&agegrp=A00&industry=62&ownercode=A05&seasonadj=U&firmsize=0&firmage=0; https://api.census.gov/data/timeseries/qwi/sa?get=Emp%2CHirA%2CSep%2CEarnS%2CsEmp%2CsHirA%2CsSep%2CsEarnS&for=county%3A%2A&in=state%3A20&time=2025-Q3&sex=0&agegrp=A00&industry=71&ownercode=A05&seasonadj=U&firmsize=0&firmage=0; https://api.census.gov/data/timeseries/qwi/sa?get=Emp%2CHirA%2CSep%2CEarnS%2CsEmp%2CsHirA%2CsSep%2CsEarnS&for=county%3A%2A&in=state%3A20&time=2025-Q3&sex=0&agegrp=A00&industry=72&ownercode=A05&seasonadj=U&firmsize=0&firmage=0; https://api.census.gov/data/timeseries/qwi/sa?get=Emp%2CHirA%2CSep%2CEarnS%2CsEmp%2CsHirA%2CsSep%2CsEarnS&for=county%3A%2A&in=state%3A20&time=2025-Q3&sex=0&agegrp=A00&industry=81&ownercode=A05&seasonadj=U&firmsize=0&firmage=0; https://api.census.gov/data/timeseries/qwi/sa?get=Emp%2CHirA%2CSep%2CEarnS%2CsEmp%2CsHirA%2CsSep%2CsEarnS&for=county%3A%2A&in=state%3A20&time=2025-Q4&sex=0&agegrp=A00&industry=22&ownercode=A05&seasonadj=U&firmsize=0&firmage=0; https://api.census.gov/data/timeseries/qwi/sa?get=Emp%2CHirA%2CSep%2CEarnS%2CsEmp%2CsHirA%2CsSep%2CsEarnS&for=county%3A%2A&in=state%3A20&time=2025-Q4&sex=0&agegrp=A00&industry=23&ownercode=A05&seasonadj=U&firmsize=0&firmage=0; https://api.census.gov/data/timeseries/qwi/sa?get=Emp%2CHirA%2CSep%2CEarnS%2CsEmp%2CsHirA%2CsSep%2CsEarnS&for=county%3A%2A&in=state%3A20&time=2025-Q4&sex=0&agegrp=A00&industry=31-33&ownercode=A05&seasonadj=U&firmsize=0&firmage=0; https://api.census.gov/data/timeseries/qwi/sa?get=Emp%2CHirA%2CSep%2CEarnS%2CsEmp%2CsHirA%2CsSep%2CsEarnS&for=county%3A%2A&in=state%3A20&time=2025-Q4&sex=0&agegrp=A00&industry=51&ownercode=A05&seasonadj=U&firmsize=0&firmage=0; https://api.census.gov/data/timeseries/qwi/sa?get=Emp%2CHirA%2CSep%2CEarnS%2CsEmp%2CsHirA%2CsSep%2CsEarnS&for=county%3A%2A&in=state%3A20&time=2025-Q4&sex=0&agegrp=A00&industry=54&ownercode=A05&seasonadj=U&firmsize=0&firmage=0; https://api.census.gov/data/timeseries/qwi/sa?get=Emp%2CHirA%2CSep%2CEarnS%2CsEmp%2CsHirA%2CsSep%2CsEarnS&for=county%3A%2A&in=state%3A20&time=2025-Q4&sex=0&agegrp=A00&industry=62&ownercode=A05&seasonadj=U&firmsize=0&firmage=0; https://api.census.gov/data/timeseries/qwi/sa?get=Emp%2CHirA%2CSep%2CEarnS%2CsEmp%2CsHirA%2CsSep%2CsEarnS&for=county%3A%2A&in=state%3A20&time=2025-Q4&sex=0&agegrp=A00&industry=71&ownercode=A05&seasonadj=U&firmsize=0&firmage=0; https://api.census.gov/data/timeseries/qwi/sa?get=Emp%2CHirA%2CSep%2CEarnS%2CsEmp%2CsHirA%2CsSep%2CsEarnS&for=county%3A%2A&in=state%3A20&time=2025-Q4&sex=0&agegrp=A00&industry=72&ownercode=A05&seasonadj=U&firmsize=0&firmage=0; https://api.census.gov/data/timeseries/qwi/sa?get=Emp%2CHirA%2CSep%2CEarnS%2CsEmp%2CsHirA%2CsSep%2CsEarnS&for=county%3A%2A&in=state%3A20&time=2025-Q4&sex=0&agegrp=A00&industry=81&ownercode=A05&seasonadj=U&firmsize=0&firmage=0"
+      "source_url": "https://api.census.gov/data/timeseries/qwi/sa?get=Emp%2CHirA%2CSep%2CEarnS%2CsEmp%2CsHirA%2CsSep%2CsEarnS&for=county%3A%2A&in=state%3A20&time=2024-Q1&sex=0&agegrp=A00&industry=22&ownercode=A05&seasonadj=U&firmsize=0&firmage=0; https://api.census.gov/data/timeseries/qwi/sa?get=Emp%2CHirA%2CSep%2CEarnS%2CsEmp%2CsHirA%2CsSep%2CsEarnS&for=county%3A%2A&in=state%3A20&time=2024-Q1&sex=0&agegrp=A00&industry=23&ownercode=A05&seasonadj=U&firmsize=0&firmage=0; https://api.census.gov/data/timeseries/qwi/sa?get=Emp%2CHirA%2CSep%2CEarnS%2CsEmp%2CsHirA%2CsSep%2CsEarnS&for=county%3A%2A&in=state%3A20&time=2024-Q1&sex=0&agegrp=A00&industry=31-33&ownercode=A05&seasonadj=U&firmsize=0&firmage=0; https://api.census.gov/data/timeseries/qwi/sa?get=Emp%2CHirA%2CSep%2CEarnS%2CsEmp%2CsHirA%2CsSep%2CsEarnS&for=county%3A%2A&in=state%3A20&time=2024-Q1&sex=0&agegrp=A00&industry=51&ownercode=A05&seasonadj=U&firmsize=0&firmage=0; https://api.census.gov/data/timeseries/qwi/sa?get=Emp%2CHirA%2CSep%2CEarnS%2CsEmp%2CsHirA%2CsSep%2CsEarnS&for=county%3A%2A&in=state%3A20&time=2024-Q1&sex=0&agegrp=A00&industry=54&ownercode=A05&seasonadj=U&firmsize=0&firmage=0; https://api.census.gov/data/timeseries/qwi/sa?get=Emp%2CHirA%2CSep%2CEarnS%2CsEmp%2CsHirA%2CsSep%2CsEarnS&for=county%3A%2A&in=state%3A20&time=2024-Q1&sex=0&agegrp=A00&industry=62&ownercode=A05&seasonadj=U&firmsize=0&firmage=0; https://api.census.gov/data/timeseries/qwi/sa?get=Emp%2CHirA%2CSep%2CEarnS%2CsEmp%2CsHirA%2CsSep%2CsEarnS&for=county%3A%2A&in=state%3A20&time=2024-Q1&sex=0&agegrp=A00&industry=71&ownercode=A05&seasonadj=U&firmsize=0&firmage=0; https://api.census.gov/data/timeseries/qwi/sa?get=Emp%2CHirA%2CSep%2CEarnS%2CsEmp%2CsHirA%2CsSep%2CsEarnS&for=county%3A%2A&in=state%3A20&time=2024-Q1&sex=0&agegrp=A00&industry=72&ownercode=A05&seasonadj=U&firmsize=0&firmage=0; https://api.census.gov/data/timeseries/qwi/sa?get=Emp%2CHirA%2CSep%2CEarnS%2CsEmp%2CsHirA%2CsSep%2CsEarnS&for=county%3A%2A&in=state%3A20&time=2024-Q1&sex=0&agegrp=A00&industry=81&ownercode=A05&seasonadj=U&firmsize=0&firmage=0; https://api.census.gov/data/timeseries/qwi/sa?get=Emp%2CHirA%2CSep%2CEarnS%2CsEmp%2CsHirA%2CsSep%2CsEarnS&for=county%3A%2A&in=state%3A20&time=2024-Q2&sex=0&agegrp=A00&industry=22&ownercode=A05&seasonadj=U&firmsize=0&firmage=0; https://api.census.gov/data/timeseries/qwi/sa?get=Emp%2CHirA%2CSep%2CEarnS%2CsEmp%2CsHirA%2CsSep%2CsEarnS&for=county%3A%2A&in=state%3A20&time=2024-Q2&sex=0&agegrp=A00&industry=23&ownercode=A05&seasonadj=U&firmsize=0&firmage=0; https://api.census.gov/data/timeseries/qwi/sa?get=Emp%2CHirA%2CSep%2CEarnS%2CsEmp%2CsHirA%2CsSep%2CsEarnS&for=county%3A%2A&in=state%3A20&time=2024-Q2&sex=0&agegrp=A00&industry=31-33&ownercode=A05&seasonadj=U&firmsize=0&firmage=0; https://api.census.gov/data/timeseries/qwi/sa?get=Emp%2CHirA%2CSep%2CEarnS%2CsEmp%2CsHirA%2CsSep%2CsEarnS&for=county%3A%2A&in=state%3A20&time=2024-Q2&sex=0&agegrp=A00&industry=51&ownercode=A05&seasonadj=U&firmsize=0&firmage=0; https://api.census.gov/data/timeseries/qwi/sa?get=Emp%2CHirA%2CSep%2CEarnS%2CsEmp%2CsHirA%2CsSep%2CsEarnS&for=county%3A%2A&in=state%3A20&time=2024-Q2&sex=0&agegrp=A00&industry=54&ownercode=A05&seasonadj=U&firmsize=0&firmage=0; https://api.census.gov/data/timeseries/qwi/sa?get=Emp%2CHirA%2CSep%2CEarnS%2CsEmp%2CsHirA%2CsSep%2CsEarnS&for=county%3A%2A&in=state%3A20&time=2024-Q2&sex=0&agegrp=A00&industry=62&ownercode=A05&seasonadj=U&firmsize=0&firmage=0; https://api.census.gov/data/timeseries/qwi/sa?get=Emp%2CHirA%2CSep%2CEarnS%2CsEmp%2CsHirA%2CsSep%2CsEarnS&for=county%3A%2A&in=state%3A20&time=2024-Q2&sex=0&agegrp=A00&industry=71&ownercode=A05&seasonadj=U&firmsize=0&firmage=0; https://api.census.gov/data/timeseries/qwi/sa?get=Emp%2CHirA%2CSep%2CEarnS%2CsEmp%2CsHirA%2CsSep%2CsEarnS&for=county%3A%2A&in=state%3A20&time=2024-Q2&sex=0&agegrp=A00&industry=72&ownercode=A05&seasonadj=U&firmsize=0&firmage=0; https://api.census.gov/data/timeseries/qwi/sa?get=Emp%2CHirA%2CSep%2CEarnS%2CsEmp%2CsHirA%2CsSep%2CsEarnS&for=county%3A%2A&in=state%3A20&time=2024-Q2&sex=0&agegrp=A00&industry=81&ownercode=A05&seasonadj=U&firmsize=0&firmage=0; https://api.census.gov/data/timeseries/qwi/sa?get=Emp%2CHirA%2CSep%2CEarnS%2CsEmp%2CsHirA%2CsSep%2CsEarnS&for=county%3A%2A&in=state%3A20&time=2024-Q3&sex=0&agegrp=A00&industry=22&ownercode=A05&seasonadj=U&firmsize=0&firmage=0; https://api.census.gov/data/timeseries/qwi/sa?get=Emp%2CHirA%2CSep%2CEarnS%2CsEmp%2CsHirA%2CsSep%2CsEarnS&for=county%3A%2A&in=state%3A20&time=2024-Q3&sex=0&agegrp=A00&industry=23&ownercode=A05&seasonadj=U&firmsize=0&firmage=0; https://api.census.gov/data/timeseries/qwi/sa?get=Emp%2CHirA%2CSep%2CEarnS%2CsEmp%2CsHirA%2CsSep%2CsEarnS&for=county%3A%2A&in=state%3A20&time=2024-Q3&sex=0&agegrp=A00&industry=31-33&ownercode=A05&seasonadj=U&firmsize=0&firmage=0; https://api.census.gov/data/timeseries/qwi/sa?get=Emp%2CHirA%2CSep%2CEarnS%2CsEmp%2CsHirA%2CsSep%2CsEarnS&for=county%3A%2A&in=state%3A20&time=2024-Q3&sex=0&agegrp=A00&industry=51&ownercode=A05&seasonadj=U&firmsize=0&firmage=0; https://api.census.gov/data/timeseries/qwi/sa?get=Emp%2CHirA%2CSep%2CEarnS%2CsEmp%2CsHirA%2CsSep%2CsEarnS&for=county%3A%2A&in=state%3A20&time=2024-Q3&sex=0&agegrp=A00&industry=54&ownercode=A05&seasonadj=U&firmsize=0&firmage=0; https://api.census.gov/data/timeseries/qwi/sa?get=Emp%2CHirA%2CSep%2CEarnS%2CsEmp%2CsHirA%2CsSep%2CsEarnS&for=county%3A%2A&in=state%3A20&time=2024-Q3&sex=0&agegrp=A00&industry=62&ownercode=A05&seasonadj=U&firmsize=0&firmage=0; https://api.census.gov/data/timeseries/qwi/sa?get=Emp%2CHirA%2CSep%2CEarnS%2CsEmp%2CsHirA%2CsSep%2CsEarnS&for=county%3A%2A&in=state%3A20&time=2024-Q3&sex=0&agegrp=A00&industry=71&ownercode=A05&seasonadj=U&firmsize=0&firmage=0; https://api.census.gov/data/timeseries/qwi/sa?get=Emp%2CHirA%2CSep%2CEarnS%2CsEmp%2CsHirA%2CsSep%2CsEarnS&for=county%3A%2A&in=state%3A20&time=2024-Q3&sex=0&agegrp=A00&industry=72&ownercode=A05&seasonadj=U&firmsize=0&firmage=0; https://api.census.gov/data/timeseries/qwi/sa?get=Emp%2CHirA%2CSep%2CEarnS%2CsEmp%2CsHirA%2CsSep%2CsEarnS&for=county%3A%2A&in=state%3A20&time=2024-Q3&sex=0&agegrp=A00&industry=81&ownercode=A05&seasonadj=U&firmsize=0&firmage=0; https://api.census.gov/data/timeseries/qwi/sa?get=Emp%2CHirA%2CSep%2CEarnS%2CsEmp%2CsHirA%2CsSep%2CsEarnS&for=county%3A%2A&in=state%3A20&time=2024-Q4&sex=0&agegrp=A00&industry=22&ownercode=A05&seasonadj=U&firmsize=0&firmage=0; https://api.census.gov/data/timeseries/qwi/sa?get=Emp%2CHirA%2CSep%2CEarnS%2CsEmp%2CsHirA%2CsSep%2CsEarnS&for=county%3A%2A&in=state%3A20&time=2024-Q4&sex=0&agegrp=A00&industry=23&ownercode=A05&seasonadj=U&firmsize=0&firmage=0; https://api.census.gov/data/timeseries/qwi/sa?get=Emp%2CHirA%2CSep%2CEarnS%2CsEmp%2CsHirA%2CsSep%2CsEarnS&for=county%3A%2A&in=state%3A20&time=2024-Q4&sex=0&agegrp=A00&industry=31-33&ownercode=A05&seasonadj=U&firmsize=0&firmage=0; https://api.census.gov/data/timeseries/qwi/sa?get=Emp%2CHirA%2CSep%2CEarnS%2CsEmp%2CsHirA%2CsSep%2CsEarnS&for=county%3A%2A&in=state%3A20&time=2024-Q4&sex=0&agegrp=A00&industry=51&ownercode=A05&seasonadj=U&firmsize=0&firmage=0; https://api.census.gov/data/timeseries/qwi/sa?get=Emp%2CHirA%2CSep%2CEarnS%2CsEmp%2CsHirA%2CsSep%2CsEarnS&for=county%3A%2A&in=state%3A20&time=2024-Q4&sex=0&agegrp=A00&industry=54&ownercode=A05&seasonadj=U&firmsize=0&firmage=0; https://api.census.gov/data/timeseries/qwi/sa?get=Emp%2CHirA%2CSep%2CEarnS%2CsEmp%2CsHirA%2CsSep%2CsEarnS&for=county%3A%2A&in=state%3A20&time=2024-Q4&sex=0&agegrp=A00&industry=62&ownercode=A05&seasonadj=U&firmsize=0&firmage=0; https://api.census.gov/data/timeseries/qwi/sa?get=Emp%2CHirA%2CSep%2CEarnS%2CsEmp%2CsHirA%2CsSep%2CsEarnS&for=county%3A%2A&in=state%3A20&time=2024-Q4&sex=0&agegrp=A00&industry=71&ownercode=A05&seasonadj=U&firmsize=0&firmage=0; https://api.census.gov/data/timeseries/qwi/sa?get=Emp%2CHirA%2CSep%2CEarnS%2CsEmp%2CsHirA%2CsSep%2CsEarnS&for=county%3A%2A&in=state%3A20&time=2024-Q4&sex=0&agegrp=A00&industry=72&ownercode=A05&seasonadj=U&firmsize=0&firmage=0; https://api.census.gov/data/timeseries/qwi/sa?get=Emp%2CHirA%2CSep%2CEarnS%2CsEmp%2CsHirA%2CsSep%2CsEarnS&for=county%3A%2A&in=state%3A20&time=2024-Q4&sex=0&agegrp=A00&industry=81&ownercode=A05&seasonadj=U&firmsize=0&firmage=0; https://api.census.gov/data/timeseries/qwi/sa?get=Emp%2CHirA%2CSep%2CEarnS%2CsEmp%2CsHirA%2CsSep%2CsEarnS&for=county%3A%2A&in=state%3A20&time=2025-Q1&sex=0&agegrp=A00&industry=22&ownercode=A05&seasonadj=U&firmsize=0&firmage=0; https://api.census.gov/data/timeseries/qwi/sa?get=Emp%2CHirA%2CSep%2CEarnS%2CsEmp%2CsHirA%2CsSep%2CsEarnS&for=county%3A%2A&in=state%3A20&time=2025-Q1&sex=0&agegrp=A00&industry=23&ownercode=A05&seasonadj=U&firmsize=0&firmage=0; https://api.census.gov/data/timeseries/qwi/sa?get=Emp%2CHirA%2CSep%2CEarnS%2CsEmp%2CsHirA%2CsSep%2CsEarnS&for=county%3A%2A&in=state%3A20&time=2025-Q1&sex=0&agegrp=A00&industry=31-33&ownercode=A05&seasonadj=U&firmsize=0&firmage=0; https://api.census.gov/data/timeseries/qwi/sa?get=Emp%2CHirA%2CSep%2CEarnS%2CsEmp%2CsHirA%2CsSep%2CsEarnS&for=county%3A%2A&in=state%3A20&time=2025-Q1&sex=0&agegrp=A00&industry=51&ownercode=A05&seasonadj=U&firmsize=0&firmage=0; https://api.census.gov/data/timeseries/qwi/sa?get=Emp%2CHirA%2CSep%2CEarnS%2CsEmp%2CsHirA%2CsSep%2CsEarnS&for=county%3A%2A&in=state%3A20&time=2025-Q1&sex=0&agegrp=A00&industry=54&ownercode=A05&seasonadj=U&firmsize=0&firmage=0; https://api.census.gov/data/timeseries/qwi/sa?get=Emp%2CHirA%2CSep%2CEarnS%2CsEmp%2CsHirA%2CsSep%2CsEarnS&for=county%3A%2A&in=state%3A20&time=2025-Q1&sex=0&agegrp=A00&industry=62&ownercode=A05&seasonadj=U&firmsize=0&firmage=0; https://api.census.gov/data/timeseries/qwi/sa?get=Emp%2CHirA%2CSep%2CEarnS%2CsEmp%2CsHirA%2CsSep%2CsEarnS&for=county%3A%2A&in=state%3A20&time=2025-Q1&sex=0&agegrp=A00&industry=71&ownercode=A05&seasonadj=U&firmsize=0&firmage=0; https://api.census.gov/data/timeseries/qwi/sa?get=Emp%2CHirA%2CSep%2CEarnS%2CsEmp%2CsHirA%2CsSep%2CsEarnS&for=county%3A%2A&in=state%3A20&time=2025-Q1&sex=0&agegrp=A00&industry=72&ownercode=A05&seasonadj=U&firmsize=0&firmage=0; https://api.census.gov/data/timeseries/qwi/sa?get=Emp%2CHirA%2CSep%2CEarnS%2CsEmp%2CsHirA%2CsSep%2CsEarnS&for=county%3A%2A&in=state%3A20&time=2025-Q1&sex=0&agegrp=A00&industry=81&ownercode=A05&seasonadj=U&firmsize=0&firmage=0; https://api.census.gov/data/timeseries/qwi/sa?get=Emp%2CHirA%2CSep%2CEarnS%2CsEmp%2CsHirA%2CsSep%2CsEarnS&for=county%3A%2A&in=state%3A20&time=2025-Q2&sex=0&agegrp=A00&industry=22&ownercode=A05&seasonadj=U&firmsize=0&firmage=0; https://api.census.gov/data/timeseries/qwi/sa?get=Emp%2CHirA%2CSep%2CEarnS%2CsEmp%2CsHirA%2CsSep%2CsEarnS&for=county%3A%2A&in=state%3A20&time=2025-Q2&sex=0&agegrp=A00&industry=23&ownercode=A05&seasonadj=U&firmsize=0&firmage=0; https://api.census.gov/data/timeseries/qwi/sa?get=Emp%2CHirA%2CSep%2CEarnS%2CsEmp%2CsHirA%2CsSep%2CsEarnS&for=county%3A%2A&in=state%3A20&time=2025-Q2&sex=0&agegrp=A00&industry=31-33&ownercode=A05&seasonadj=U&firmsize=0&firmage=0; https://api.census.gov/data/timeseries/qwi/sa?get=Emp%2CHirA%2CSep%2CEarnS%2CsEmp%2CsHirA%2CsSep%2CsEarnS&for=county%3A%2A&in=state%3A20&time=2025-Q2&sex=0&agegrp=A00&industry=51&ownercode=A05&seasonadj=U&firmsize=0&firmage=0; https://api.census.gov/data/timeseries/qwi/sa?get=Emp%2CHirA%2CSep%2CEarnS%2CsEmp%2CsHirA%2CsSep%2CsEarnS&for=county%3A%2A&in=state%3A20&time=2025-Q2&sex=0&agegrp=A00&industry=54&ownercode=A05&seasonadj=U&firmsize=0&firmage=0; https://api.census.gov/data/timeseries/qwi/sa?get=Emp%2CHirA%2CSep%2CEarnS%2CsEmp%2CsHirA%2CsSep%2CsEarnS&for=county%3A%2A&in=state%3A20&time=2025-Q2&sex=0&agegrp=A00&industry=62&ownercode=A05&seasonadj=U&firmsize=0&firmage=0; https://api.census.gov/data/timeseries/qwi/sa?get=Emp%2CHirA%2CSep%2CEarnS%2CsEmp%2CsHirA%2CsSep%2CsEarnS&for=county%3A%2A&in=state%3A20&time=2025-Q2&sex=0&agegrp=A00&industry=71&ownercode=A05&seasonadj=U&firmsize=0&firmage=0; https://api.census.gov/data/timeseries/qwi/sa?get=Emp%2CHirA%2CSep%2CEarnS%2CsEmp%2CsHirA%2CsSep%2CsEarnS&for=county%3A%2A&in=state%3A20&time=2025-Q2&sex=0&agegrp=A00&industry=72&ownercode=A05&seasonadj=U&firmsize=0&firmage=0; https://api.census.gov/data/timeseries/qwi/sa?get=Emp%2CHirA%2CSep%2CEarnS%2CsEmp%2CsHirA%2CsSep%2CsEarnS&for=county%3A%2A&in=state%3A20&time=2025-Q2&sex=0&agegrp=A00&industry=81&ownercode=A05&seasonadj=U&firmsize=0&firmage=0; https://api.census.gov/data/timeseries/qwi/sa?get=Emp%2CHirA%2CSep%2CEarnS%2CsEmp%2CsHirA%2CsSep%2CsEarnS&for=county%3A%2A&in=state%3A20&time=2025-Q3&sex=0&agegrp=A00&industry=22&ownercode=A05&seasonadj=U&firmsize=0&firmage=0; https://api.census.gov/data/timeseries/qwi/sa?get=Emp%2CHirA%2CSep%2CEarnS%2CsEmp%2CsHirA%2CsSep%2CsEarnS&for=county%3A%2A&in=state%3A20&time=2025-Q3&sex=0&agegrp=A00&industry=23&ownercode=A05&seasonadj=U&firmsize=0&firmage=0; https://api.census.gov/data/timeseries/qwi/sa?get=Emp%2CHirA%2CSep%2CEarnS%2CsEmp%2CsHirA%2CsSep%2CsEarnS&for=county%3A%2A&in=state%3A20&time=2025-Q3&sex=0&agegrp=A00&industry=31-33&ownercode=A05&seasonadj=U&firmsize=0&firmage=0; https://api.census.gov/data/timeseries/qwi/sa?get=Emp%2CHirA%2CSep%2CEarnS%2CsEmp%2CsHirA%2CsSep%2CsEarnS&for=county%3A%2A&in=state%3A20&time=2025-Q3&sex=0&agegrp=A00&industry=51&ownercode=A05&seasonadj=U&firmsize=0&firmage=0; https://api.census.gov/data/timeseries/qwi/sa?get=Emp%2CHirA%2CSep%2CEarnS%2CsEmp%2CsHirA%2CsSep%2CsEarnS&for=county%3A%2A&in=state%3A20&time=2025-Q3&sex=0&agegrp=A00&industry=54&ownercode=A05&seasonadj=U&firmsize=0&firmage=0; https://api.census.gov/data/timeseries/qwi/sa?get=Emp%2CHirA%2CSep%2CEarnS%2CsEmp%2CsHirA%2CsSep%2CsEarnS&for=county%3A%2A&in=state%3A20&time=2025-Q3&sex=0&agegrp=A00&industry=62&ownercode=A05&seasonadj=U&firmsize=0&firmage=0; https://api.census.gov/data/timeseries/qwi/sa?get=Emp%2CHirA%2CSep%2CEarnS%2CsEmp%2CsHirA%2CsSep%2CsEarnS&for=county%3A%2A&in=state%3A20&time=2025-Q3&sex=0&agegrp=A00&industry=71&ownercode=A05&seasonadj=U&firmsize=0&firmage=0; https://api.census.gov/data/timeseries/qwi/sa?get=Emp%2CHirA%2CSep%2CEarnS%2CsEmp%2CsHirA%2CsSep%2CsEarnS&for=county%3A%2A&in=state%3A20&time=2025-Q3&sex=0&agegrp=A00&industry=72&ownercode=A05&seasonadj=U&firmsize=0&firmage=0; https://api.census.gov/data/timeseries/qwi/sa?get=Emp%2CHirA%2CSep%2CEarnS%2CsEmp%2CsHirA%2CsSep%2CsEarnS&for=county%3A%2A&in=state%3A20&time=2025-Q3&sex=0&agegrp=A00&industry=81&ownercode=A05&seasonadj=U&firmsize=0&firmage=0; https://api.census.gov/data/timeseries/qwi/sa?get=Emp%2CHirA%2CSep%2CEarnS%2CsEmp%2CsHirA%2CsSep%2CsEarnS&for=county%3A%2A&in=state%3A20&time=2025-Q4&sex=0&agegrp=A00&industry=22&ownercode=A05&seasonadj=U&firmsize=0&firmage=0; https://api.census.gov/data/timeseries/qwi/sa?get=Emp%2CHirA%2CSep%2CEarnS%2CsEmp%2CsHirA%2CsSep%2CsEarnS&for=county%3A%2A&in=state%3A20&time=2025-Q4&sex=0&agegrp=A00&industry=23&ownercode=A05&seasonadj=U&firmsize=0&firmage=0; https://api.census.gov/data/timeseries/qwi/sa?get=Emp%2CHirA%2CSep%2CEarnS%2CsEmp%2CsHirA%2CsSep%2CsEarnS&for=county%3A%2A&in=state%3A20&time=2025-Q4&sex=0&agegrp=A00&industry=31-33&ownercode=A05&seasonadj=U&firmsize=0&firmage=0; https://api.census.gov/data/timeseries/qwi/sa?get=Emp%2CHirA%2CSep%2CEarnS%2CsEmp%2CsHirA%2CsSep%2CsEarnS&for=county%3A%2A&in=state%3A20&time=2025-Q4&sex=0&agegrp=A00&industry=51&ownercode=A05&seasonadj=U&firmsize=0&firmage=0; https://api.census.gov/data/timeseries/qwi/sa?get=Emp%2CHirA%2CSep%2CEarnS%2CsEmp%2CsHirA%2CsSep%2CsEarnS&for=county%3A%2A&in=state%3A20&time=2025-Q4&sex=0&agegrp=A00&industry=54&ownercode=A05&seasonadj=U&firmsize=0&firmage=0; https://api.census.gov/data/timeseries/qwi/sa?get=Emp%2CHirA%2CSep%2CEarnS%2CsEmp%2CsHirA%2CsSep%2CsEarnS&for=county%3A%2A&in=state%3A20&time=2025-Q4&sex=0&agegrp=A00&industry=62&ownercode=A05&seasonadj=U&firmsize=0&firmage=0; https://api.census.gov/data/timeseries/qwi/sa?get=Emp%2CHirA%2CSep%2CEarnS%2CsEmp%2CsHirA%2CsSep%2CsEarnS&for=county%3A%2A&in=state%3A20&time=2025-Q4&sex=0&agegrp=A00&industry=71&ownercode=A05&seasonadj=U&firmsize=0&firmage=0; https://api.census.gov/data/timeseries/qwi/sa?get=Emp%2CHirA%2CSep%2CEarnS%2CsEmp%2CsHirA%2CsSep%2CsEarnS&for=county%3A%2A&in=state%3A20&time=2025-Q4&sex=0&agegrp=A00&industry=72&ownercode=A05&seasonadj=U&firmsize=0&firmage=0; https://api.census.gov/data/timeseries/qwi/sa?get=Emp%2CHirA%2CSep%2CEarnS%2CsEmp%2CsHirA%2CsSep%2CsEarnS&for=county%3A%2A&in=state%3A20&time=2025-Q4&sex=0&agegrp=A00&industry=81&ownercode=A05&seasonadj=U&firmsize=0&firmage=0; https://api.census.gov/data/timeseries/qwi/sa?get=Emp%2CHirA%2CSep%2CEarnS%2CsEmp%2CsHirA%2CsSep%2CsEarnS&for=county%3A%2A&in=state%3A20&time=2026-Q1&sex=0&agegrp=A00&industry=22&ownercode=A05&seasonadj=U&firmsize=0&firmage=0; https://api.census.gov/data/timeseries/qwi/sa?get=Emp%2CHirA%2CSep%2CEarnS%2CsEmp%2CsHirA%2CsSep%2CsEarnS&for=county%3A%2A&in=state%3A20&time=2026-Q1&sex=0&agegrp=A00&industry=23&ownercode=A05&seasonadj=U&firmsize=0&firmage=0; https://api.census.gov/data/timeseries/qwi/sa?get=Emp%2CHirA%2CSep%2CEarnS%2CsEmp%2CsHirA%2CsSep%2CsEarnS&for=county%3A%2A&in=state%3A20&time=2026-Q1&sex=0&agegrp=A00&industry=31-33&ownercode=A05&seasonadj=U&firmsize=0&firmage=0; https://api.census.gov/data/timeseries/qwi/sa?get=Emp%2CHirA%2CSep%2CEarnS%2CsEmp%2CsHirA%2CsSep%2CsEarnS&for=county%3A%2A&in=state%3A20&time=2026-Q1&sex=0&agegrp=A00&industry=51&ownercode=A05&seasonadj=U&firmsize=0&firmage=0; https://api.census.gov/data/timeseries/qwi/sa?get=Emp%2CHirA%2CSep%2CEarnS%2CsEmp%2CsHirA%2CsSep%2CsEarnS&for=county%3A%2A&in=state%3A20&time=2026-Q1&sex=0&agegrp=A00&industry=54&ownercode=A05&seasonadj=U&firmsize=0&firmage=0; https://api.census.gov/data/timeseries/qwi/sa?get=Emp%2CHirA%2CSep%2CEarnS%2CsEmp%2CsHirA%2CsSep%2CsEarnS&for=county%3A%2A&in=state%3A20&time=2026-Q1&sex=0&agegrp=A00&industry=62&ownercode=A05&seasonadj=U&firmsize=0&firmage=0; https://api.census.gov/data/timeseries/qwi/sa?get=Emp%2CHirA%2CSep%2CEarnS%2CsEmp%2CsHirA%2CsSep%2CsEarnS&for=county%3A%2A&in=state%3A20&time=2026-Q1&sex=0&agegrp=A00&industry=71&ownercode=A05&seasonadj=U&firmsize=0&firmage=0; https://api.census.gov/data/timeseries/qwi/sa?get=Emp%2CHirA%2CSep%2CEarnS%2CsEmp%2CsHirA%2CsSep%2CsEarnS&for=county%3A%2A&in=state%3A20&time=2026-Q1&sex=0&agegrp=A00&industry=72&ownercode=A05&seasonadj=U&firmsize=0&firmage=0; https://api.census.gov/data/timeseries/qwi/sa?get=Emp%2CHirA%2CSep%2CEarnS%2CsEmp%2CsHirA%2CsSep%2CsEarnS&for=county%3A%2A&in=state%3A20&time=2026-Q1&sex=0&agegrp=A00&industry=81&ownercode=A05&seasonadj=U&firmsize=0&firmage=0"
     },
     {
       "source_id": "apprenticeship",
@@ -1375,113 +1429,119 @@
     {
       "source_id": "qwi",
       "measure_id": "qwi_employment",
-      "latest_reference": "2025-12-31",
-      "latest_usable": "2025-12-31",
+      "latest_reference": "2026-03-31",
+      "latest_usable": "2026-03-31",
       "statuses": {
-        "published": 2222,
-        "suppressed": 475,
-        "not_reported": 138
+        "published": 6650,
+        "suppressed": 1428,
+        "not_reported": 427
       }
     },
     {
       "source_id": "qwi",
       "measure_id": "qwi_employment_yoy_pct",
-      "latest_reference": "2025-12-31",
-      "latest_usable": null,
+      "latest_reference": "2026-03-31",
+      "latest_usable": "2026-03-31",
       "statuses": {
-        "incomplete": 2835
+        "incomplete": 4918,
+        "published": 3587
       }
     },
     {
       "source_id": "qwi",
       "measure_id": "qwi_hires",
-      "latest_reference": "2025-12-31",
-      "latest_usable": "2025-12-31",
+      "latest_reference": "2026-03-31",
+      "latest_usable": "2026-03-31",
       "statuses": {
-        "published": 2204,
-        "suppressed": 493,
-        "not_reported": 138
+        "published": 6672,
+        "suppressed": 1406,
+        "not_reported": 427
       }
     },
     {
       "source_id": "qwi",
       "measure_id": "qwi_hires_per_100_beginning_jobs",
-      "latest_reference": "2025-12-31",
-      "latest_usable": "2025-12-31",
+      "latest_reference": "2026-03-31",
+      "latest_usable": "2026-03-31",
       "statuses": {
-        "published": 1925,
-        "incomplete": 910
+        "published": 5802,
+        "incomplete": 2703
       }
     },
     {
       "source_id": "qwi",
       "measure_id": "qwi_hires_trailing4q",
-      "latest_reference": "2025-12-31",
-      "latest_usable": null,
+      "latest_reference": "2026-03-31",
+      "latest_usable": "2026-03-31",
       "statuses": {
-        "incomplete": 2835
+        "incomplete": 4969,
+        "published": 3536
       }
     },
     {
       "source_id": "qwi",
       "measure_id": "qwi_hires_yoy_pct",
-      "latest_reference": "2025-12-31",
-      "latest_usable": null,
+      "latest_reference": "2026-03-31",
+      "latest_usable": "2026-03-31",
       "statuses": {
-        "incomplete": 2835
+        "incomplete": 5681,
+        "published": 2824
       }
     },
     {
       "source_id": "qwi",
       "measure_id": "qwi_separations",
-      "latest_reference": "2025-12-31",
+      "latest_reference": "2026-03-31",
       "latest_usable": "2025-12-31",
       "statuses": {
-        "published": 2129,
-        "suppressed": 468,
-        "not_reported": 138,
-        "cannot_compute": 100
+        "published": 5972,
+        "suppressed": 1214,
+        "cannot_compute": 892,
+        "not_reported": 427
       }
     },
     {
       "source_id": "qwi",
       "measure_id": "qwi_separations_trailing4q",
-      "latest_reference": "2025-12-31",
-      "latest_usable": null,
+      "latest_reference": "2026-03-31",
+      "latest_usable": "2025-12-31",
       "statuses": {
-        "incomplete": 2835
+        "incomplete": 5497,
+        "published": 3008
       }
     },
     {
       "source_id": "qwi",
       "measure_id": "qwi_separations_yoy_pct",
-      "latest_reference": "2025-12-31",
-      "latest_usable": null,
+      "latest_reference": "2026-03-31",
+      "latest_usable": "2025-12-31",
       "statuses": {
-        "incomplete": 2835
+        "incomplete": 6201,
+        "published": 2304
       }
     },
     {
       "source_id": "qwi",
       "measure_id": "qwi_stable_earnings",
-      "latest_reference": "2025-12-31",
+      "latest_reference": "2026-03-31",
       "latest_usable": "2025-12-31",
       "statuses": {
-        "published": 2570,
-        "not_reported": 138,
-        "cannot_compute": 100,
-        "suppressed": 27
+        "published": 7116,
+        "cannot_compute": 892,
+        "not_reported": 427,
+        "suppressed": 70
       }
     },
     {
       "source_id": "qwi",
       "measure_id": "qwi_stable_earnings_yoy_pct",
-      "latest_reference": "2025-12-31",
-      "latest_usable": null,
+      "latest_reference": "2026-03-31",
+      "latest_usable": "2025-12-31",
       "statuses": {
-        "incomplete": 2835
+        "incomplete": 4972,
+        "published": 3533
       }
     }
   ],
-  "previous_release_id": "20261110T183520_64aec587"
+  "previous_release_id": "20261110T191204_8be07183"
 }

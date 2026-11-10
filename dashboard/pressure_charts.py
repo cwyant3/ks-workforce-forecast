@@ -215,9 +215,14 @@ def demand(frame,county,industry,names,key):
         st.caption(f"{row.reference_label} · {len(matches)} counties with published matched-period values. Suppressed comparisons are omitted, not ranked at zero.")
     if not series(frame,"qwi","qwi_hires",county,industry).empty:
         st.markdown(f"#### {INDUSTRIES.get(industry,industry)} hiring activity")
-        for col,m,title in zip(st.columns(2),["qwi_hires","qwi_hires_per_100_beginning_jobs"],["Quarterly hires","Hires per 100 beginning-quarter jobs"]):
-            with col: metric_card(frame,series(frame,"qwi",m,county,industry),title,key+m,peer_label="counties with published data")
-        st.caption("Hires count hiring events, not open vacancies. Four-quarter totals and some separation/earnings measures remain unavailable because their required history or source estimates are incomplete.")
+        hiring=[("qwi_hires","Quarterly hires"),("qwi_hires_yoy_pct","Hires change from a year earlier"),
+                ("qwi_hires_trailing4q","Hires over the past four quarters"),("qwi_hires_per_100_beginning_jobs","Hires per 100 beginning-quarter jobs")]
+        for row_specs in (hiring[:2],hiring[2:]):
+            for col,(m,title) in zip(st.columns(2),row_specs):
+                with col: metric_card(frame,series(frame,"qwi",m,county,industry),title,key+m,peer_label="counties with published data")
+        st.caption("Census Quarterly Workforce Indicators, private jobs. Hires count hiring events, not open vacancies. Year-over-year compares the same quarter; "
+                   "four-quarter totals need four consecutive published quarters. Separations and earnings for the newest quarter are not yet computable, "
+                   "and the newest quarters are revised in later releases.")
     evidence(frame[frame.geography_id.eq(county)&frame.industry_code.eq(industry)&frame.source_id.isin(["qcew","qwi"])])
 
 

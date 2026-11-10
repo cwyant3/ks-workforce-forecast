@@ -122,6 +122,22 @@ def complete_group_total(frame: pd.DataFrame, expected_geographies: list[str]) -
     return float(frame.estimate.sum()), "published"
 
 
+def qwi_release_id(evidence_dir: Path) -> str:
+    """The LEHD release (e.g. R2026Q4) from the saved version_qwi.txt.
+
+    Every QWI payload in one evidence folder must come from this release; the
+    API always serves the latest one, so stage all quarters in one sitting and
+    save the version file alongside them.
+    """
+    path = Path(evidence_dir) / "qwi-version.txt"
+    if not path.exists():
+        raise ValueError("QWI evidence requires qwi-version.txt from lehd.ces.census.gov latest_release")
+    releases = set(re.findall(r"\bR\d{4}Q[1-4]\b", path.read_text(encoding="utf-8")))
+    if len(releases) != 1:
+        raise ValueError(f"qwi-version.txt must name exactly one release, found {sorted(releases)}")
+    return releases.pop()
+
+
 def build_demand_indicators(evidence_dir: Path, counties: list[str] | None = None) -> pd.DataFrame:
     """Build an offline pilot from reviewed public evidence, without a refresh.
 
@@ -137,7 +153,9 @@ def build_demand_indicators(evidence_dir: Path, counties: list[str] | None = Non
             pieces.append(parse_quarterly_qcew(pd.read_csv(path, dtype=str), county_fips=match[1],
                                                year=int(match[2]), quarter=int(match[3])))
     seen = set()
-    for path in sorted(evidence_dir.glob("qwi-*.json")):
+    qwi_files = sorted(evidence_dir.glob("qwi-*.json"))
+    release_id = qwi_release_id(evidence_dir) if qwi_files else None
+    for path in qwi_files:
         payload = json.loads(path.read_text(encoding="utf-8-sig"))
         if not isinstance(payload, list) or len(payload) < 2:
             raise ValueError(f"QWI evidence has no rows: {path.name}")
@@ -146,7 +164,7 @@ def build_demand_indicators(evidence_dir: Path, counties: list[str] | None = Non
         if (period, industry) in seen:
             raise ValueError(f"Duplicate QWI evidence for {industry} {period}: {path.name}")
         seen.add((period, industry))
-        pieces.append(parse_qwi_response(payload, counties, period=period, industry=industry, release_id="R2026Q3"))
+        pieces.append(parse_qwi_response(payload, counties, period=period, industry=industry, release_id=release_id))
     if not pieces:
         raise ValueError("No reviewed QCEW/QWI evidence found")
     observed = pd.concat(pieces, ignore_index=True)

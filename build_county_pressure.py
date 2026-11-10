@@ -70,6 +70,16 @@ def build(evidence_dir: Path, outputs: Path = OUTPUTS, *, correction_dir: Path |
             location_basis="home and workplace", job_universe="JT01", release_id="LODES8.4-20251202_1657",
             source_url="https://lehd.ces.census.gov/data/lodes/LODES8/ks/od/",
             coverage_note="Complete scoped OD extract not yet adopted; legacy main-only data are not a complete shed.") for county in scope_counties]))
+    resident_flows_path = evidence_dir / "lodes_resident_flows_2023.parquet"
+    resident_flows = None
+    if resident_flows_path.exists():
+        from fetch_lodes import resident_outbound_observations
+        resident_flows = pd.read_parquet(resident_flows_path)
+        coverage = json.loads((evidence_dir / "lodes_resident_coverage_2023.json").read_text(encoding="utf-8"))
+        # The inbound-only placeholder is superseded by the measured outbound rows.
+        pieces = [p[~(p.source_id.eq("lodes") & p.measure_id.eq("resident_outbound_jobs"))]
+                  if {"source_id", "measure_id"}.issubset(p.columns) else p for p in pieces]
+        pieces.append(resident_outbound_observations(resident_flows, coverage, scope_counties, 2023))
     observations = normalize_observations(pd.concat(pieces, ignore_index=True))
     # Source payloads use mixed numeric/string flags. Preserve them as text,
     # rather than relying on Arrow's object-column type inference.
@@ -88,6 +98,8 @@ def build(evidence_dir: Path, outputs: Path = OUTPUTS, *, correction_dir: Path |
               "pressure_regional.parquet": regional,
               "ipeds_s20.parquet": detail,
               "ipeds_by_sector_s20.parquet": summarize_by_sector(detail)}
+    if resident_flows is not None:
+        tables["pressure_resident_flows.parquet"] = resident_flows
     for source, target in (("lodes_flows.parquet", "pressure_lodes_flows.parquet"),
                            ("commute_snapshot.parquet", "commute_snapshot_s20.parquet")):
         if (evidence_dir / source).exists():

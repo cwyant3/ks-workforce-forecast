@@ -178,6 +178,52 @@ def commuting_observations(flows, counties):
     return normalize_observations(pd.DataFrame(records),source_id='lodes',defaults=dict(location_basis='workplace; origins from residence',frequency='annual',job_universe='JT01 primary jobs',source_status='published aggregate',method_type='county aggregation of published OD counts',source_url=f'{LODES_BASE}/ks/od/',release_id='LODES8',coverage_note='Inbound requires destination main+aux; availability status governs completeness. Full resident outbound is not enabled. Not a count of extra available workers.'))
 
 
+def resident_outbound_observations(resident_flows, coverage, counties, year=2023):
+    """Where county residents hold primary jobs: home-county, elsewhere in Kansas, out of state.
+
+    resident_flows: county pairs with Kansas homes, from the home state's main
+    file plus every other published destination state's aux file. coverage:
+    one record per destination state (status published / not_published /
+    access_failed). Any access failure leaves outbound unavailable. States that
+    do not publish the year are named in the coverage note, never zero-filled.
+    """
+    from data_contracts import normalize_observations
+    cov = pd.DataFrame(coverage)
+    if cov.empty or cov.status.eq('access_failed').any():
+        status, note = 'incomplete', 'One or more destination-state files could not be retrieved.'
+    else:
+        missing = sorted(cov.loc[cov.status.eq('not_published'), 'state'].str.upper())
+        status = 'published'
+        note = ('All destination states covered.' if not missing else
+                'Excludes jobs in ' + ', '.join(missing) + ': LODES ' + str(year) + ' not published for those states.')
+    flows = resident_flows.loc[resident_flows.year.eq(year)] if 'year' in resident_flows else resident_flows
+    records = []
+    measures = [('resident_primary_jobs', 'primary jobs'), ('resident_outbound_jobs', 'primary jobs'),
+                ('pct_residents_work_outside_county', 'percent'), ('resident_out_of_state_jobs', 'primary jobs'),
+                ('pct_residents_work_out_of_state', 'percent')]
+    for county in counties:
+        sub = flows.loc[flows.h_county_fips.eq(county)]
+        total = float(sub.jobs.sum()) if not sub.empty else float('nan')
+        local = float(sub.loc[sub.w_county_fips.eq(county), 'jobs'].sum())
+        out_state = float(sub.loc[~sub.w_county_fips.str.startswith(county[:2]), 'jobs'].sum())
+        ok = status == 'published' and total > 0
+        values = {'resident_primary_jobs': total, 'resident_outbound_jobs': total - local,
+                  'pct_residents_work_outside_county': 100 * (total - local) / total if ok else float('nan'),
+                  'resident_out_of_state_jobs': out_state,
+                  'pct_residents_work_out_of_state': 100 * out_state / total if ok else float('nan')}
+        for measure, unit in measures:
+            records.append(dict(geography_id=county, measure_id=measure, unit=unit,
+                                estimate=round(values[measure], 2) if ok else float('nan'),
+                                availability_status=status if ok else ('not_reported' if sub.empty else status),
+                                period_start=f'{year}-01-01', period_end=f'{year}-12-31',
+                                reference_label=f'LODES {year} primary jobs', quality_note=note))
+    return normalize_observations(pd.DataFrame(records), source_id='lodes', defaults=dict(
+        location_basis='residence; destinations from workplace', frequency='annual', job_universe='JT01 primary jobs',
+        source_status='published aggregate', method_type='county aggregation of published OD counts',
+        source_url=f'{LODES_BASE}/', release_id='LODES8',
+        coverage_note='Resident outbound uses the home state main file plus every other state aux file. ' + note))
+
+
 def build_commuting_indicators(stagingdir, year=2023):
     """Read pilot partition caches and return normalized South Central observations.
 

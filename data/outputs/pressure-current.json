@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "release_id": "20261110T181958_da021927",
-  "created_utc": "2026-11-10T18:19:59.569868+00:00",
+  "release_id": "20261110T183520_64aec587",
+  "created_utc": "2026-11-10T18:35:21.252167+00:00",
   "scope": {
     "state": "20",
     "pilot_counties": [
@@ -124,6 +124,8 @@
       "laus-kansas-2026.json": "e00958e9365a32768dd3ebcff2534e39be8366e4e2ef950217eb16a95e2116f5",
       "lodes_flows.parquet": "d6010b46455cf91d613d08228d079ad12e6e233ed77ac952e3b15fbb283c3724",
       "lodes_observations.parquet": "5bfb4df6746e859ba37586043d7b9f2418f5041a50c71bc83d96538de4a5c50b",
+      "lodes_resident_coverage_2023.json": "0442b5e82ffd441da9d7b6b842ac428c19fad17aadee12c3fd0f966980fd8ece",
+      "lodes_resident_flows_2023.parquet": "895c0a23cfd658839588bf77b6ef7d289a5a1437795567f08f1fd9c87991bfc8",
       "oews-kansascity-2025-titles.json": "89634844967c43a919408c18c433b7065b6970c03207083f5be6a6f6861707f5",
       "oews-kansascity-2025.json": "d82c9cac4a910b5266f9324a9ae5dc477419d145e0856bbab3306b8891088c77",
       "oews-wichita-2025-sample.json": "ea1863c70a8a45b745f0c4fe9f8b8133f8e3a851ce67c2a8d68184eba3dee235",
@@ -350,8 +352,8 @@
   },
   "files": {
     "pressure_observations.parquet": {
-      "sha256": "2477147e0dca451b0f5c777354a36a3163d081377e3fca1ba8bb97b82119aaef",
-      "rows": 26229,
+      "sha256": "4bcbfabbd9984719f46799152b6addb53261154abcd104b55fc98a03b433880c",
+      "rows": 26649,
       "columns": [
         "geography_id",
         "industry_code",
@@ -795,6 +797,19 @@
         "coverage_note"
       ]
     },
+    "pressure_resident_flows.parquet": {
+      "sha256": "895c0a23cfd658839588bf77b6ef7d289a5a1437795567f08f1fd9c87991bfc8",
+      "rows": 16923,
+      "columns": [
+        "h_county_fips",
+        "w_county_fips",
+        "jobs",
+        "year",
+        "partition",
+        "source_url",
+        "w_county_name"
+      ]
+    },
     "pressure_lodes_flows.parquet": {
       "sha256": "d6010b46455cf91d613d08228d079ad12e6e233ed77ac952e3b15fbb283c3724",
       "rows": 18322,
@@ -995,7 +1010,7 @@
       "release_id": "LODES8",
       "adoption_status": "validated observations",
       "verification_date": "2026-10-20",
-      "source_url": "https://lehd.ces.census.gov/data/lodes/LODES8/ks/od/"
+      "source_url": "https://lehd.ces.census.gov/data/lodes/LODES8/; https://lehd.ces.census.gov/data/lodes/LODES8/ks/od/"
     },
     {
       "source_id": "oews",
@@ -1176,7 +1191,34 @@
     },
     {
       "source_id": "lodes",
+      "measure_id": "pct_residents_work_out_of_state",
+      "latest_reference": "2023-12-31",
+      "latest_usable": "2023-12-31",
+      "statuses": {
+        "published": 105
+      }
+    },
+    {
+      "source_id": "lodes",
+      "measure_id": "pct_residents_work_outside_county",
+      "latest_reference": "2023-12-31",
+      "latest_usable": "2023-12-31",
+      "statuses": {
+        "published": 105
+      }
+    },
+    {
+      "source_id": "lodes",
       "measure_id": "pct_workers_imported",
+      "latest_reference": "2023-12-31",
+      "latest_usable": "2023-12-31",
+      "statuses": {
+        "published": 105
+      }
+    },
+    {
+      "source_id": "lodes",
+      "measure_id": "resident_out_of_state_jobs",
       "latest_reference": "2023-12-31",
       "latest_usable": "2023-12-31",
       "statuses": {
@@ -1187,9 +1229,18 @@
       "source_id": "lodes",
       "measure_id": "resident_outbound_jobs",
       "latest_reference": "2023-12-31",
-      "latest_usable": null,
+      "latest_usable": "2023-12-31",
       "statuses": {
-        "incomplete": 105
+        "published": 105
+      }
+    },
+    {
+      "source_id": "lodes",
+      "measure_id": "resident_primary_jobs",
+      "latest_reference": "2023-12-31",
+      "latest_usable": "2023-12-31",
+      "statuses": {
+        "published": 105
       }
     },
     {
@@ -1407,5 +1458,5 @@
       }
     }
   ],
-  "previous_release_id": "20261110T170437_16937bcf"
+  "previous_release_id": "20261110T181958_da021927"
 }

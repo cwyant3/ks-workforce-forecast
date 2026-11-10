@@ -100,3 +100,18 @@ def test_crosswalk_maps_every_kansas_county_to_one_projection_region():
     assert county_oews_area("20107")[:2] == ("28140", "Kansas City, MO-KS")  # Linn: KC pay area, Southeast projection region
     assert county_region("20107")[0] == "KS-SE"
     assert county_oews_area("20045") == ("", "", [])  # Douglas (Lawrence) is not adopted
+
+
+def test_resident_outbound_discloses_unpublished_states_and_fails_closed_on_access():
+    from fetch_lodes import resident_outbound_observations
+    flows = pd.DataFrame({'h_county_fips': ['20091', '20091', '20091'], 'w_county_fips': ['20091', '20209', '29095'],
+                          'jobs': [60, 20, 20], 'year': [2023] * 3})
+    coverage = [{'state': 'mo', 'status': 'published'}, {'state': 'mi', 'status': 'not_published'}]
+    obs = resident_outbound_observations(flows, coverage, ['20091', '20001']).set_index(['geography_id', 'measure_id'])
+    assert obs.loc[('20091', 'resident_primary_jobs'), 'estimate'] == 100
+    assert obs.loc[('20091', 'pct_residents_work_outside_county'), 'estimate'] == 40
+    assert obs.loc[('20091', 'pct_residents_work_out_of_state'), 'estimate'] == 20
+    assert 'MI' in obs.loc[('20091', 'resident_primary_jobs'), 'quality_note']
+    assert obs.loc[('20001', 'resident_primary_jobs'), 'availability_status'] == 'not_reported'
+    failed = resident_outbound_observations(flows, coverage + [{'state': 'tx', 'status': 'access_failed'}], ['20091'])
+    assert failed.availability_status.eq('incomplete').all() and failed.estimate.isna().all()

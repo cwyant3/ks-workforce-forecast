@@ -35,7 +35,7 @@ def current_reading(frame, county, industry):
 
 
 def render_outlook(frame, detail, flows, regional, proj, effective, sectors, summary,
-                   county, county_name, names, annual_laus=None):
+                   county, county_name, names, annual_laus=None, resident_flows=None):
     st.markdown("""<style>
     @media (max-width: 850px) {
       [data-testid="stHorizontalBlock"] {flex-wrap: wrap;}
@@ -111,7 +111,7 @@ def render_outlook(frame, detail, flows, regional, proj, effective, sectors, sum
         with train_tab:
             training(frame, detail, county, "outlook_all_training_", industry)
         with commute_tab:
-            movement(frame, flows, county, names, "outlook_all_movement_")
+            movement(frame, flows, county, names, "outlook_all_movement_", resident_flows)
 
     st.divider()
     st.markdown("### 5. What could change the outlook?")

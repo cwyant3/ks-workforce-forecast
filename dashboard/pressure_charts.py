@@ -337,7 +337,7 @@ def award_industry_chart(selected,key,industry=None):
                "not where graduates work, local hiring or worker supply.")
 
 
-def movement(frame,flows,county,names,key):
+def movement(frame,flows,county,names,key,resident_flows=None):
     st.markdown("### Where workers commute from")
     st.caption("LODES 2023 primary jobs · existing home-to-work connections, not migration or extra available workers.")
     total=current(series(frame,"lodes","total_jobs_at_worksite",county))
@@ -359,8 +359,36 @@ def movement(frame,flows,county,names,key):
             if len(values)>12:
                 values=values[:11]+[sum(values[11:])];labels=labels[:11]+["Other counties in this labor shed"]
             draw(horizontal(values,labels,"Primary jobs",color=TEAL),key+"origins")
-            st.caption(f"Shown origins account for {shed.cumulative_share.iloc[-1]:.1%} of observed workplace primary jobs. The county crossing the chosen threshold is included. Complete inbound coverage includes interstate origins; complete outbound coverage is not available.")
+            st.caption(f"Shown origins account for {shed.cumulative_share.iloc[-1]:.1%} of observed workplace primary jobs. The county crossing the chosen threshold is included. Complete inbound coverage includes interstate origins.")
+    residents(frame,resident_flows,county,names,key)
     evidence(frame[frame.source_id.eq("lodes")&frame.geography_id.eq(county)])
+
+
+def residents(frame,resident_flows,county,key_names,key):
+    """Where county residents hold primary jobs, including out of state."""
+    st.markdown("### Where residents work")
+    total=current(series(frame,"lodes","resident_primary_jobs",county))
+    if not available(total):
+        st.info("Resident outbound commuting is not available in this release.")
+        return
+    for col,m,title in zip(st.columns(3),["resident_primary_jobs","pct_residents_work_outside_county","pct_residents_work_out_of_state"],
+                           ["Primary jobs held by residents","Residents working outside the county","Residents working out of state"]):
+        with col:metric_card(frame,series(frame,"lodes",m,county),title,key+"res_"+m)
+    if resident_flows is not None and not resident_flows.empty:
+        sub=resident_flows[resident_flows.h_county_fips.eq(county)&resident_flows.w_county_fips.ne(county)]
+        dest=sub.groupby("w_county_fips",as_index=False).jobs.sum().sort_values(["jobs","w_county_fips"],ascending=[False,True])
+        if not dest.empty:
+            top=dest.head(10)
+            named=dict(zip(sub.w_county_fips,sub.w_county_name)) if "w_county_name" in sub else {}
+            labels=[key_names.get(f) or named.get(f) or f"County FIPS {f}" for f in top.w_county_fips]
+            values=top.jobs.tolist()
+            rest=dest.jobs.iloc[10:].sum()
+            if rest>0: values.append(rest); labels.append("All other destination counties")
+            st.markdown("#### Top work destinations outside the county")
+            draw(horizontal(values,labels,"Primary jobs held by residents",color=BLUE),key+"destinations")
+    note=total.get("quality_note","") or ""
+    st.caption("LODES 2023 primary jobs by home county, from Kansas's own file plus every other state's file of out-of-state workers. "
+               f"{note} Counts are jobs, not people available to recruit.")
 
 
 def regional_view(regional,county,key):
@@ -391,7 +419,7 @@ def regional_view(regional,county,key):
     evidence(rows)
 
 
-def render_county_brief(frame,detail,flows,regional,county,county_name,names,annual_laus=None):
+def render_county_brief(frame,detail,flows,regional,county,county_name,names,annual_laus=None,resident_flows=None):
     st.markdown("<div style='font-size:.8rem;letter-spacing:.12em;color:#BA793B;font-weight:700'>COUNTY WORKFORCE BRIEF</div>",unsafe_allow_html=True)
     st.title(county_name)
     st.write("A visual view of workforce participation, employer activity, training and commuting.")
@@ -418,6 +446,6 @@ def render_county_brief(frame,detail,flows,regional,county,county_name,names,ann
         demand(frame,county,industry,names,"brief_demand_")
         pay(frame,county,"brief_pay_")
     with tabs[3]:training(frame,detail,county,"brief_training_",industry)
-    with tabs[4]:movement(frame,flows,county,names,"brief_movement_")
+    with tabs[4]:movement(frame,flows,county,names,"brief_movement_",resident_flows)
     with tabs[5]:regional_view(regional,county,"brief_regional_")
     st.download_button("Download county observations with sources",frame[frame.geography_id.eq(county)].to_csv(index=False).encode(),f"{county}_workforce_observations.csv","text/csv",key="brief_source_download")

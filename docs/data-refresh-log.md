@@ -2350,3 +2350,11 @@ Checked:        `scripts/stage_lodes_outbound.py --year 2023` downloaded every o
 Outputs changed: five measures per county (resident_primary_jobs, resident_outbound_jobs, pct_residents_work_outside_county, resident_out_of_state_jobs, pct_residents_work_out_of_state) plus `pressure_resident_flows.parquet`; dashboards add a "Where residents work" section. All other observations unchanged.
 Validation:     pass (198 tests; `validate_outputs.py --pressure` with preview; runtime check on Johnson, Wyandotte, Sedgwick, Greeley, Doniphan in both modes)
 Notes:          Kansas residents held 1,271,780 primary jobs in 2023; 9.4% were out of state (95,000 in Missouri). Johnson: 36.1% work outside the county, 19.1% in Missouri. Wyandotte: 67.7% / 21.7%. Any future access failure leaves outbound unavailable.
+
+## [2026-11-10] qwi | hiring for all dashboard industries adopted
+Vintage before: adopted `20261110T183520_64aec587` (QWI manufacturing 31-33 only)
+Vintage after:  adopted `20261110T191204_8be07183` (rollback target `20261110T183520_64aec587`)
+Checked:        `scripts/stage_qwi.py --periods 2025-Q2 2025-Q3 2025-Q4` saved 24 Census QWI API payloads (industries 22, 23, 51, 54, 62, 71, 72, 81; all Kansas counties; private A05, unadjusted, all ages/sexes/firm sizes/ages), same QWI release R2026Q3 as the manufacturing files. The parser now reads each file's industry from the payload and rejects duplicate industry/quarter evidence.
+Outputs changed: QWI observations for nine industries; hiring panels follow the selected industry instead of showing only for manufacturing. Manufacturing QWI and all non-QWI observations unchanged.
+Validation:     pass (200 tests; `validate_outputs.py --pressure` with preview; runtime check on Johnson, Sedgwick, Greeley x health care, food service, construction, arts in both modes)
+Notes:          Suppression is heavy in small sectors (arts 94 of 315 county-quarters suppressed, utilities 80, information 81). Year-over-year and four-quarter hiring stay incomplete until earlier quarters are staged (next item).

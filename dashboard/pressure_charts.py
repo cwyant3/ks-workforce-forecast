@@ -213,8 +213,8 @@ def demand(frame,county,industry,names,key):
         draw(horizontal(matches.estimate.tolist(),[names.get(f,f) for f in matches.geography_id],
                         "Change from the same quarter a year earlier (%)",unit="percent",color=[BLUE if f==county else GRAY for f in matches.geography_id]),key+"growth")
         st.caption(f"{row.reference_label} · {len(matches)} counties with published matched-period values. Suppressed comparisons are omitted, not ranked at zero.")
-    if industry=="31-33":
-        st.markdown("#### Manufacturing hiring activity")
+    if not series(frame,"qwi","qwi_hires",county,industry).empty:
+        st.markdown(f"#### {INDUSTRIES.get(industry,industry)} hiring activity")
         for col,m,title in zip(st.columns(2),["qwi_hires","qwi_hires_per_100_beginning_jobs"],["Quarterly hires","Hires per 100 beginning-quarter jobs"]):
             with col: metric_card(frame,series(frame,"qwi",m,county,industry),title,key+m,peer_label="counties with published data")
         st.caption("Hires count hiring events, not open vacancies. Four-quarter totals and some separation/earnings measures remain unavailable because their required history or source estimates are incomplete.")

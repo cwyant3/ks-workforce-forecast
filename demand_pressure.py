@@ -136,10 +136,17 @@ def build_demand_indicators(evidence_dir: Path, counties: list[str] | None = Non
         if match and match[1] in counties:
             pieces.append(parse_quarterly_qcew(pd.read_csv(path, dtype=str), county_fips=match[1],
                                                year=int(match[2]), quarter=int(match[3])))
-    for path in sorted(evidence_dir.glob("qwi-*manufacturing.json")):
+    seen = set()
+    for path in sorted(evidence_dir.glob("qwi-*.json")):
         payload = json.loads(path.read_text(encoding="utf-8-sig"))
+        if not isinstance(payload, list) or len(payload) < 2:
+            raise ValueError(f"QWI evidence has no rows: {path.name}")
         period = payload[1][payload[0].index("time")]
-        pieces.append(parse_qwi_response(payload, counties, period=period, release_id="R2026Q3"))
+        industry = payload[1][payload[0].index("industry")]
+        if (period, industry) in seen:
+            raise ValueError(f"Duplicate QWI evidence for {industry} {period}: {path.name}")
+        seen.add((period, industry))
+        pieces.append(parse_qwi_response(payload, counties, period=period, industry=industry, release_id="R2026Q3"))
     if not pieces:
         raise ValueError("No reviewed QCEW/QWI evidence found")
     observed = pd.concat(pieces, ignore_index=True)

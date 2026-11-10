@@ -2,9 +2,9 @@
 
 The table compares Kansas and Missouri counties with the same observed
 sources and periods (ACS 2020-2024 5-year, BLS LAUS monthly, QCEW quarterly
-private jobs). Model forecasts are deliberately excluded: both states run the
-same cohort model (re-runs on 2026-11-10 reproduced both forecasts), but only
-Kansas updates youth cohorts with KSDE single-grade enrollment.
+private jobs). Working-age (18-64) population forecasts are included because
+both states now run the same cohort model with the same NCES CCD single-grade
+youth update (Missouri added 2026-11-10); the run seed and base year must match.
 Kansas rows are re-parsed from the same raw evidence the Kansas tables use;
 Missouri raw files carry a ``metro-`` prefix so Kansas parsers never read them.
 """
@@ -40,7 +40,38 @@ def _names(payloads) -> dict[str, str]:
     return names
 
 
-def build_metro_table(evidence_dir: Path) -> pd.DataFrame:
+FORECAST_YEARS = (2026, 2035)
+
+
+def forecast_rows(outputs: Path) -> pd.DataFrame:
+    """Median working-age (18-64) forecasts for the metro counties from both states' runs."""
+    frames = []
+    for state in ("20", "29"):
+        proj = pd.read_parquet(Path(outputs) / f"projections_s{state}.parquet")
+        proj["geography_id"] = state + proj.county_fips.astype(str).str.zfill(3)
+        frames.append(proj[proj.geography_id.isin(METRO_COUNTIES)])
+    proj = pd.concat(frames, ignore_index=True)
+    for col in ("random_seed", "base_year"):
+        if proj[col].nunique() != 1:
+            raise ValueError(f"Kansas and Missouri forecasts differ in {col}; re-run both before comparing")
+    rows = []
+    start, end = FORECAST_YEARS
+    for county, group in proj.groupby("geography_id"):
+        by_year = group.set_index("year")
+        for year in FORECAST_YEARS:
+            rows.append(dict(geography_id=county, measure_id="working_age_forecast_p50", estimate=float(by_year.loc[year, "p50"]),
+                             unit="people", period_start=f"{year}-01-01", period_end=f"{year}-12-31", reference_label=f"{year} median forecast"))
+        rows.append(dict(geography_id=county, measure_id="working_age_forecast_change_pct",
+                         estimate=100 * (by_year.loc[end, "p50"] / by_year.loc[start, "p50"] - 1), unit="percent",
+                         period_start=f"{start}-01-01", period_end=f"{end}-12-31", reference_label=f"{start} to {end}, median forecasts"))
+    seed, base = int(proj.random_seed.iloc[0]), int(proj.base_year.iloc[0])
+    return normalize_observations(pd.DataFrame(rows), source_id="cohort_forecast", defaults=dict(
+        location_basis="residence", age_group="18-64", frequency="annual", method_type="model forecast (median of simulations)",
+        release_id=f"cohort-model seed {seed}, ACS base {base}",
+        coverage_note="Cohort-component model, ACS 2020-2024 base, youth cohorts updated with NCES CCD single-grade enrollment 2022 to 2024 in both states."))
+
+
+def build_metro_table(evidence_dir: Path, outputs: Path | None = None) -> pd.DataFrame:
     evidence_dir = Path(evidence_dir)
     acs = {("ks", "b23025"): "acs-2024-b23025-ks.json", ("ks", "s2301"): "acs-2024-s2301-ks.json",
            ("mo", "b23025"): "metro-acs-2024-b23025-mo.json", ("mo", "s2301"): "metro-acs-2024-s2301-mo.json"}
@@ -66,6 +97,8 @@ def build_metro_table(evidence_dir: Path) -> pd.DataFrame:
                                              quarter=1, industries=METRO_INDUSTRIES))
     qcew = pd.concat(qcew, ignore_index=True)
     pieces += [qcew, quarterly_changes(qcew)]
+    if outputs is not None:
+        pieces.append(forecast_rows(outputs))
     table = pd.concat(pieces, ignore_index=True)
     table = table[table.geography_id.isin(METRO_COUNTIES)].copy()
     names = _names([payloads[("ks", "b23025")], payloads[("mo", "b23025")]])

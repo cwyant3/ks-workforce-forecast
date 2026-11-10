@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "release_id": "20261110T200509_c512f8b3",
-  "created_utc": "2026-11-10T20:05:09.970986+00:00",
+  "release_id": "20261110T202805_ec5cdfee",
+  "created_utc": "2026-11-10T20:28:06.807864+00:00",
   "scope": {
     "state": "20",
     "pilot_counties": [
@@ -919,8 +919,8 @@
       ]
     },
     "pressure_kc_metro.parquet": {
-      "sha256": "2a5f76890cb35d4fb1ac75d9e556951f2aba328cf90828c2514e262263468427",
-      "rows": 2296,
+      "sha256": "df5b02f3f3be79cc3f9a0f48a291c921a7f0020e8ded871d62130208eb835757",
+      "rows": 2338,
       "columns": [
         "source_id",
         "measure_id",
@@ -1651,5 +1651,5 @@
       }
     }
   ],
-  "previous_release_id": "20261110T195547_86448b7e"
+  "previous_release_id": "20261110T200509_c512f8b3"
 }

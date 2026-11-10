@@ -117,7 +117,7 @@ def _paginate(url: str, base_params: dict) -> list[dict]:
 
 # ── Directory: leaid → county_fips lookup ────────────────────────────────────
 
-def _fetch_leaid_county_map(year: int) -> dict[str, str]:
+def _fetch_leaid_county_map(year: int, state_fips: str = _KS_FIPS) -> dict[str, str]:
     """
     Fetch district directory for one year; return {leaid: county_fips_3digit}.
     Filters with fips=20. Checked 2026-11-08: the API ignores state_fips_code
@@ -125,11 +125,15 @@ def _fetch_leaid_county_map(year: int) -> dict[str, str]:
     but about 20 pages); fips=20 returns the 337 Kansas districts.
     """
     url = f"{_DIR_BASE}/{year}/"
-    rows = _paginate(url, {"fips": int(_KS_FIPS)})
+    sf = state_fips.zfill(2)
+    rows = _paginate(url, {"fips": int(sf)})
     mapping: dict[str, str] = {}
     for row in rows:
         leaid = str(row.get("leaid", "")).strip()
         county = str(row.get("county_code", "")).strip()
+        # A five-digit county code must belong to the requested state.
+        if len(county) == 5 and not county.startswith(sf):
+            continue
         if leaid and county and len(county) >= 3:
             mapping[leaid] = county[-3:].zfill(3)
     return mapping
@@ -137,14 +141,14 @@ def _fetch_leaid_county_map(year: int) -> dict[str, str]:
 
 # ── Grade-level enrollment fetch ──────────────────────────────────────────────
 
-def _fetch_grade(year: int, grade: int) -> list[dict]:
+def _fetch_grade(year: int, grade: int, state_fips: str = _KS_FIPS) -> list[dict]:
     """
     Fetch district-level enrollment for one year and grade (all races, both sexes).
     Returns [{leaid, year, grade, enrollment}].
     Enrollment endpoint filter: fips=20 (not state_fips_code).
     """
     url = f"{_ENROLL_BASE}/{year}/grade-{grade}/"
-    rows = _paginate(url, {"fips": int(_KS_FIPS), "race": 99, "sex": 99})
+    rows = _paginate(url, {"fips": int(state_fips.zfill(2)), "race": 99, "sex": 99})
     return rows
 
 
@@ -189,11 +193,11 @@ def _fetch_year_all_groups(
     return pd.concat([df, totals], ignore_index=True)
 
 
-def _fetch_year_grades(year: int, leaid_county: dict[str, str]) -> pd.DataFrame:
+def _fetch_year_grades(year: int, leaid_county: dict[str, str], state_fips: str = _KS_FIPS) -> pd.DataFrame:
     """Fetch single grades K-12 for one year; aggregate to county x grade."""
     out: dict[tuple[str, int], int] = {}
     for grade in range(0, 13):
-        for row in _fetch_grade(year, grade):
+        for row in _fetch_grade(year, grade, state_fips):
             county = leaid_county.get(str(row.get("leaid", "")))
             enroll = row.get("enrollment")
             # CCD codes suppressed/missing counts as negatives; never count them as zero.
@@ -201,7 +205,7 @@ def _fetch_year_grades(year: int, leaid_county: dict[str, str]) -> pd.DataFrame:
                 continue
             out[(county, grade)] = out.get((county, grade), 0) + int(enroll)
         time.sleep(0.2)
-    return pd.DataFrame([{"state_fips": _KS_FIPS, "county_fips": c, "year": year, "grade": g, "enrollment": v}
+    return pd.DataFrame([{"state_fips": state_fips.zfill(2), "county_fips": c, "year": year, "grade": g, "enrollment": v}
                          for (c, g), v in out.items()])
 
 
@@ -387,20 +391,22 @@ def fetch_ksde_grades(
     Returns columns: state_fips, county_fips (3-digit), year, grade (0=K..12),
     enrollment. Counties are the district office county, using the union of
     the requested years' directories so a district that closed or merged
-    still maps in the year it reported. Cached at {cache_dir}/ksde_grades.parquet.
+    still maps in the year it reported. NCES CCD is national, so any state
+    works; Missouri was added 2026-11-10. Cached at
+    {cache_dir}/ksde_grades.parquet for Kansas (unchanged name) and
+    {cache_dir}/ccd_grades_s{state}.parquet for other states.
     """
-    if state_fips.zfill(2) != _KS_FIPS:
-        raise ValueError(f"fetch_ksde_grades is Kansas-only (FIPS 20). Got: {state_fips}")
+    sf = state_fips.zfill(2)
     years = sorted({int(y) for y in years})
     cache_dir.mkdir(parents=True, exist_ok=True)
-    cache_file = cache_dir / "ksde_grades.parquet"
+    cache_file = cache_dir / ("ksde_grades.parquet" if sf == _KS_FIPS else f"ccd_grades_s{sf}.parquet")
     cached = load_fresh_cache(cache_file, years, "KSDE single-grade enrollment")
     if cached is not None:
         return cached[cached["year"].isin(years)].reset_index(drop=True)
 
     leaid_county: dict[str, str] = {}
     for year in years:  # later years win for districts present in both
-        leaid_county.update(_fetch_leaid_county_map(year))
+        leaid_county.update(_fetch_leaid_county_map(year, sf))
     if not leaid_county:
         warnings.warn("KSDE single-grade enrollment unavailable: CCD directory fetch failed.", UserWarning, stacklevel=2)
         return pd.DataFrame(columns=["state_fips", "county_fips", "year", "grade", "enrollment"])
@@ -409,7 +415,7 @@ def fetch_ksde_grades(
     for year in years:
         print(f"  KSDE/CCD single grades {year}…")
         try:
-            frame = _fetch_year_grades(year, leaid_county)
+            frame = _fetch_year_grades(year, leaid_county, sf)
             if not frame.empty:
                 frames.append(frame)
         except Exception as exc:

@@ -112,24 +112,25 @@ def main(state_fips: str = "20", api_key: str | None = None,
     # Grade-group enrollment feeds trend alerts; single grades move the ACS
     # youth bands from the ACS period midpoint to the baseline year by ratio
     # (see fetch_ksde.apply_ksde_override). Enrollment never replaces ACS levels.
-    if run_ksde and state_fips.zfill(2) == "20":
-        print("\n=== STEP 1b: Updating ACS youth cohorts with KSDE single-grade enrollment ===")
-        ksde_df = fetch_ksde(state_fips=state_fips, cache_dir=KSDE_CACHE)
-        if not ksde_df.empty:
-            ksde_out = OUTPUT_DIR / "ksde.parquet"
-            ksde_df.to_parquet(ksde_out, index=False)
-            print(f"  Saved: {ksde_out.name}")
+    # NCES CCD single-grade enrollment is national, so the youth update runs for
+    # any state (Missouri added 2026-11-10); the grade-group trend file is Kansas-only.
+    if run_ksde:
+        print("\n=== STEP 1b: Updating ACS youth cohorts with NCES CCD single-grade enrollment ===")
+        if state_fips.zfill(2) == "20":
+            ksde_df = fetch_ksde(state_fips=state_fips, cache_dir=KSDE_CACHE)
+            if not ksde_df.empty:
+                ksde_out = OUTPUT_DIR / "ksde.parquet"
+                ksde_df.to_parquet(ksde_out, index=False)
+                print(f"  Saved: {ksde_out.name}")
         anchor_year, target_year = ksde_override_years(int(acs_df["year"].max()))
-        grades_df = fetch_ksde_grades([anchor_year, target_year], cache_dir=KSDE_CACHE)
+        grades_df = fetch_ksde_grades([anchor_year, target_year], cache_dir=KSDE_CACHE, state_fips=state_fips)
         if not grades_df.empty:
             acs_df, ksde_diag = apply_ksde_override(acs_df, grades_df, return_diagnostics=True)
             diag_out = OUTPUT_DIR / f"ksde_youth_adjustment_s{state_fips}.parquet"
             ksde_diag.to_parquet(diag_out, index=False)
             print(f"  Saved: {diag_out.name}")
         else:
-            print("  KSDE: no single-grade data — cohort model will use ACS youth cohorts unchanged")
-    elif run_ksde:
-        print(f"\n=== STEP 1b: KSDE youth update — SKIPPED (KS-only; state={state_fips}) ===")
+            print("  CCD: no single-grade data — cohort model will use ACS youth cohorts unchanged")
 
     # ── 2. Run cohort model ────────────────────────────────────────────────
     print(f"\n=== STEP 2: Running cohort-component model ===")

@@ -24,9 +24,21 @@ def test_metro_totals_require_every_county_published_in_one_period():
 
 
 @pytest.mark.skipif(not EVIDENCE.exists(), reason="local evidence folder not present")
-def test_metro_table_builds_from_staged_evidence_without_forecasts():
+def test_metro_table_builds_from_staged_evidence():
     table = build_metro_table(EVIDENCE)
     assert set(table.geography_id) == set(METRO_COUNTIES)
     assert set(table.source_id) == {"acs_b23025", "acs_s2301", "laus", "qcew"}
+    with_forecasts = build_metro_table(EVIDENCE, EVIDENCE.parent.parent / "outputs")
+    fc = with_forecasts[with_forecasts.source_id.eq("cohort_forecast")]
+    assert fc.groupby("measure_id").geography_id.nunique().eq(14).all()
     withheld = table[~table.availability_status.eq("published")]
     assert withheld.estimate.isna().all()
+
+
+def test_forecasts_from_different_runs_are_refused(tmp_path):
+    from metro_context import forecast_rows
+    for state, seed in (("20", 1), ("29", 2)):
+        pd.DataFrame({"county_fips": ["091" if state == "20" else "095"] * 2, "year": [2026, 2035], "p50": [100.0, 110.0],
+                      "random_seed": [seed] * 2, "base_year": [2024] * 2}).to_parquet(tmp_path / f"projections_s{state}.parquet")
+    with pytest.raises(ValueError, match="random_seed"):
+        forecast_rows(tmp_path)

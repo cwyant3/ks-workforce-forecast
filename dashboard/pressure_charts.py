@@ -437,7 +437,7 @@ def kc_metro(metro,county,industry,key):
     n=metro.geography_id.nunique()
     st.markdown("### Kansas City metro, both states")
     st.caption(f"The {n} counties of the Kansas City, MO-KS area: 5 in Kansas and {n-5} in Missouri. Both states use the same federal sources and periods. "
-               "Population forecasts are not compared across states: both use the same cohort model, but only Kansas updates youth cohorts with state school-enrollment data.")
+               "Forecasts come from the same cohort model in both states, with youth cohorts updated from federal school-enrollment data (NCES CCD).")
     lf=_metro_latest(metro,"laus","labor_force"); un=_metro_latest(metro,"laus","unemployed")
     jobs=_metro_latest(metro,"qcew","qcew_employment","10")
     lf_total,un_total,jobs_total=_metro_total(lf,n),_metro_total(un,n),_metro_total(jobs,n)
@@ -454,6 +454,18 @@ def kc_metro(metro,county,industry,key):
         with col, st.container(border=True):
             st.markdown(f"**{title}**"); st.markdown(f"## {value}"); st.caption(ref)
             if note: st.caption(note)
+    fc=metro[metro.source_id.eq("cohort_forecast")&metro.measure_id.eq("working_age_forecast_p50")]
+    if not fc.empty:
+        years=sorted(fc.period_start.str[:4].unique())
+        start,end=(fc[fc.period_start.str.startswith(y)] for y in (years[0],years[-1]))
+        s0,s1=_metro_total(start,n),_metro_total(end,n)
+        with st.container(border=True):
+            st.markdown(f"**Metro working-age residents (18–64), {years[0]} to {years[-1]}**")
+            st.markdown(f"## {number(s0,'people')} → {number(s1,'people')} ({100*(s1/s0-1):+.1f}%)" if s0 and s1 else "## Unavailable")
+            if s0 and s1:
+                ks0=start[start.state_fips.eq("20")].estimate.sum(); ks1=end[end.state_fips.eq("20")].estimate.sum()
+                st.caption(f"Kansas counties {100*(ks1/ks0-1):+.1f}% · Missouri counties {100*((s1-ks1)/(s0-ks0)-1):+.1f}% · "
+                           "sums of county median forecasts, not a metro-level probability band.")
     focus=_metro_latest(metro,"qcew","qcew_employment",industry)
     shown=focus[focus.availability_status.eq("published")].sort_values("estimate",ascending=False)
     if not shown.empty:
@@ -474,10 +486,13 @@ def kc_metro(metro,county,industry,key):
     table["Participation rate, ACS (%)"]=latest_value("acs_s2301","labor_force_participation_rate_16_plus")
     table["Private jobs"]=latest_value("qcew","qcew_employment","10")
     table["Jobs change from a year earlier (%)"]=latest_value("qcew","qcew_employment_yoy_pct","10")
+    if not fc.empty:
+        table["Working-age change to 2035 (%)"]=latest_value("cohort_forecast","working_age_forecast_change_pct")
     table=table.sort_values("Labor force",ascending=False)
     st.dataframe(table.reset_index(drop=True),hide_index=True,width="stretch",
                  column_config={c:st.column_config.NumberColumn(format="%.1f" if "%" in c else "%,.0f") for c in table.columns if c!="County"})
     st.caption("Labor force and unemployment: latest month, residents. Participation: ACS 2020–2024, ages 16+. Jobs: QCEW first quarter 2026, private, by workplace. "
+               "Working-age change: median forecast, ages 18–64, 2026 to 2035. "
                "Blank cells are withheld or unavailable, never zero.")
     st.download_button("Download metro county observations",metro.to_csv(index=False).encode(),"kc_metro_observations.csv","text/csv",key=key+"metro_download")
 

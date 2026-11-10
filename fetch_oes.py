@@ -129,39 +129,63 @@ def fetch_area_oes_api(area_code: str, occupation_codes: list[str], *, year: int
     return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
 
 
-def build_oews_observations(evidence_dir: Path, *, year: int = 2025) -> pd.DataFrame:
-    """Load the reviewed Wichita API sample without any network activity.
+WICHITA_SAMPLE_TITLES = {"00-0000": "All occupations", "47-2111": "Electricians",
+                         "51-4121": "Welders, Cutters, Solderers, and Brazers",
+                         "29-2061": "Licensed Practical and Licensed Vocational Nurses"}
+# Reviewed OEWS areas: file slug -> (area code, area name, coverage note).
+REVIEWED_OEWS_AREAS = {
+    "wichita": ("48620", "Wichita, KS", "Verified Wichita area sample only; not a complete occupation inventory"),
+    "kansascity": ("28140", "Kansas City, MO-KS",
+                   "Full published Kansas City, MO-KS area inventory; the area spans Kansas and Missouri counties"),
+}
 
-    Twenty source series yield twelve estimate rows: employment, mean annual
-    wages and median annual wages for four SOCs. Eight uncertainty series attach
-    as RSE fields to employment and mean-wage rows, never to median wages.
-    Native OEWS area identifiers remain intact; county coverage is a separate
-    crosswalk and this function does not invent nonmetropolitan areas.
-    """
-    path = Path(evidence_dir) / f"oews-wichita-{year}-sample.json"
+
+def _load_area_payload(path: Path, area_code: str, area_name: str, titles: dict, note: str, year: int) -> pd.DataFrame:
     payload = json.loads(path.read_text(encoding="utf-8-sig"))
     series = payload.get("Results", {}).get("series", [])
     ids = [item.get("seriesID", "") for item in series]
     if not ids or len(ids) != len(set(ids)):
         raise ValueError("Missing or duplicate cached OEWS source series")
-    if any(len(sid) != 25 or not sid.startswith("OEUM0048620000000")
+    prefix = "OEUM" + area_code.zfill(7) + "000000"
+    if any(len(sid) != 25 or not sid.startswith(prefix)
            or not sid[4:].isdigit() or sid[-2:] not in {"01", "02", "04", "05", "13"} for sid in ids):
-        raise ValueError("Cached OEWS sample contains an unreviewed area or series")
+        raise ValueError("Cached OEWS file contains an unreviewed area or series: " + path.name)
     frame = parse_area_api_response(payload, requested_series=ids, year=year)
     frame["industry_code"] = frame.source_series_id.str[11:17]
     frame["oews_area_type"] = frame.source_series_id.str[3]
-    frame["area_name"] = "Wichita, KS"
-    frame["occupation_title"] = frame.occupation_code.map({
-        "00-0000": "All occupations", "47-2111": "Electricians",
-        "51-4121": "Welders, Cutters, Solderers, and Brazers",
-        "29-2061": "Licensed Practical and Licensed Vocational Nurses"}).fillna("")
+    frame["area_name"] = area_name
+    frame["occupation_title"] = frame.occupation_code.map(titles).fillna("")
     frame["source_rse_series_id"] = [sid[:-2] + ("02" if sid.endswith("01") else "05")
                                       if not sid.endswith("13") else "" for sid in frame.source_series_id]
     frame["rse_availability_status"] = ["not_applicable" if sid.endswith("13") else
                                         "published" if pd.notna(rse) else "not_reported"
                                         for sid, rse in zip(frame.source_series_id, frame.rse)]
-    frame["coverage_note"] = "Verified Wichita area sample only; not a complete occupation inventory"
+    frame["coverage_note"] = note
     return frame
+
+
+def build_oews_observations(evidence_dir: Path, *, year: int = 2025) -> pd.DataFrame:
+    """Load reviewed OEWS area API payloads without any network activity.
+
+    The Wichita file is the original four-SOC sample; other reviewed areas are
+    full inventories staged by scripts/stage_oews_area.py with a titles file.
+    Employment and mean-wage rows carry RSE; median wages never inherit it.
+    Native OEWS area identifiers remain intact; county coverage is a separate
+    crosswalk and this function does not invent nonmetropolitan areas.
+    """
+    evidence_dir = Path(evidence_dir)
+    frames = []
+    for slug, (code, name, note) in REVIEWED_OEWS_AREAS.items():
+        path = evidence_dir / (f"oews-{slug}-{year}-sample.json" if slug == "wichita" else f"oews-{slug}-{year}.json")
+        if not path.exists():
+            continue
+        titles_path = evidence_dir / f"oews-{slug}-{year}-titles.json"
+        titles = (json.loads(titles_path.read_text(encoding="utf-8")) if titles_path.exists()
+                  else WICHITA_SAMPLE_TITLES)
+        frames.append(_load_area_payload(path, code, name, titles, note, year))
+    if not frames:
+        raise FileNotFoundError("No reviewed OEWS area files in " + str(evidence_dir))
+    return pd.concat(frames, ignore_index=True)
 
 # May 2020 OES was suspended, so 2019 is the prior comparable data point and
 # the gap in this list is intentional.

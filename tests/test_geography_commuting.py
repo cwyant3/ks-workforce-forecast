@@ -93,5 +93,10 @@ def test_crosswalk_maps_every_kansas_county_to_one_projection_region():
     region_id, name, members = county_region("20091")
     assert (region_id, name) == ("KS-KC", "Kansas City") and "Johnson" in members and len(members) == 4
     assert county_region("20999") == ("", "", [])
-    # Only the Wichita metropolitan OEWS area is adopted; other counties never inherit it.
-    assert set(relations.loc[relations.oews_area.ne(""), "county_fips5"]) == set(WICHITA_OEWS_COUNTIES)
+    # Only adopted OEWS areas are mapped; other counties never inherit them.
+    from geography import KANSAS_CITY_OEWS_COUNTIES, county_oews_area
+    mapped = relations.loc[relations.oews_area.ne("")]
+    assert set(mapped.county_fips5) == set(WICHITA_OEWS_COUNTIES) | set(KANSAS_CITY_OEWS_COUNTIES)
+    assert county_oews_area("20107")[:2] == ("28140", "Kansas City, MO-KS")  # Linn: KC pay area, Southeast projection region
+    assert county_region("20107")[0] == "KS-SE"
+    assert county_oews_area("20045") == ("", "", [])  # Douglas (Lawrence) is not adopted

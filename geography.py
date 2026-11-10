@@ -4,6 +4,11 @@ import pandas as pd
 
 SOUTH_CENTRAL_COUNTIES = ("20015", "20035", "20077", "20079", "20095", "20173", "20191")
 WICHITA_OEWS_COUNTIES = ("20015", "20079", "20173", "20191")
+# Kansas members of the bistate Kansas City, MO-KS OEWS area (BLS May 2025 definitions).
+KANSAS_CITY_OEWS_COUNTIES = ("20091", "20103", "20107", "20121", "20209")
+# Adopted OEWS areas: code -> (name, Kansas member counties).
+OEWS_AREAS = {"48620": ("Wichita, KS", WICHITA_OEWS_COUNTIES),
+              "28140": ("Kansas City, MO-KS", KANSAS_CITY_OEWS_COUNTIES)}
 GEOGRAPHY_VERSION = "2026-10-20"
 
 
@@ -20,6 +25,17 @@ def county_region(county) -> tuple[str, str, list[str]]:
     region_id = row.iloc[0].projection_region_id
     members = relations.loc[relations.projection_region_id.eq(region_id)]
     return region_id, row.iloc[0].projection_region, sorted(members.county_name)
+
+
+def county_oews_area(county) -> tuple[str, str, list[str]]:
+    """(area code, area name, Kansas member county names) for an adopted OEWS area; blanks otherwise."""
+    relations = county_area_relations()
+    row = relations.loc[relations.county_fips5.eq(str(county))]
+    code = row.iloc[0].oews_area if not row.empty else ""
+    if code not in OEWS_AREAS:
+        return "", "", []
+    members = relations.loc[relations.oews_area.eq(code), "county_name"]
+    return code, OEWS_AREAS[code][0], sorted(members)
 
 
 def select_area_observations(observations: pd.DataFrame, counties, area_column="oews_area"):

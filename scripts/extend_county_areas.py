@@ -34,6 +34,10 @@ new = pd.DataFrame({"county_fips5": merged.county_fips5,
                     "oews_area_name": "OEWS area pay not adopted in this release"})
 assert new.projection_region_id.notna().all()
 out = pd.concat([current, new[~new.county_fips5.isin(current.county_fips5)]], ignore_index=True)
+# Adopted OEWS pay areas beyond the original Wichita rows (BLS May 2025 area definitions,
+# https://www.bls.gov/oes/current/msa_def.htm, read 2026-11-10).
+kc = out.county_fips5.isin(["20091", "20103", "20107", "20121", "20209"])
+out.loc[kc, ["oews_area", "oews_area_name"]] = ["28140", "Kansas City, MO-KS"]
 out = out.sort_values("county_fips5")
 assert len(out) == 105 and out.county_fips5.is_unique
 out.to_csv(CSV, index=False)

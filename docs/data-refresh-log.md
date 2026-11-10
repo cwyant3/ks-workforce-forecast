@@ -2334,3 +2334,11 @@ Checked:        evidence folder `data/pressure_sources/2026-11-10` built by `scr
 Outputs changed: new release folder, `crosswalks/county_areas_20261020.csv` extended to 105 counties (KDOL projection regions; OEWS pay area stays Wichita-only), UI pilot gates removed, `scripts/extend_county_areas.py`, tests
 Validation:     pass (197 tests; `validate_outputs.py --state 20 --pressure`; Streamlit runtime check on 8 counties in both modes)
 Notes:          Coverage of published counties: QCEW 104, QWI 100, LAUS 105, LODES 105, IPEDS 36 (counties with no reporting institution show not_reported). Pilot-county values for QCEW, QWI and LODES are byte-for-byte equal to the adopted release; LAUS August 2026 values were revised by BLS and September added. Regional occupation tables already held all seven KDOL regions. To adopt after review, rerun the same build with `--adopt` (this creates a new release ID); roll back with `--rollback 20261109T034237_d5325ec1`.
+
+## [2026-11-10] oews | Kansas City MO-KS area adopted
+Vintage before: adopted `20261110T170437_16937bcf` (OEWS: Wichita four-SOC sample only)
+Vintage after:  adopted `20261110T181958_da021927` (rollback target `20261110T170437_16937bcf`)
+Checked:        BLS OEWS bulk files and web pages return 403 to scripts; BLS API v2 (registered) used instead via `scripts/stage_oews_area.py --area 28140`. Area code and Kansas members (Johnson, Leavenworth, Linn, Miami, Wyandotte) read from https://www.bls.gov/oes/current/msa_def.htm (May 2025 definitions) in a browser on 2026-11-10. API check: area 00-0000 May 2025 = 1,096,110 jobs, median $50,820.
+Outputs changed: 3,880 series requested for 776 candidate SOCs (all cross-industry detailed SOCs published for KS or MO); 619 SOCs have published values, 477 rows not reported, 27 suppressed. Crosswalk maps the five Kansas members to 28140. All non-OEWS observations and the Wichita sample are unchanged.
+Validation:     pass (197 tests; `validate_outputs.py --pressure` with preview; Streamlit runtime check on Johnson, Linn, Wyandotte, Sedgwick, Greeley in both modes)
+Notes:          Values describe the whole bistate metro, not the Kansas portion. Linn is in the Kansas City pay area but KDOL's Southeast projection region. Topeka, Lawrence, Manhattan, St. Joseph, Joplin and nonmetro areas remain unadopted.

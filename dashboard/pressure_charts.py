@@ -11,7 +11,7 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from data_contracts import KEY, latest_observations
-from geography import WICHITA_OEWS_COUNTIES, inbound_labor_shed
+from geography import inbound_labor_shed
 
 BLUE = "#315E88"
 TEAL = "#36816B"
@@ -223,10 +223,12 @@ def demand(frame,county,industry,names,key):
 
 def pay(frame,county,key):
     st.markdown("### Occupation pay in the surrounding area")
-    if county not in WICHITA_OEWS_COUNTIES:
-        st.info("Nonmetropolitan OEWS occupation pay has not been adopted for this county. The industry wage card above remains a separate county measure.")
+    from geography import county_oews_area
+    area,area_name,members=county_oews_area(county)
+    if not area:
+        st.info("OEWS occupation pay for this county's area has not been adopted in this release. The industry wage card above remains a separate county measure.")
         return
-    rows=frame[frame.source_id.eq("oews")&frame.geography_id.eq("48620")]
+    rows=frame[frame.source_id.eq("oews")&frame.geography_id.eq(area)&frame.availability_status.eq("published")]
     if rows.empty:
         return
     titles=rows.drop_duplicates("occupation_code").set_index("occupation_code").occupation_title.to_dict()
@@ -238,7 +240,8 @@ def pay(frame,county,key):
     wage=rows[rows.measure_id.isin(["oews_mean_annual_wage","oews_median_annual_wage"])&rows.availability_status.eq("published")]
     if not wage.empty:
         draw(horizontal(wage.estimate.tolist(),["Mean" if "mean" in m else "Median" for m in wage.measure_id],"Annual pay (USD)",unit="USD/year"),key+"wages")
-    st.caption("Wichita area only: Butler, Harvey, Sedgwick and Sumner. May 2025 OEWS; four reviewed occupation groups. Area pay is not a county estimate. Source details retain employment and mean-wage RSE; median wages do not inherit mean-wage RSE.")
+    scope="four reviewed occupation groups" if area=="48620" else "occupations the area publishes; the area also includes Missouri counties"
+    st.caption(f"{area_name} OEWS area · Kansas members: {', '.join(members)}. May 2025 OEWS; {scope}. Area pay is not a county estimate. Source details retain employment and mean-wage RSE; median wages do not inherit mean-wage RSE.")
     evidence(rows)
 
 

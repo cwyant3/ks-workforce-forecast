@@ -58,7 +58,7 @@ def build(evidence_dir: Path, outputs: Path = OUTPUTS, *, correction_dir: Path |
         raise ValueError("Resident supply evidence is required")
     training, detail = build_training_indicators(evidence_dir, scope_counties)
     pieces = [demand, supply, training]
-    if (evidence_dir / "oews-wichita-2025-sample.json").exists():
+    if any((evidence_dir / name).exists() for name in ("oews-wichita-2025-sample.json", "oews-kansascity-2025.json")):
         pieces.append(build_oews_observations(evidence_dir))
     lodes = evidence_dir / "lodes_observations.parquet"
     if lodes.exists():
@@ -166,7 +166,7 @@ def build(evidence_dir: Path, outputs: Path = OUTPUTS, *, correction_dir: Path |
         "population_forecast": ("projections_s20.parquet sha256 " + hashlib.sha256((outputs / "projections_s20.parquet").read_bytes()).hexdigest()
                                 if (outputs / "projections_s20.parquet").exists() else "not available"),
         "geography_crosswalk_version":"2026-10-20",
-        "regional_context":("KDOL projection regions 2022-2032 (all seven); Wichita OEWS May2025 sample only"
+        "regional_context":("KDOL projection regions 2022-2032 (all seven); OEWS May2025: Wichita sample, Kansas City MO-KS full inventory"
                             if len(scope_counties) > len(PILOT) else "South Central 2022-2032; Wichita OEWS May2025 sample only"),
         "sector_correction":"reviewed rebuild" if correction_dir else "retained from adopted release" if "sector_projections_s20.parquet" in tables else "not included; legacy sector forecast withheld in pressure comparisons",
         "composite_score":"not calculated"})

@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "release_id": "20261110T192715_83b8d358",
-  "created_utc": "2026-11-10T19:27:15.815760+00:00",
+  "release_id": "20261110T195547_86448b7e",
+  "created_utc": "2026-11-10T19:55:48.665747+00:00",
   "scope": {
     "state": "20",
     "pilot_counties": [
@@ -116,6 +116,15 @@
       "acs-2024-b23025-ks.json": "5b265bcf3851528386281bcfcaa8febc7ca3e5358bf1939cb6ea87050c1f9b50",
       "acs-2024-s2301-ks.json": "723bd9c7755f134a52f25330aa56551ef7d6098a7017ce215304b6d198589464",
       "C2025_A.zip": "555c6522ccf011d54b06520b128badb8558aba3d0038c97f231f5efaa7161183",
+      "cbp-2023-ks-22.json": "cd5519dd66ba207ccca3d8f5a61ade31c485ca566ff256e9005d7b6671782dc0",
+      "cbp-2023-ks-23.json": "fa76ed78438fe87663285fb814601f4fc73f8cca1a8d757269a37b562f9973a4",
+      "cbp-2023-ks-31-33.json": "3be5a68e590966d66034b8f0b60f3f2d502b694aaa3902fef58407e1fbd4a78a",
+      "cbp-2023-ks-51.json": "2711d7a8e7e86933f9307f1a1bf83f1fa88d585d9b99116df9fddac46e45a0fd",
+      "cbp-2023-ks-54.json": "483d5392fa28f087cf9504e0775b7cec3c915fba7c2f8892fb1f9b2e5d163544",
+      "cbp-2023-ks-62.json": "1aa5c8f7b24bcfe9f561c78ece3f7213c7891bd05f315c4c013eb13b1eb94213",
+      "cbp-2023-ks-71.json": "8e6628e10fd08632607f74a2394672805ffc80c908d1c690e74992bac25829a3",
+      "cbp-2023-ks-72.json": "7c4706de5a49a744cfa91cab23aa86272f76113e810babaf5e5cae5db6cc4e59",
+      "cbp-2023-ks-81.json": "d5c1ce4805d4c3c752a3cd7b688d536cd6c31c26d36cabec9af77e1ba02b3621",
       "commute_snapshot.parquet": "8c267f1d49d443a95abaed20715e6e6333dab237c4f1f1d3e80ab17b2d78ea46",
       "FLAGS2025.zip": "492379dec18320f9110cf4a3e53cf850a8ed93846565868eaecb8a43c9bc58a1",
       "hd2025-full-source-scan-diagnosis.json": "2b21ad26c372a15c88152224f1bccaef6c7798f97fbfecedaab0975d127805cc",
@@ -430,8 +439,8 @@
   },
   "files": {
     "pressure_observations.parquet": {
-      "sha256": "fa9dbf3ef5f9ea59e8c0309b0534e2f5a123bebdbd6d26be5391acef9781bfbe",
-      "rows": 116739,
+      "sha256": "c6493b47b7c27709c5828b443b9728ffd27d99873d7ae3d2d47bbeddfbbe2df6",
+      "rows": 118629,
       "columns": [
         "geography_id",
         "industry_code",
@@ -1067,6 +1076,14 @@
       "source_url": "https://api.census.gov/data/2024/acs/acs5/subject"
     },
     {
+      "source_id": "cbp",
+      "reference_period": "2023-03-12",
+      "release_id": "CBP2023",
+      "adoption_status": "validated observations",
+      "verification_date": "2026-10-20",
+      "source_url": "https://api.census.gov/data/2023/cbp"
+    },
+    {
       "source_id": "ipeds",
       "reference_period": "2025-06-30",
       "release_id": "IPEDS-C2025_A-PD",
@@ -1201,6 +1218,26 @@
       "latest_usable": "2024-12-31",
       "statuses": {
         "published": 105
+      }
+    },
+    {
+      "source_id": "cbp",
+      "measure_id": "cbp_employment",
+      "latest_reference": "2023-03-12",
+      "latest_usable": "2023-03-12",
+      "statuses": {
+        "published": 756,
+        "not_reported": 189
+      }
+    },
+    {
+      "source_id": "cbp",
+      "measure_id": "cbp_establishments",
+      "latest_reference": "2023-03-12",
+      "latest_usable": "2023-03-12",
+      "statuses": {
+        "published": 756,
+        "not_reported": 189
       }
     },
     {
@@ -1543,5 +1580,5 @@
       }
     }
   ],
-  "previous_release_id": "20261110T191204_8be07183"
+  "previous_release_id": "20261110T192715_83b8d358"
 }

@@ -359,3 +359,56 @@ def sector_estab_summary(cbp_df: pd.DataFrame, state_fips: str = "20") -> pd.Dat
     # Treat 0 after aggregation as valid (vs. None = suppressed)
     agg["naics2"] = "sector_agg"
     return compute_estab_trends(agg)
+
+
+def parse_cbp_county_payload(payload: list, counties: list[str], *, naics: str, year: int,
+                             state_fips: str = "20") -> "pd.DataFrame":
+    """County Business Patterns observations for one NAICS sector, all legal forms and sizes.
+
+    Withheld cells (EMP_F "D" disclosure, "S" publication standards) carry a
+    zero in EMP; they become ``suppressed``, never a published zero. "N" (not
+    available) and counties absent from the payload are ``not_reported``. The
+    raw noise flag (EMP_N) and suppression flag are kept in source_status.
+    """
+    from data_contracts import normalize_observations
+    if not isinstance(payload, list) or not payload or "EMP" not in payload[0]:
+        raise ValueError("CBP response is not the expected header/rows JSON array")
+    data = pd.DataFrame(payload[1:], columns=payload[0])
+    data = data.loc[:, ~data.columns.duplicated()]
+    if not data.empty:
+        if not data.NAICS2017.eq(naics).all() or not data.state.eq(state_fips.zfill(2)).all():
+            raise ValueError("CBP response differs from requested state/NAICS")
+        data = data[data.LFO.eq("001") & data.EMPSZES.eq("001")]
+        if data.county.duplicated().any():
+            raise ValueError("CBP response has several all-firm rows for one county")
+    records = {state_fips.zfill(2) + c: r for c, r in zip(data.county, data.to_dict("records"))}
+    rows = []
+    for county in counties:
+        r = records.get(county)
+        raw_flag = r.get("EMP_F") if r is not None else "absent"
+        flag = "" if raw_flag is None or (isinstance(raw_flag, float) and pd.isna(raw_flag)) else str(raw_flag).strip()
+        emp = pd.to_numeric(r.get("EMP"), errors="coerce") if r is not None else float("nan")
+        estab = pd.to_numeric(r.get("ESTAB"), errors="coerce") if r is not None else float("nan")
+        if r is None or flag == "N":
+            emp_status = "not_reported"
+        elif flag in ("D", "S") or pd.isna(emp):
+            emp_status = "suppressed"
+        elif flag:
+            emp_status = "cannot_compute"  # unreviewed flag: never publish
+        else:
+            emp_status = "published"
+        for measure, value, unit, status in (
+                ("cbp_employment", emp, "employees", emp_status),
+                ("cbp_establishments", estab, "establishments",
+                 "published" if r is not None and pd.notna(estab) else "not_reported")):
+            rows.append(dict(geography_id=county, industry_code=naics, measure_id=measure, estimate=value,
+                             unit=unit, availability_status=status,
+                             source_status=f"EMP_F={flag or 'none'}; EMP_N={r.get('EMP_N') if r is not None else ''}",
+                             period_start=f"{year}-03-12", period_end=f"{year}-03-12",
+                             reference_label=f"Mid-March {year}"))
+    return normalize_observations(pd.DataFrame(rows), source_id="cbp", defaults={
+        "geography_type": "county", "location_basis": "workplace", "industry_system": "NAICS2017",
+        "ownership": "private employer establishments", "job_universe": "paid employees, pay period including March 12",
+        "frequency": "annual", "method_type": "published estimate with noise infusion",
+        "release_id": f"CBP{year}", "source_url": f"https://api.census.gov/data/{year}/cbp",
+        "coverage_note": "Excludes self-employed, most government, railroad and agricultural production employees; noise-infused."})

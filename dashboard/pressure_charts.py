@@ -197,6 +197,22 @@ def workforce(frame,county,key,annual_laus=None):
     evidence(frame[frame.geography_id.eq(county)&frame.source_id.str.startswith(("acs","laus"))])
 
 
+def alternatives(frame,county,industry,key):
+    """When QCEW withholds county industry jobs, show other published sources beside it, never in its place."""
+    qcew=current(series(frame,"qcew","qcew_employment",county,industry))
+    if qcew is None or available(qcew):
+        return
+    options=[(src,m,title) for src,m,title in (("qwi","qwi_employment","Jobs · Census QWI"),("cbp","cbp_employment","Employees · County Business Patterns"))
+             if available(current(series(frame,src,m,county,industry)))]
+    if not options:
+        return
+    st.markdown("#### Other published employment estimates")
+    st.caption("QCEW withholds this county and industry. These separate Census sources publish noise-infused estimates instead of withholding. "
+               "They use different job definitions and periods, so they are shown on their own and are not used in QCEW growth, pay or county rankings.")
+    for col,(src,m,title) in zip(st.columns(len(options)),options):
+        with col: metric_card(frame,series(frame,src,m,county,industry),title,key+"alt_"+m)
+
+
 def demand(frame,county,industry,names,key):
     st.markdown("### Employment and hiring")
     st.caption(f"{INDUSTRIES.get(industry,industry)} · private-sector workplace measures. QCEW and QWI retain separate job definitions and periods.")
@@ -205,6 +221,7 @@ def demand(frame,county,industry,names,key):
     for col,(src,m,title) in zip(st.columns(3),specs):
         with col:
             metric_card(frame,series(frame,src,m,county,industry),title,key+m,peer_label="counties with published data")
+    alternatives(frame,county,industry,key)
     row=current(series(frame,"qcew","qcew_employment_yoy_pct",county,industry))
     matches=peers(frame,row)
     if not matches.empty:

@@ -13,6 +13,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import re
 from pathlib import Path
 
 import pandas as pd
@@ -23,6 +24,7 @@ from demand_pressure import build_demand_indicators
 from supply_pressure import build_supply_indicators
 from training_supply import build_training_indicators
 from fetch_ipeds import summarize_by_sector
+from fetch_cbp import parse_cbp_county_payload
 from fetch_oes import build_oews_observations
 from participation_model import build_participation_table, project_effective_workforce
 from scripts.parse_manual_ks_occproj import build_regional_context
@@ -58,6 +60,12 @@ def build(evidence_dir: Path, outputs: Path = OUTPUTS, *, correction_dir: Path |
         raise ValueError("Resident supply evidence is required")
     training, detail = build_training_indicators(evidence_dir, scope_counties)
     pieces = [demand, supply, training]
+    # County Business Patterns: a separate, labeled source; never fills QCEW cells.
+    for path in sorted(evidence_dir.glob("cbp-*-ks-*.json")):
+        match = re.fullmatch(r"cbp-(\d{4})-ks-([\d-]+)\.json", path.name)
+        if match:
+            pieces.append(parse_cbp_county_payload(json.loads(path.read_text(encoding="utf-8")), scope_counties,
+                                                   naics=match[2], year=int(match[1])))
     if any((evidence_dir / name).exists() for name in ("oews-wichita-2025-sample.json", "oews-kansascity-2025.json")):
         pieces.append(build_oews_observations(evidence_dir))
     lodes = evidence_dir / "lodes_observations.parquet"

@@ -5,7 +5,7 @@ import streamlit as st
 
 from dashboard.pressure_charts import (
     BLUE, TEAL, INDUSTRIES, available, current, series, metric_card,
-    workforce, demand, training, movement,
+    workforce, demand, training, movement, kc_metro,
 )
 from dashboard.outlook_forecast import render_forecast, render_scenarios
 from dashboard.training_pathways import render_pathways
@@ -35,7 +35,7 @@ def current_reading(frame, county, industry):
 
 
 def render_outlook(frame, detail, flows, regional, proj, effective, sectors, summary,
-                   county, county_name, names, annual_laus=None, resident_flows=None):
+                   county, county_name, names, annual_laus=None, resident_flows=None, metro=None):
     st.markdown("""<style>
     @media (max-width: 850px) {
       [data-testid="stHorizontalBlock"] {flex-wrap: wrap;}
@@ -112,6 +112,7 @@ def render_outlook(frame, detail, flows, regional, proj, effective, sectors, sum
             training(frame, detail, county, "outlook_all_training_", industry)
         with commute_tab:
             movement(frame, flows, county, names, "outlook_all_movement_", resident_flows)
+    kc_metro(metro, county, industry, "outlook_")
 
     st.divider()
     st.markdown("### 5. What could change the outlook?")

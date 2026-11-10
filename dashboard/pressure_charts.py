@@ -413,6 +413,75 @@ def residents(frame,resident_flows,county,key_names,key):
                f"{note} Counts are jobs, not people available to recruit.")
 
 
+def _metro_latest(metro,source,measure,industry=None):
+    rows=metro[metro.source_id.eq(source)&metro.measure_id.eq(measure)]
+    if industry is not None:
+        rows=rows[rows.industry_code.eq(industry)]
+    if rows.empty:
+        return rows
+    return rows[rows.period_start.eq(rows.period_start.max())]
+
+
+def _metro_total(rows,n):
+    """Sum only when every metro county is published for the same period; otherwise unavailable."""
+    if len(rows)!=n or not rows.availability_status.eq("published").all() or rows.period_start.nunique()!=1:
+        return None
+    return float(rows.estimate.sum())
+
+
+def kc_metro(metro,county,industry,key):
+    """Kansas City metro context for the Kansas counties of OEWS area 28140, using matching federal sources."""
+    from geography import KANSAS_CITY_OEWS_COUNTIES
+    if metro is None or metro.empty or county not in KANSAS_CITY_OEWS_COUNTIES:
+        return
+    n=metro.geography_id.nunique()
+    st.markdown("### Kansas City metro, both states")
+    st.caption(f"The {n} counties of the Kansas City, MO-KS area: 5 in Kansas and {n-5} in Missouri. Both states use the same federal sources and periods. "
+               "Population forecasts are not compared across states: both use the same cohort model, but only Kansas updates youth cohorts with state school-enrollment data.")
+    lf=_metro_latest(metro,"laus","labor_force"); un=_metro_latest(metro,"laus","unemployed")
+    jobs=_metro_latest(metro,"qcew","qcew_employment","10")
+    lf_total,un_total,jobs_total=_metro_total(lf,n),_metro_total(un,n),_metro_total(jobs,n)
+    ks=lambda rows,total:(rows[rows.state_fips.eq("20")].estimate.sum()/total if total else None)
+    cards=[("Metro labor force",number(lf_total,"people") if lf_total else "Unavailable",
+            f"{lf.reference_label.iloc[0]} · BLS LAUS" if not lf.empty else "",
+            f"Kansas counties: {ks(lf,lf_total):.0%}" if lf_total else ""),
+           ("Metro unemployment rate",f"{100*un_total/lf_total:.1f}%" if lf_total and un_total else "Unavailable",
+            f"{lf.reference_label.iloc[0]} · not seasonally adjusted" if not lf.empty else "","Unemployed ÷ labor force, summed over all counties"),
+           ("Metro private jobs",number(jobs_total,"jobs") if jobs_total else "Unavailable",
+            f"{jobs.reference_label.iloc[0]} · BLS QCEW" if not jobs.empty else "",
+            f"Kansas counties: {ks(jobs,jobs_total):.0%}" if jobs_total else "")]
+    for col,(title,value,ref,note) in zip(st.columns(3),cards):
+        with col, st.container(border=True):
+            st.markdown(f"**{title}**"); st.markdown(f"## {value}"); st.caption(ref)
+            if note: st.caption(note)
+    focus=_metro_latest(metro,"qcew","qcew_employment",industry)
+    shown=focus[focus.availability_status.eq("published")].sort_values("estimate",ascending=False)
+    if not shown.empty:
+        label=INDUSTRIES.get(industry,industry)
+        st.markdown(f"#### {label} jobs across the metro")
+        colors=[GOLD if g==county else (BLUE if g.startswith("20") else GRAY) for g in shown.geography_id]
+        draw(horizontal(shown.estimate.tolist(),shown.county_name.str.replace(" County","").tolist(),
+                        f"Private jobs, {shown.reference_label.iloc[0]}",color=colors),key+"metro_industry")
+        hidden=focus[~focus.availability_status.eq("published")]
+        st.caption("Gold: selected county. Blue: Kansas. Gray: Missouri."+
+                   (f" Withheld by QCEW: {', '.join(hidden.county_name.str.replace(' County',''))}." if not hidden.empty else ""))
+    def latest_value(source,measure,ind=None):
+        rows=_metro_latest(metro,source,measure,ind)
+        return rows.set_index("geography_id").estimate.where(rows.set_index("geography_id").availability_status.eq("published"))
+    table=pd.DataFrame({"County":metro.drop_duplicates("geography_id").set_index("geography_id").county_name})
+    table["Labor force"]=latest_value("laus","labor_force")
+    table["Unemployment rate (%)"]=latest_value("laus","unemployment_rate")
+    table["Participation rate, ACS (%)"]=latest_value("acs_s2301","labor_force_participation_rate_16_plus")
+    table["Private jobs"]=latest_value("qcew","qcew_employment","10")
+    table["Jobs change from a year earlier (%)"]=latest_value("qcew","qcew_employment_yoy_pct","10")
+    table=table.sort_values("Labor force",ascending=False)
+    st.dataframe(table.reset_index(drop=True),hide_index=True,width="stretch",
+                 column_config={c:st.column_config.NumberColumn(format="%.1f" if "%" in c else "%,.0f") for c in table.columns if c!="County"})
+    st.caption("Labor force and unemployment: latest month, residents. Participation: ACS 2020–2024, ages 16+. Jobs: QCEW first quarter 2026, private, by workplace. "
+               "Blank cells are withheld or unavailable, never zero.")
+    st.download_button("Download metro county observations",metro.to_csv(index=False).encode(),"kc_metro_observations.csv","text/csv",key=key+"metro_download")
+
+
 def regional_view(regional,county,key):
     from geography import county_region
     st.markdown("### Regional growth and openings")
@@ -441,13 +510,15 @@ def regional_view(regional,county,key):
     evidence(rows)
 
 
-def render_county_brief(frame,detail,flows,regional,county,county_name,names,annual_laus=None,resident_flows=None):
+def render_county_brief(frame,detail,flows,regional,county,county_name,names,annual_laus=None,resident_flows=None,metro=None):
     st.markdown("<div style='font-size:.8rem;letter-spacing:.12em;color:#BA793B;font-weight:700'>COUNTY WORKFORCE BRIEF</div>",unsafe_allow_html=True)
     st.title(county_name)
     st.write("A visual view of workforce participation, employer activity, training and commuting.")
     industry=st.selectbox("Industry focus",list(INDUSTRIES),index=list(INDUSTRIES).index("31-33"),format_func=lambda x:INDUSTRIES[x],key="brief_industry")
     st.caption("Industry selection applies to employment and county industry pay. Resident workforce, credential awards and commuting use their full published county universes; occupation pay and outlook have separate selectors.")
-    tabs=st.tabs(["Overview","Workforce","Employment & pay","Training","Movement","Regional outlook"])
+    from geography import KANSAS_CITY_OEWS_COUNTIES
+    show_metro=metro is not None and not metro.empty and county in KANSAS_CITY_OEWS_COUNTIES
+    tabs=st.tabs(["Overview","Workforce","Employment & pay","Training","Movement","Regional outlook"]+(["Kansas City metro"] if show_metro else []))
     with tabs[0]:
         st.markdown("### Four signals for the conversation")
         specs=[("qcew","qcew_employment_yoy_pct","Employment growth",industry,"counties with published data"),
@@ -470,4 +541,6 @@ def render_county_brief(frame,detail,flows,regional,county,county_name,names,ann
     with tabs[3]:training(frame,detail,county,"brief_training_",industry)
     with tabs[4]:movement(frame,flows,county,names,"brief_movement_",resident_flows)
     with tabs[5]:regional_view(regional,county,"brief_regional_")
+    if show_metro:
+        with tabs[6]:kc_metro(metro,county,industry,"brief_")
     st.download_button("Download county observations with sources",frame[frame.geography_id.eq(county)].to_csv(index=False).encode(),f"{county}_workforce_observations.csv","text/csv",key="brief_source_download")

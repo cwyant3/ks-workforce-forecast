@@ -108,6 +108,9 @@ def build(evidence_dir: Path, outputs: Path = OUTPUTS, *, correction_dir: Path |
               "ipeds_by_sector_s20.parquet": summarize_by_sector(detail)}
     if resident_flows is not None:
         tables["pressure_resident_flows.parquet"] = resident_flows
+    if (evidence_dir / "metro-laus-mo-2026.json").exists():
+        from metro_context import build_metro_table
+        tables["pressure_kc_metro.parquet"] = build_metro_table(evidence_dir)
     for source, target in (("lodes_flows.parquet", "pressure_lodes_flows.parquet"),
                            ("commute_snapshot.parquet", "commute_snapshot_s20.parquet")):
         if (evidence_dir / source).exists():

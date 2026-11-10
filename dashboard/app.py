@@ -1059,7 +1059,8 @@ def main():
                        proj, _pressure_table(f"projections_effective_s{state_fips}.parquet"),
                        county_sectors, summary, selected_id, selected_county, county_names,
                        annual_laus=_pressure_table(f"laus_s{state_fips}.parquet"),
-                       resident_flows=_pressure_table("pressure_resident_flows.parquet"))
+                       resident_flows=_pressure_table("pressure_resident_flows.parquet"),
+                       metro=_pressure_table("pressure_kc_metro.parquet"))
         return
     elif view_mode == "Workforce Outlook":
         st.info("The unified Workforce Outlook is available for Kansas only. Existing state views are available below.")
@@ -1075,7 +1076,8 @@ def main():
                            _pressure_table("pressure_regional.parquet"),
                            selected_id, selected_county, county_names,
                            annual_laus=_pressure_table(f"laus_s{state_fips}.parquet"),
-                       resident_flows=_pressure_table("pressure_resident_flows.parquet"))
+                       resident_flows=_pressure_table("pressure_resident_flows.parquet"),
+                       metro=_pressure_table("pressure_kc_metro.parquet"))
         return
     elif view_mode == "County Brief":
         st.info("The new County Brief is available for Kansas only. Existing state views are available below.")

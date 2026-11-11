@@ -1,4 +1,5 @@
 """Versioned geography relations. Area observations must never be summed by county join."""
+from functools import lru_cache
 from pathlib import Path
 import pandas as pd
 
@@ -10,6 +11,32 @@ KANSAS_CITY_OEWS_COUNTIES = ("20091", "20103", "20107", "20121", "20209")
 OEWS_AREAS = {"48620": ("Wichita, KS", WICHITA_OEWS_COUNTIES),
               "28140": ("Kansas City, MO-KS", KANSAS_CITY_OEWS_COUNTIES)}
 GEOGRAPHY_VERSION = "2026-10-20"
+
+
+_CENSUS_COUNTY_NAMES = Path(__file__).parent / "data/demographic_inputs/births_co-est2025-alldata.utf8.csv"
+
+
+@lru_cache(maxsize=1)
+def _us_county_names() -> dict:
+    """Five-digit FIPS -> (county name, state name) for every US county, from the Census 2025 estimates file."""
+    table = pd.read_csv(_CENSUS_COUNTY_NAMES, usecols=["SUMLEV", "STATE", "COUNTY", "STNAME", "CTYNAME"],
+                        dtype=str, encoding="utf-8-sig")
+    table = table[table.SUMLEV.eq("050")]
+    return {s.zfill(2)+c.zfill(3): (n, st) for s, c, n, st in zip(table.STATE, table.COUNTY, table.CTYNAME, table.STNAME)}
+
+
+def county_label(fips, kansas_names=None) -> str:
+    """Readable county label. Kansas counties keep the dashboard's name; other states add a postal code
+    (e.g. 'Jackson County, MO') so border-county origins are never shown as a bare FIPS code."""
+    fips = str(fips).zfill(5)
+    if fips.startswith("20") and kansas_names and kansas_names.get(fips):
+        return kansas_names[fips]
+    found = _us_county_names().get(fips)
+    if not found:
+        return f"County FIPS {fips}"
+    from fetch_lodes import FIPS_TO_ABBR
+    name, state = found
+    return name if fips.startswith("20") else f"{name}, {FIPS_TO_ABBR.get(fips[:2], state).upper()}"
 
 
 def county_area_relations() -> pd.DataFrame:

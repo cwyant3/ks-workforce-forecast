@@ -115,3 +115,12 @@ def test_resident_outbound_discloses_unpublished_states_and_fails_closed_on_acce
     assert obs.loc[('20001', 'resident_primary_jobs'), 'availability_status'] == 'not_reported'
     failed = resident_outbound_observations(flows, coverage + [{'state': 'tx', 'status': 'access_failed'}], ['20091'])
     assert failed.availability_status.eq('incomplete').all() and failed.estimate.isna().all()
+
+
+def test_county_label_names_border_and_kansas_counties():
+    from geography import county_label
+    assert county_label("29095") == "Jackson County, MO"
+    assert county_label("20091", {"20091": "Johnson"}) == "Johnson"
+    assert county_label("20091") == "Johnson County"
+    assert county_label("20209") == "Wyandotte County"
+    assert county_label("99999") == "County FIPS 99999"

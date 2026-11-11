@@ -154,12 +154,13 @@ def render_commuting(frame, county, flows=None):
         rows = rows[rows.source_id.str.contains("lodes", case=False)]
     show_observations(rows, "county_commuting")
     if flows is not None and not flows.empty:
-        from geography import inbound_labor_shed
+        from geography import inbound_labor_shed, county_label
         coverage = st.select_slider("Share of existing workplace primary jobs to describe", options=[70, 80, 90], value=80, key="shed_share")
         shed = inbound_labor_shed(flows, [county], coverage/100)
         if not shed.empty:
             st.markdown(f"#### Origin counties covering at least {coverage}% of primary jobs")
-            display = shed.rename(columns={"h_county_fips":"Home county FIPS", "jobs":"Primary jobs", "share":"Share", "cumulative_share":"Cumulative share"})
+            shed.insert(0, "home_county", [county_label(f) for f in shed.h_county_fips])
+            display = shed.rename(columns={"home_county":"Home county", "h_county_fips":"Home county FIPS", "jobs":"Primary jobs", "share":"Share", "cumulative_share":"Cumulative share"})
             st.dataframe(display, hide_index=True, width="stretch", column_config={"Share": st.column_config.NumberColumn(format="percent"), "Cumulative share": st.column_config.NumberColumn(format="percent")})
             st.download_button("Download observed labor shed", shed.to_csv(index=False).encode(), "observed_labor_shed.csv", "text/csv", key="shed_download")
     st.caption("LODES describes jobs and existing home-to-work connections, not recruitable people. Primary jobs (JT01) and all jobs (JT00) are separate universes. Inbound coverage does not establish complete outbound coverage.")

@@ -11,7 +11,7 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from data_contracts import KEY, latest_observations
-from geography import inbound_labor_shed
+from geography import inbound_labor_shed, county_label
 
 BLUE = "#315E88"
 TEAL = "#36816B"
@@ -377,7 +377,7 @@ def movement(frame,flows,county,names,key,resident_flows=None):
         shed=inbound_labor_shed(flows,[county],share/100)
         if not shed.empty:
             st.markdown(f"#### Home counties accounting for at least {share}% of primary jobs")
-            values=shed.jobs.tolist();labels=[names.get(f,"County FIPS "+f) for f in shed.h_county_fips]
+            values=shed.jobs.tolist();labels=[county_label(f,names) for f in shed.h_county_fips]
             if len(values)>12:
                 values=values[:11]+[sum(values[11:])];labels=labels[:11]+["Other counties in this labor shed"]
             draw(horizontal(values,labels,"Primary jobs",color=TEAL),key+"origins")
@@ -402,7 +402,7 @@ def residents(frame,resident_flows,county,key_names,key):
         if not dest.empty:
             top=dest.head(10)
             named=dict(zip(sub.w_county_fips,sub.w_county_name)) if "w_county_name" in sub else {}
-            labels=[key_names.get(f) or named.get(f) or f"County FIPS {f}" for f in top.w_county_fips]
+            labels=[key_names.get(f) or named.get(f) or county_label(f,key_names) for f in top.w_county_fips]
             values=top.jobs.tolist()
             rest=dest.jobs.iloc[10:].sum()
             if rest>0: values.append(rest); labels.append("All other destination counties")

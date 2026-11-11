@@ -28,25 +28,50 @@ def scale_for_paths(*paths):
     return max(maximum, 1.0)
 
 
-def band_summary(state):
+def pct_change(current, base):
+    """Percent change versus the baseline total; NaN when the baseline is zero."""
+    return (current-base)/base*100 if base > 0 else np.nan
+
+
+def format_change(value):
+    if np.isnan(value):
+        return "n/a"
+    if round(value, 1) == 0:
+        return "0.0%"
+    return f"{'▲ +' if value > 0 else '▼ −'}{abs(value):.1f}%"
+
+
+def band_summary(state, baseline_state=None):
     counts = state.sum(axis=0)
+    base_counts = None if baseline_state is None else np.asarray(baseline_state, dtype=float).sum(axis=0)
     rows = []
     for name, (low, high) in BANDS.items():
         weights = counts[low:high+1]
         total = weights.sum()
         median = low+np.searchsorted(weights.cumsum(), total*.5) if total > 0 else np.nan
-        rows.append({"Age range": name, "Residents": total, "Median age": median})
+        row = {"Age range": name, "Residents": total, "Median age": median}
+        if base_counts is not None:
+            base = base_counts[low:high+1].sum()
+            row["Baseline residents"] = base
+            row["Change vs baseline (%)"] = pct_change(total, base)
+        rows.append(row)
     return pd.DataFrame(rows)
 
 
-def age_violin_figure(state, year, density_scale):
+def age_violin_figure(state, year, density_scale, baseline_state=None, baseline_year=None):
+    """Draw the violins; with baseline_state, label each band's percent change versus it."""
     counts = np.asarray(state, dtype=float).sum(axis=0)
-    summary = band_summary(state)
+    summary = band_summary(state, baseline_state)
     fig = go.Figure()
     labels = []
     for index, ((name, (low, high)), color) in enumerate(zip(BANDS.items(), COLORS)):
         total = float(summary.iloc[index]["Residents"])
         labels.append(f"{name}<br>{total:,.0f}")
+        if baseline_state is not None and year != baseline_year:
+            change = float(summary.iloc[index]["Change vs baseline (%)"])
+            fig.add_annotation(x=index, xref="x", y=1.0, yref="paper", yanchor="bottom", showarrow=False,
+                               text=f"<b>{format_change(change)}</b>", font=dict(size=14,
+                               color="#6B7780" if np.isnan(change) else "#2F7D32" if change > 0 else "#B3261E" if change < 0 else "#6B7780"))
         if total <= 0:
             continue
         ages, density = weighted_density(counts, low, high)
@@ -67,8 +92,10 @@ def age_violin_figure(state, year, density_scale):
         fig.add_trace(go.Scatter(x=[index], y=[quartiles[1]], mode="markers",
                                 marker=dict(size=7, color="#243A42", line=dict(color="#FFFFFF", width=1)),
                                 showlegend=False, hovertemplate=f"Ages {name}<br>Median age: %{{y:.0f}}<br>{total:,.0f} residents<extra></extra>"))
-    fig.update_layout(title=dict(text=f"Resident age distribution · {year}", font=dict(size=17)),
-                      height=450, margin=dict(l=10, r=10, t=45, b=65),
+    subtitle = f" · change vs {baseline_year}" if baseline_state is not None and year != baseline_year else ""
+    fig.update_layout(title=dict(text=f"Resident age distribution · {year}{subtitle}", font=dict(size=17),
+                                 y=.98, yanchor="top"),
+                      height=470, margin=dict(l=10, r=10, t=80, b=65),
                       xaxis=dict(tickmode="array", tickvals=list(range(len(BANDS))), ticktext=labels,
                                  range=[-.55, len(BANDS)-.45], title="Age range · resident count", fixedrange=True),
                       yaxis=dict(title="Age (years)", range=[0, 120], dtick=20, fixedrange=True),

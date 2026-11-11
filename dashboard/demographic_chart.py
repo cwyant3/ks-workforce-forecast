@@ -144,9 +144,14 @@ def render_demographic_pipeline(county, key="demographic_pipeline_"):
         all_age_paths.extend(ages for _,ages in scenario_paths.values())
     density_scale = scale_for_paths(*all_age_paths)
     selected_state = selected_path[selected_year-2024]
-    st.plotly_chart(age_violin_figure(selected_state, selected_year, density_scale), width="stretch", key=key+"chart")
+    baseline_state = selected_path[0]
+    st.plotly_chart(age_violin_figure(selected_state, selected_year, density_scale,
+                                      baseline_state=baseline_state, baseline_year=2024),
+                    width="stretch", key=key+"chart")
     st.caption("Wider sections mean more residents at that age. Widths use one common scale across all age ranges and slider years. "
-               "Dots mark median ages; vertical bars mark the middle half. Shapes smooth modeled ages, not individual records.")
+               "Dots mark median ages; vertical bars mark the middle half. Shapes smooth modeled ages, not individual records. "
+               "The percentage above each range is the change in modeled residents in that range versus 2024 "
+               "(▲ growth, ▼ decline); people move between ranges as cohorts age.")
     year_row = selected_summary.iloc[selected_year-2024]
     st.caption(f"{selected_year} · {path_name}: {selected_state.sum():,.0f} modeled residents of all ages · "
                f"{year_row.labor_force_18_plus:,.0f} modeled civilian labor-force participants age 18+.")
@@ -157,7 +162,8 @@ def render_demographic_pipeline(county, key="demographic_pipeline_"):
     selected_schedules = baseline_schedules if path_name == "No net migration" else scenario_schedules
     render_fertility_details(selected_paths, selected_schedules, calibration, bridge, birth_source, str(county), key, path_name)
     with st.expander("Selected-year age counts and labor-force trend"):
-        st.dataframe(band_summary(selected_state), hide_index=True, width="stretch")
+        st.dataframe(band_summary(selected_state, baseline_state), hide_index=True, width="stretch",
+                     column_config={"Change vs baseline (%)": st.column_config.NumberColumn(format="%+.1f%%")})
         st.plotly_chart(pipeline_figure(baseline, scenario), width="stretch", key=key+"labor_trend")
     first, last = baseline.iloc[0], baseline.iloc[-1]
     change = last.labor_force_18_plus-first.labor_force_18_plus

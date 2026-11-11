@@ -38,6 +38,21 @@ def test_common_scale_halves_width_when_population_halves():
     assert '2042' in half.layout.title.text
 
 
+def test_percent_change_versus_baseline_is_signed_per_band():
+    base = np.zeros((2, 120))
+    base[0, 10], base[0, 30], base[0, 70] = 100, 200, 50
+    now = np.zeros((2, 120))
+    now[0, 10], now[0, 30], now[0, 70] = 50, 300, 50
+    summary = band_summary(now, base)
+    change = dict(zip(summary["Age range"], summary["Change vs baseline (%)"]))
+    assert change["0–17"] == pytest.approx(-50) and change["25–54"] == pytest.approx(50)
+    assert change["65+"] == pytest.approx(0) and np.isnan(change["18–24"])
+    fig = age_violin_figure(now, 2030, scale_for_paths(np.array([now])), base, 2024)
+    texts = [a.text for a in fig.layout.annotations]
+    assert "<b>▼ −50.0%</b>" in texts and "<b>▲ +50.0%</b>" in texts and "<b>n/a</b>" in texts
+    assert not age_violin_figure(base, 2024, 1.0, base, 2024).layout.annotations
+
+
 def test_empty_band_keeps_zero_label_without_inventing_distribution():
     state = np.zeros((2, 120))
     state[0, 50] = 100

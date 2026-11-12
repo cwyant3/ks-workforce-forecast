@@ -914,6 +914,7 @@ def state_choropleth(summary: pd.DataFrame, state_fips: str,
     south, north = min(p[1] for p in points), max(p[1] for p in points)
     lon_pad, lat_pad = max((east-west)*.04, .05), max((north-south)*.04, .05)
     fig.update_geos(scope="world", projection_type="mercator", fitbounds=False,
+                    projection_rotation_lon=(west+east)/2, projection_scale=1,
                     center=dict(lon=(west+east)/2, lat=(south+north)/2),
                     lonaxis_range=[west-lon_pad, east+lon_pad],
                     lataxis_range=[south-lat_pad, north+lat_pad], visible=False)

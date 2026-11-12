@@ -12,10 +12,10 @@ PATHS = {"Low": -.2, "Central": 0., "High": .2}
 PRIOR_WOMAN_YEARS = 1000.
 
 
-def national_schedules(records):
+def national_schedules(records, start_year=2023, end_year=2042):
     frame = pd.DataFrame(records)
     schedules = {}
-    for year in range(2023, 2043):
+    for year in range(start_year, end_year+1):
         rows = frame[frame.year.eq(year)].sort_values("age")
         if rows.age.tolist() != list(range(14, 55)):
             raise ValueError("Census fertility schedules must cover ages 14–54 once in every year.")
@@ -92,17 +92,21 @@ def calibrated_schedule(county, pooled, population, state_population, national,
     return result, pd.DataFrame(details)
 
 
-def fertility_schedules(local, national, level_adjustment=1.):
+def fertility_schedules(local, national, level_adjustment=1., *, base_year=2024, horizon=18):
+    if not isinstance(horizon, int) or not 1 <= horizon <= 18:
+        raise ValueError("Fertility horizon must be 1–18 years.")
+    if not np.isfinite(level_adjustment) or level_adjustment < 0:
+        raise ValueError("Fertility level adjustment must be finite and nonnegative.")
     reference = (national[2024]+national[2025])/2
     output = {}
     for path, terminal_change in PATHS.items():
         output[path] = {}
-        for year in range(2025, 2043):
+        for year in range(base_year+1, base_year+horizon+1):
             # Zero reference cells may stay zero, but cannot silently gain births.
             if ((reference == 0) & (national[year] > 0)).any():
                 raise ValueError("Census fertility ratio undefined at a newly positive age.")
             ratio = np.divide(national[year], reference, out=np.ones(120), where=reference > 0)
-            sensitivity = 1 + terminal_change*(year-2025)/17
+            sensitivity = 1 + terminal_change*(year-base_year-1)/max(horizon-1, 1)
             output[path][year] = local * ratio * level_adjustment * sensitivity
     return output
 

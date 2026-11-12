@@ -65,7 +65,7 @@ def pipeline_figure(baseline, scenario=None):
                                 line=dict(color="#DD6B20", dash="dash", width=3),
                                 hovertemplate="%{x:.0f} scenario<br>%{y:,.0f} participants age 18+<extra></extra>"))
     fig.update_layout(height=420, margin=dict(l=10, r=10, t=20, b=100),
-                      xaxis=dict(title="Reference year", tick0=2024, dtick=3, tickformat="d"),
+                      xaxis=dict(title="Reference year", tick0=int(baseline.year.iloc[0]), dtick=3, tickformat="d"),
                       yaxis=dict(title="Modeled civilian labor force · age 18+", tickformat=",.0f", rangemode="tozero"),
                       legend=dict(orientation="h", y=-.25, yanchor="top", font=dict(size=10)))
     return fig
@@ -79,7 +79,7 @@ def entrants_figure(baseline):
         fig.add_trace(go.Bar(x=years.year, y=years[column], name=label, marker_color=color,
                             hovertemplate=f"%{{x:.0f}}<br>%{{y:,.0f}} residents {label.lower()}<extra></extra>"))
     fig.update_layout(height=310, barmode="group", margin=dict(l=10, r=10, t=10, b=75),
-                      xaxis=dict(title="Reference year", tick0=2024, dtick=3, tickformat="d"),
+                      xaxis=dict(title="Reference year", tick0=int(baseline.year.iloc[0]), dtick=3, tickformat="d"),
                       yaxis=dict(title="Residents per year", tickformat=",.0f"),
                       legend=dict(orientation="h", y=-.3, yanchor="top"))
     return fig
@@ -87,6 +87,10 @@ def entrants_figure(baseline):
 
 def render_demographic_pipeline(county, key="demographic_pipeline_"):
     st.markdown("#### Resident workforce pipeline: 18-year demographic outlook")
+    basis = st.radio("Population baseline", ["Adopted ACS 2024–2042", "Preview: Census 2025–2043"], key=key+"basis")
+    if basis == "Preview: Census 2025–2043":
+        from dashboard.demographic_preview import render_preview
+        return render_preview(county, key+"pep2025_")
     try:
         stamp = (INPUT_DIR / "source_manifest.json").stat().st_mtime_ns
         population, shares, survival, proxies = load_inputs(str(county), stamp)

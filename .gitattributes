@@ -1,0 +1,3 @@
+# Preserve byte-exact files checked against the reviewed preview manifest.
+data/demographic_preview/cc-est2025-syasex-20.csv -text -diff
+data/demographic_preview/population_july2025.json -text

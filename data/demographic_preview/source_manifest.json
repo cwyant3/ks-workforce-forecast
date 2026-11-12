@@ -1,0 +1,21 @@
+{
+  "status": "preview-not-adopted",
+  "reference_date": "2025-07-01",
+  "source_url": "https://www2.census.gov/programs-surveys/popest/datasets/2020-2025/counties/asrh/cc-est2025-syasex-20.csv",
+  "layout_url": "https://www2.census.gov/programs-surveys/popest/technical-documentation/file-layouts/2020-2025/CC-EST2025-SYASEX.pdf",
+  "source_file": "cc-est2025-syasex-20.csv",
+  "source_sha256": "905c29eee250704e6663bdc3b1460490ae96fae1e30c8a82c75071b69b9da354",
+  "normalized_file": "population_july2025.json",
+  "normalized_sha256": "c045636745cf1984d4568e166335ffd81fb73b4a73c6b006835ecaeadd231ebf",
+  "source_rows_checked": 63210,
+  "counties": 105,
+  "selection": "All source rows validated; select YEAR=7, ages0\u201384 and published85+.",
+  "boundaries": "January 1, 2025",
+  "acquired": "2026-11-12",
+  "limitations": [
+    "Population estimates, not direct census counts.",
+    "85+ single-age split is modeled using national life-table lx.",
+    "ACS2020\u20132024 participation/calibration remain unchanged; mixed source periods.",
+    "No modeled2026 bridge or calibrated probability intervals."
+  ]
+}

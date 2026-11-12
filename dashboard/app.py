@@ -1118,7 +1118,7 @@ def main():
      tab_local, tab_explorer, tab_data, tab_method) = st.tabs([
         "Executive Narrative", "Population", "Available Workforce", "Demand Pressure",
         "Sector Exposure", "Local Action", "Explorer", "Data", "Methodology",
-    ], key=f"detail-tabs-{view_mode}", default="Executive Narrative")
+    ], key=f"detail-tabs-{view_mode}", default="Executive Narrative", on_change="rerun")
 
     pressure_enabled = state_fips == "20" and bool(ACTIVE_RELEASE)
     selected_fips5 = state_fips.zfill(2) + str(summary.loc[
@@ -1434,19 +1434,23 @@ def main():
         )
 
         map_data = summary[summary["pop_total_base"] >= min_pop].copy()
-        try:
-            st.plotly_chart(
-                state_choropleth(map_data, state_fips, end_year, base_year=base_year),
-                width="stretch",
-            )
-        except Exception:
-            st.warning(
-                "County map could not load — the county boundary file "
-                "(`data/geo/geojson-counties-fips.json`) is missing and could not "
-                "be downloaded (the network may block the source). Once that file "
-                "is present the map renders offline. All other charts and tables "
-                "are unaffected."
-            )
+        # Plotly's geo projection measures a hidden tab incorrectly on first
+        # render. Mount the map only when Population is visible, so opening it
+        # needs neither Reset nor a browser resize to fit the county boundaries.
+        if tab_population.open:
+            try:
+                st.plotly_chart(
+                    state_choropleth(map_data, state_fips, end_year, base_year=base_year),
+                    width="stretch",
+                )
+            except Exception:
+                st.warning(
+                    "County map could not load — the county boundary file "
+                    "(`data/geo/geojson-counties-fips.json`) is missing and could not "
+                    "be downloaded (the network may block the source). Once that file "
+                    "is present the map renders offline. All other charts and tables "
+                    "are unaffected."
+                )
 
         col_left, col_right = st.columns(2)
         disp_cols = ["county_name", "workforce_base", "wf_end_p50", "pct_change_end"]

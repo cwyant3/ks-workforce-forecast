@@ -28,6 +28,8 @@ import streamlit as st
 ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT))
 
+from dashboard.responsive import METRIC_GRID_CSS, metric_columns
+
 OUTPUT_DIR = ROOT / "data" / "outputs"
 QCEW_CACHE = ROOT / "data" / "qcew_cache"
 GEO_CACHE  = ROOT / "data" / "geo" / "geojson-counties-fips.json"
@@ -69,6 +71,8 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="auto",
 )
+
+st.markdown(METRIC_GRID_CSS, unsafe_allow_html=True)
 
 # ── Brand colors ─────────────────────────────────────────────────────────────
 C_BLUE    = "#003F87"
@@ -895,13 +899,30 @@ def state_choropleth(summary: pd.DataFrame, state_fips: str,
                       tickfont=dict(color="black")),
         marker_line_color="white", marker_line_width=0.5,
     ))
-    fig.update_geos(scope="usa", fitbounds="locations", visible=False)
+    # Albers USA never auto-fits custom boundaries. Give Mercator an explicit
+    # state extent so initial load, Reset and responsive resize use the same view.
+    def positions(coordinates):
+        if coordinates and isinstance(coordinates[0], (int, float)):
+            yield coordinates[:2]
+        else:
+            for part in coordinates:
+                yield from positions(part)
+
+    points = [point for feature in counties["features"]
+              for point in positions(feature["geometry"]["coordinates"])]
+    west, east = min(p[0] for p in points), max(p[0] for p in points)
+    south, north = min(p[1] for p in points), max(p[1] for p in points)
+    lon_pad, lat_pad = max((east-west)*.04, .05), max((north-south)*.04, .05)
+    fig.update_geos(scope="world", projection_type="mercator", fitbounds=False,
+                    center=dict(lon=(west+east)/2, lat=(south+north)/2),
+                    lonaxis_range=[west-lon_pad, east+lon_pad],
+                    lataxis_range=[south-lat_pad, north+lat_pad], visible=False)
     fig.update_layout(
         title=dict(
-            text=f"{state_name} — County Working-Age Population Change: {base_year} → {end_year} (Median %)",
-            font=dict(size=15, color=C_BLUE), x=0.5, xanchor="center",
+            text=f"{state_name} working-age population<br>County change: {base_year} → {end_year} (median %)",
+            font=dict(size=14, color=C_BLUE), x=0.5, xanchor="center",
         ),
-        height=420, margin=dict(t=60, b=10, l=0, r=0), paper_bgcolor="white",
+        height=420, margin=dict(t=75, b=10, l=0, r=0), paper_bgcolor="white",
     )
     return fig
 
@@ -1097,7 +1118,7 @@ def main():
      tab_local, tab_explorer, tab_data, tab_method) = st.tabs([
         "Executive Narrative", "Population", "Available Workforce", "Demand Pressure",
         "Sector Exposure", "Local Action", "Explorer", "Data", "Methodology",
-    ])
+    ], key=f"detail-tabs-{view_mode}", default="Executive Narrative")
 
     pressure_enabled = state_fips == "20" and bool(ACTIVE_RELEASE)
     selected_fips5 = state_fips.zfill(2) + str(summary.loc[
@@ -1226,7 +1247,7 @@ def main():
             unsafe_allow_html=True,
         )
 
-        exec_cols = st.columns(5)
+        exec_cols = metric_columns(5, "executive-summary")
         exec_kpis = [
             (f"{base_year} Working-Age Pop", _fmt(total_base), ""),
             (f"Projected {end_year}", _fmt(total_end), _delta_html(pct_chg)),
@@ -1391,7 +1412,7 @@ def main():
         declining  = (summary["pct_change_end"] <= 0).sum()
         total_ret  = summary["annual_retirements_end"].sum()
 
-        cols = st.columns(5)
+        cols = metric_columns(5, "population-summary")
         kpis = [
             (f"{base_year} Baseline WF",      _fmt(total_base), ""),
             (f"Projected {end_year} (Median)", _fmt(total_end),  _delta_html(pct_chg)),
@@ -1458,7 +1479,7 @@ def main():
         if state_part_df is not None and not state_part_df.empty:
             fig_state_elf, elf_stats = state_effective_labor_chart(
                 state_part_df, selected_state)
-            scols = st.columns(4)
+            scols = metric_columns(4, "state-participation")
             scols[0].markdown(metric_card(
                 f"Working-Age Pop ({elf_stats['year']})",
                 _fmt(elf_stats["wap"]),
@@ -1512,7 +1533,7 @@ def main():
         ann_ret   = county_sum["annual_retirements_end"]
         ann_ent   = county_sum["annual_entries_end"]
 
-        ccols = st.columns(5)
+        ccols = metric_columns(5, "county-population")
         ckpis = [
             (f"{base_year} Working-Age",       _fmt(wf_base), ""),
             (f"Projected {end_year} (Median)", _fmt(wf_end),  _delta_html(pct_end)),
@@ -1545,7 +1566,7 @@ def main():
                 eff_lf   = row.get("effective_labor_force")
                 layers   = row.get("layers_used", "")
                 st.markdown("**Effective Labor Force (Participation Model)**")
-                pkpi = st.columns(4)
+                pkpi = metric_columns(4, "county-participation")
                 pkpi[0].markdown(metric_card(
                     "Working-Age Pop (ACS)",
                     _fmt(row.get("working_age_pop")),
@@ -1730,7 +1751,7 @@ def main():
             )
 
             # ── State-level summary KPI row ───────────────────────────────
-            kpi_cols = st.columns(4)
+            kpi_cols = metric_columns(4, "state-sector")
             supply_arrow = "growing" if wf_supply_pct >= 0 else "declining"
             demand_arrow = "growing" if total_delta >= 0 else "declining"
             kpi_cols[0].markdown(metric_card(
@@ -2041,7 +2062,7 @@ def main():
 
             # ── Per-sector KPI cards (detailed numbers) ───────────────────
             st.markdown("#### Sector Detail — State Level")
-            kpi_sec_cols = st.columns(len(SECTORS))
+            kpi_sec_cols = metric_columns(len(SECTORS), "state-sector-detail")
             for col, sector in zip(kpi_sec_cols, SECTORS):
                 st_s = sector_stats[sector]
                 if st_s["base"] and st_s["proj"] and st_s["delta"] is not None:
@@ -2125,7 +2146,7 @@ def main():
                 c_wf_pct  = float(c_sum["pct_change_end"])
 
                 # ── County KPI row ────────────────────────────────────────
-                c_kpi_cols = st.columns(4)
+                c_kpi_cols = metric_columns(4, "county-sector")
                 c_supply_cls = "growing" if c_wf_pct >= 0 else "declining"
 
                 # Total sector jobs for this county
@@ -2420,7 +2441,7 @@ def main():
                     )
                     cbp_summary = cbp_summary[cbp_summary["sector"].isin(SECTORS)]
 
-                    cbp_kpis = st.columns(len(SECTORS))
+                    cbp_kpis = metric_columns(len(SECTORS), "county-establishments")
                     for col, sector in zip(cbp_kpis, SECTORS):
                         s_row = cbp_summary[cbp_summary["sector"] == sector]
                         if s_row.empty:
@@ -2504,7 +2525,7 @@ def main():
 
             # KPI: total completions by sector (latest year)
             total_comp = latest["completions"].sum(min_count=1)
-            kpi_cols = st.columns(min(len(SECTORS) + 1, 6))
+            kpi_cols = metric_columns(min(len(SECTORS) + 1, 6), "credential-totals")
             kpi_cols[0].markdown(metric_card(
                 f"Reported Awards (collection {latest_year})",
                 _fmt(total_comp),
@@ -2631,7 +2652,7 @@ def main():
             avg_local  = commute_df["pct_workers_live_in_county"].mean()
             avg_import = commute_df["pct_workers_imported"].mean()
             n_counties = commute_df["county_fips"].nunique()
-            ckpis = st.columns(3)
+            ckpis = metric_columns(3, "commute-summary")
             ckpis[0].markdown(metric_card(
                 "Counties with Data", str(n_counties), f"{snap_year} snapshot",
             ), unsafe_allow_html=True)
@@ -2794,7 +2815,7 @@ def main():
                 # Latest year KPI row
                 latest_j = int(jolts_df["year"].max())
                 latest_j_row = jolts_df[jolts_df["year"] == latest_j]
-                jkpi_cols = st.columns(len(SECTORS))
+                jkpi_cols = metric_columns(len(SECTORS), "national-vacancies")
                 for col, sector in zip(jkpi_cols, SECTORS):
                     row_j = latest_j_row[latest_j_row["sector"] == sector]
                     vac   = float(row_j["vacancy_rate_pct"].iloc[0]) if not row_j.empty and "vacancy_rate_pct" in row_j.columns else None
@@ -3016,7 +3037,7 @@ def main():
   </span>
 </div>""", unsafe_allow_html=True)
 
-            pulse_cols = st.columns(4)
+            pulse_cols = metric_columns(4, "labor-context")
 
             def _delta_pct_pts(cur: float, prior: float | None, *, lower_is_better: bool) -> str:
                 if prior is None or pd.isna(prior):
@@ -3150,7 +3171,7 @@ def main():
             unsafe_allow_html=True,
         )
 
-        explorer_cols = st.columns(4)
+        explorer_cols = metric_columns(4, "county-explorer")
         explorer_cols[0].markdown(metric_card(
             f"Working-Age Pop ({base_year})",
             _fmt(county_sum["workforce_base"]),

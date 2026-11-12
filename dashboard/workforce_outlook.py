@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import streamlit as st
 
+from dashboard.responsive import metric_columns
 from dashboard.pressure_charts import (
     BLUE, TEAL, INDUSTRIES, available, current, series, metric_card,
     workforce, demand, training, movement, kc_metro,
@@ -62,7 +63,7 @@ def render_outlook(frame, detail, flows, regional, proj, effective, sectors, sum
     st.markdown("### 2. What is happening now?")
     st.caption("OBSERVED · Latest adopted observations, with each source's own reference period. These observations explain context; they do not automatically recalibrate the forecasts above.")
     supply_text, employer_text = current_reading(frame, county, industry)
-    supply_col, employer_col = st.columns(2)
+    supply_col, employer_col = metric_columns(2, "outlook-conditions")
     with supply_col:
         st.markdown("#### Resident supply conditions")
         st.write(supply_text)
@@ -101,7 +102,7 @@ def render_outlook(frame, detail, flows, regional, proj, effective, sectors, sum
     st.divider()
     st.markdown("### 4. What training activity and regional reach already exist?")
     st.write("Training institutions and established commuting connections help frame a response. Awards may include people already working, and incoming commuters already hold local jobs.")
-    for col, src, measure, title in zip(st.columns(2), ["ipeds", "lodes"],
+    for col, src, measure, title in zip(metric_columns(2, "outlook-capacity"), ["ipeds", "lodes"],
                                        ["credentials_awarded", "pct_workers_imported"],
                                        ["All reported county credential awards", "Existing incoming commuter share"]):
         with col:

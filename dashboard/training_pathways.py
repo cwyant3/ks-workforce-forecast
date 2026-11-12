@@ -8,6 +8,7 @@ from textwrap import wrap
 import pandas as pd
 import streamlit as st
 
+from dashboard.responsive import metric_columns
 from geography import county_area_relations, select_area_observations
 from dashboard.pressure_charts import (BLUE, GOLD, draw, evidence,
                                       horizontal, metric_card, program_titles)
@@ -121,7 +122,7 @@ def render_pathways(frame, detail, regional, county, key="outlook_pathways_"):
     _rid, _rname, _members = county_region(county)
     st.caption(f"Outlook: {_rname} Kansas projection region, 2022–2032. These regional estimates cover all {len(_members)} member counties and are not allocated to the selected county.")
     pay = occupation_pay_rows(frame, county, occupation)
-    cols = st.columns(3)
+    cols = metric_columns(3, key+"metrics")
     with cols[0]:
         metric_card(chosen, chosen[chosen.measure_id.eq("ks_occ_annual_openings")],
                     "Projected annual openings · region", key+"openings", color=BLUE)

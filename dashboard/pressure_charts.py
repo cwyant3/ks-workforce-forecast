@@ -10,6 +10,7 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
+from dashboard.responsive import metric_columns
 from data_contracts import KEY, latest_observations
 from geography import inbound_labor_shed, county_label
 
@@ -178,7 +179,7 @@ def workforce(frame,county,key,annual_laus=None):
     specs=[("laus","labor_force","Residents in the labor force"),
            ("acs_s2301","labor_force_participation_rate_16_plus","Labor-force participation"),
            ("laus","unemployment_rate","Unemployment rate")]
-    for col,(src,measure,title) in zip(st.columns(3),specs):
+    for col,(src,measure,title) in zip(metric_columns(3, key+"metrics"),specs):
         with col:
             metric_card(frame,series(frame,src,measure,county),title,key+measure,
                         peer_label="Kansas counties" if src.startswith("acs") else "pilot counties",color=TEAL)
@@ -209,7 +210,7 @@ def alternatives(frame,county,industry,key):
     st.markdown("#### Other published employment estimates")
     st.caption("QCEW withholds this county and industry. These separate Census sources publish noise-infused estimates instead of withholding. "
                "They use different job definitions and periods, so they are shown on their own and are not used in QCEW growth, pay or county rankings.")
-    for col,(src,m,title) in zip(st.columns(len(options)),options):
+    for col,(src,m,title) in zip(metric_columns(len(options), key+"alternatives"),options):
         with col: metric_card(frame,series(frame,src,m,county,industry),title,key+"alt_"+m)
 
 
@@ -218,7 +219,7 @@ def demand(frame,county,industry,names,key):
     st.caption(f"{INDUSTRIES.get(industry,industry)} · private-sector workplace measures. QCEW and QWI retain separate job definitions and periods.")
     specs=[("qcew","qcew_employment","Workplace jobs"),("qcew","qcew_employment_yoy_pct","Employment change from a year earlier"),
            ("qcew","qcew_weekly_wage","Average weekly pay")]
-    for col,(src,m,title) in zip(st.columns(3),specs):
+    for col,(src,m,title) in zip(metric_columns(3, key+"metrics"),specs):
         with col:
             metric_card(frame,series(frame,src,m,county,industry),title,key+m,peer_label="counties with published data")
     alternatives(frame,county,industry,key)
@@ -235,7 +236,7 @@ def demand(frame,county,industry,names,key):
         hiring=[("qwi_hires","Quarterly hires"),("qwi_hires_yoy_pct","Hires change from a year earlier"),
                 ("qwi_hires_trailing4q","Hires over the past four quarters"),("qwi_hires_per_100_beginning_jobs","Hires per 100 beginning-quarter jobs")]
         for row_specs in (hiring[:2],hiring[2:]):
-            for col,(m,title) in zip(st.columns(2),row_specs):
+            for col,(m,title) in zip(metric_columns(2, key+row_specs[0][0]),row_specs):
                 with col: metric_card(frame,series(frame,"qwi",m,county,industry),title,key+m,peer_label="counties with published data")
         st.caption("Census Quarterly Workforce Indicators, private jobs. Hires count hiring events, not open vacancies. Year-over-year compares the same quarter; "
                    "four-quarter totals need four consecutive published quarters. Separations and earnings for the newest quarter are not yet computable, "
@@ -257,7 +258,7 @@ def pay(frame,county,key):
     titles=published.drop_duplicates("occupation_code").set_index("occupation_code").occupation_title.to_dict()
     soc=st.selectbox("Occupation pay",sorted(titles),format_func=lambda x:f"{titles[x]} ({x})",key=key+"soc")
     rows=area_rows[area_rows.occupation_code.eq(soc)]
-    cols=st.columns(2)
+    cols=metric_columns(2, key+"metrics")
     for col,m,title in zip(cols,["oews_median_annual_wage","oews_mean_annual_wage"],["Median annual pay","Mean annual pay"]):
         with col: metric_card(frame,rows[rows.measure_id.eq(m)],title,key+m)
     wage=rows[rows.measure_id.isin(["oews_mean_annual_wage","oews_median_annual_wage"])&rows.availability_status.eq("published")]
@@ -294,7 +295,7 @@ def training(frame,detail,county,key,industry=None):
         from dashboard.training_pathways import load_crosswalk
         share=program_industry_share(selected.program_code,load_crosswalk(),weights,industry)
         selected["industry_awards"]=pd.to_numeric(selected.completions,errors="coerce")*selected.program_code.map(share).fillna(0)
-    total_col,focus_col=st.columns(2) if focus else (st.container(),None)
+    total_col,focus_col=metric_columns(2, key+"totals") if focus else (st.container(),None)
     with total_col:
         metric_card(frame,series(frame,"ipeds","credentials_awarded",county),"Reported credential awards · all programs",key+"total")
     if selected.empty:
@@ -372,7 +373,7 @@ def movement(frame,flows,county,names,key,resident_flows=None):
     st.caption("LODES 2023 primary jobs · existing home-to-work connections, not migration or extra available workers.")
     total=current(series(frame,"lodes","total_jobs_at_worksite",county))
     inbound=current(series(frame,"lodes","jobs_workers_imported",county))
-    for col,m,title in zip(st.columns(3),["total_jobs_at_worksite","jobs_workers_imported","pct_workers_imported"],["Primary jobs at workplaces","Jobs held by incoming commuters","Incoming commuter share"]):
+    for col,m,title in zip(metric_columns(3, key+"inbound"),["total_jobs_at_worksite","jobs_workers_imported","pct_workers_imported"],["Primary jobs at workplaces","Jobs held by incoming commuters","Incoming commuter share"]):
         with col:metric_card(frame,series(frame,"lodes",m,county),title,key+m)
     if available(total) and available(inbound):
         fig=go.Figure()
@@ -401,7 +402,7 @@ def residents(frame,resident_flows,county,key_names,key):
     if not available(total):
         st.info("Resident outbound commuting is not available in this release.")
         return
-    for col,m,title in zip(st.columns(3),["resident_primary_jobs","pct_residents_work_outside_county","pct_residents_work_out_of_state"],
+    for col,m,title in zip(metric_columns(3, key+"resident"),["resident_primary_jobs","pct_residents_work_outside_county","pct_residents_work_out_of_state"],
                            ["Primary jobs held by residents","Residents working outside the county","Residents working out of state"]):
         with col:metric_card(frame,series(frame,"lodes",m,county),title,key+"res_"+m)
     if resident_flows is not None and not resident_flows.empty:
@@ -458,7 +459,7 @@ def kc_metro(metro,county,industry,key):
            ("Metro private jobs",number(jobs_total,"jobs") if jobs_total else "Unavailable",
             f"{jobs.reference_label.iloc[0]} · BLS QCEW" if not jobs.empty else "",
             f"Kansas counties: {ks(jobs,jobs_total):.0%}" if jobs_total else "")]
-    for col,(title,value,ref,note) in zip(st.columns(3),cards):
+    for col,(title,value,ref,note) in zip(metric_columns(3, key+"metro"),cards):
         with col, st.container(border=True):
             st.markdown(f"**{title}**"); st.markdown(f"## {value}"); st.caption(ref)
             if note: st.caption(note)
@@ -520,7 +521,7 @@ def regional_view(regional,county,key):
     values={r.measure_id:r for _,r in rows.iterrows()}
     labels={"ks_occ_annual_exits":"Labor-force exits", "ks_occ_annual_transfers":"Occupation transfers", "ks_occ_annual_change":"Employment growth"}
     available_rows=[(label,values[m]) for m,label in labels.items() if m in values and available(values[m])]
-    cols=st.columns(2)
+    cols=metric_columns(2, key+"metrics")
     with cols[0]:
         metric_card(rows,rows[rows.measure_id.eq("ks_occ_annual_openings")],"Projected annual openings",key+"openings")
         if available_rows:draw(horizontal([r.estimate for _,r in available_rows],[l for l,_ in available_rows],"Annual components of projected openings",color=[GRAY,BLUE,TEAL][:len(available_rows)]),key+"components")
@@ -548,7 +549,7 @@ def render_county_brief(frame,detail,flows,regional,county,county_name,names,ann
                ("acs_s2301","labor_force_participation_rate_16_plus","Resident participation",None,"Kansas counties"),
                ("ipeds","credentials_awarded","Credentials awarded",None,None),
                ("lodes","pct_workers_imported","Incoming commuter share",None,"counties with published data")]
-        for col,(src,m,title,ind,peer) in zip(st.columns(4),specs):
+        for col,(src,m,title,ind,peer) in zip(metric_columns(4, "brief-overview"),specs):
             with col:metric_card(frame,series(frame,src,m,county,ind),title,"overview_"+m,peer_label=peer)
         st.caption("Each signal keeps its own period and unit. Comparison strips use only counties with published values in the same period and universe. These are observed measures, not a composite shortage index.")
         st.markdown("#### What the signals can help you discuss")

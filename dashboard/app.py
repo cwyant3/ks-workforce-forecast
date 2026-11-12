@@ -28,6 +28,7 @@ import streamlit as st
 ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT))
 
+from dashboard.presentation import plot_chart
 from dashboard.responsive import METRIC_GRID_CSS, metric_columns
 
 OUTPUT_DIR = ROOT / "data" / "outputs"
@@ -93,13 +94,14 @@ st.markdown(f"""
     .main-header h1 {{ margin: 0; font-size: 1.8rem; }}
     .main-header p  {{ margin: 0.3rem 0 0; opacity: 0.85; font-size: 0.95rem; }}
     .metric-card {{
-        background: white; border: 1px solid #E0E4EA;
+        background: white; color: #334155; border: 1px solid #E0E4EA;
         border-radius: 8px; padding: 1rem 1.2rem;
         text-align: center; box-shadow: 0 1px 4px rgba(0,0,0,0.06);
     }}
-    .metric-card .label {{ font-size: 0.78rem; color: {C_NEUTRAL}; font-weight: 600; text-transform: uppercase; }}
+    .metric-card .label {{ font-size: 0.78rem; color: #52616B; font-weight: 600; text-transform: uppercase; }}
     .metric-card .value {{ font-size: 1.6rem; font-weight: 700; color: {C_BLUE}; margin: 0.2rem 0; }}
-    .metric-card .delta {{ font-size: 0.9rem; font-weight: 600; }}
+    .metric-card .delta {{ font-size: 0.9rem; font-weight: 600; color: #475569; }}
+    .metric-card .growing {{ color: #246C43; }}
     .growing   {{ color: {C_GREEN}; }}
     .declining {{ color: {C_RED}; }}
     .stTabs [data-baseweb="tab-list"] {{ gap: 1rem; }}
@@ -119,7 +121,7 @@ st.markdown(f"""
         box-shadow: 0 1px 4px rgba(0,0,0,0.04);
     }}
     .exec-card .eyebrow {{
-        color: {C_GOLD}; font-size: 0.74rem; font-weight: 800;
+        color: #8A5A00; font-size: 0.74rem; font-weight: 800;
         letter-spacing: 0; text-transform: uppercase;
     }}
     .exec-card .headline {{
@@ -140,7 +142,7 @@ st.markdown(f"""
         box-shadow: 0 1px 4px rgba(0,0,0,0.04);
     }}
     .funnel-stage .step {{
-        color: {C_GOLD}; font-size: 0.75rem; font-weight: 800;
+        color: #8A5A00; font-size: 0.75rem; font-weight: 800;
         letter-spacing: 0; text-transform: uppercase;
     }}
     .funnel-stage .title {{
@@ -1294,7 +1296,7 @@ def main():
             unsafe_allow_html=True,
         )
 
-        st.plotly_chart(
+        plot_chart(
             ci_chart(
                 state_proj,
                 f"{selected_state} Working-Age Population Funnel Baseline",
@@ -1349,7 +1351,7 @@ def main():
                     paper_bgcolor="white",
                     margin=dict(t=70, b=95, l=55, r=25),
                 )
-                st.plotly_chart(fig_exec_sector, width="stretch")
+                plot_chart(fig_exec_sector, width="stretch")
 
         st.markdown(
             '<div class="note-box">'
@@ -1429,7 +1431,7 @@ def main():
 
         st.markdown("<br>", unsafe_allow_html=True)
 
-        st.plotly_chart(
+        plot_chart(
             ci_chart(state_proj,
                      f"{selected_state} Working-Age Population (18–64), {start_year}–{end_year}",
                      baseline=total_base,
@@ -1520,7 +1522,7 @@ def main():
                 f'<span class="declining">{elf_stats["gap_pct"]:.0f}% below working-age pop</span>',
             ), unsafe_allow_html=True)
             st.markdown("<br>", unsafe_allow_html=True)
-            st.plotly_chart(fig_state_elf, width="stretch")
+            plot_chart(fig_state_elf, width="stretch")
             st.markdown(
                 '<div class="note-box">'
                 "The labor-force estimate uses ACS civilian labor-force counts where available. "
@@ -1667,7 +1669,7 @@ def main():
             plot_bgcolor=C_LIGHT, paper_bgcolor="white",
             margin=dict(t=80, b=40, l=60, r=30), hovermode="x unified",
         )
-        st.plotly_chart(fig_c, width="stretch")
+        plot_chart(fig_c, width="stretch")
 
         st.markdown("#### Annual Projections")
         tbl = county_proj[["year", "p10", "p25", "p50", "p75", "p90",
@@ -1892,7 +1894,7 @@ def main():
                 margin=dict(t=80, b=60, l=70, r=30),
                 uniformtext_minsize=9, uniformtext_mode="hide",
             )
-            st.plotly_chart(fig_gap, width="stretch")
+            plot_chart(fig_gap, width="stretch")
 
             # ── Working-age population vs. total employment overlay ───────
             _has_total = total_emp_df is not None and not total_emp_df.empty
@@ -2077,7 +2079,7 @@ def main():
                 plot_bgcolor=C_LIGHT, paper_bgcolor="white",
                 margin=dict(t=130, b=40, l=70, r=80), hovermode="x unified",
             )
-            st.plotly_chart(fig_svd, width="stretch")
+            plot_chart(fig_svd, width="stretch")
 
             # ── Per-sector KPI cards (detailed numbers) ───────────────────
             st.markdown("#### Sector Detail — State Level")
@@ -2142,7 +2144,7 @@ def main():
                     plot_bgcolor=C_LIGHT, paper_bgcolor="white",
                     margin=dict(t=80, b=40, l=60, r=30), hovermode="x unified",
                 )
-                st.plotly_chart(fig_state_sec, width="stretch")
+                plot_chart(fig_state_sec, width="stretch")
 
             st.markdown("---")
 
@@ -2288,7 +2290,7 @@ def main():
                     margin=dict(t=80, b=60, l=70, r=30),
                     uniformtext_minsize=9, uniformtext_mode="hide",
                 )
-                st.plotly_chart(fig_c_gap, width="stretch")
+                plot_chart(fig_c_gap, width="stretch")
 
                 st.markdown("---")
 
@@ -2380,7 +2382,7 @@ def main():
                         plot_bgcolor=C_LIGHT, paper_bgcolor="white",
                         margin=dict(t=80, b=40, l=60, r=30), hovermode="x unified",
                     )
-                    st.plotly_chart(fig_sec_c, width="stretch")
+                    plot_chart(fig_sec_c, width="stretch")
 
                 # ── All-sector summary table ──────────────────────────────
                 st.markdown("#### All Sectors — Summary Table")
@@ -2590,7 +2592,7 @@ def main():
                 plot_bgcolor=C_LIGHT, paper_bgcolor="white",
                 margin=dict(t=80, b=40, l=60, r=30), hovermode="x unified",
             )
-            st.plotly_chart(fig_pipe, width="stretch")
+            plot_chart(fig_pipe, width="stretch")
 
             # County-level breakdown for selected county
             st.markdown(f"#### {selected_county} — Completions by Sector")
@@ -2629,7 +2631,7 @@ def main():
                     plot_bgcolor=C_LIGHT, paper_bgcolor="white",
                     margin=dict(t=80, b=40, l=60, r=30),
                 )
-                st.plotly_chart(fig_cpipe, width="stretch")
+                plot_chart(fig_cpipe, width="stretch")
 
             st.markdown(
                 '<div class="note-box">'
@@ -2745,7 +2747,7 @@ def main():
                 plot_bgcolor=C_LIGHT, paper_bgcolor="white",
                 margin=dict(t=80, b=40, l=60, r=30),
             )
-            st.plotly_chart(fig_comm, width="stretch")
+            plot_chart(fig_comm, width="stretch")
 
             # County detail table
             st.markdown("#### County Commute Detail")
@@ -2884,7 +2886,7 @@ def main():
                     plot_bgcolor=C_LIGHT, paper_bgcolor="white",
                     margin=dict(t=50, b=40, l=60, r=170), hovermode="x unified",
                 )
-                st.plotly_chart(fig_jolts, width="stretch")
+                plot_chart(fig_jolts, width="stretch")
 
             # ── BLS employment projections ────────────────────────────────
             if has_bls:
@@ -2965,7 +2967,7 @@ def main():
                     plot_bgcolor=C_LIGHT, paper_bgcolor="white",
                     margin=dict(t=80, b=40, l=60, r=30),
                 )
-                st.plotly_chart(fig_comp, width="stretch")
+                plot_chart(fig_comp, width="stretch")
 
             # ── KS In-Demand Occupations (KDOL Workforce Innovation Board) ─
             in_demand_df = load_ks_occ_in_demand(state_fips)
@@ -3133,7 +3135,7 @@ def main():
                 title_text="LFPR (%)", tickformat=".1f",
                 color="black", secondary_y=True,
             )
-            st.plotly_chart(fig_pulse, width="stretch")
+            plot_chart(fig_pulse, width="stretch")
 
             # County-level latest snapshot table
             if kdol_lf_recent is not None and not kdol_lf_recent.empty:

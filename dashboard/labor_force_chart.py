@@ -5,6 +5,8 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
+from dashboard.presentation import plot_chart
+
 from labor_force_forecast import forecast_county, rolling_checks
 from dashboard.pressure_charts import TEAL, GOLD, available, current, series
 
@@ -51,7 +53,7 @@ def render_labor_force_forecast(annual_laus, frame, county, key="labor_force_pro
     monthly = current(series(frame, "laus", "labor_force", county))
     st.caption(f"EXPLORATORY PROJECTION · Through {as_of_year+10}. Solid line: annual LAUS observations. "
                "Dotted line: model projection. Shading: nominal 80% pointwise prediction interval.")
-    st.plotly_chart(labor_force_figure(history, forecast, monthly), width="stretch", key=key+"chart")
+    plot_chart(labor_force_figure(history, forecast, monthly), width="stretch", key=key+"chart")
     final = forecast.iloc[-1]
     st.caption(f"{int(final.year)} median: {final['median']:,.0f} residents · 80% model range: {final.lower80:,.0f}–{final.upper80:,.0f}.")
     st.caption(f"Uses annual averages through {int(history.year.iloc[-1])}; {as_of_year} is also an annual projection, "

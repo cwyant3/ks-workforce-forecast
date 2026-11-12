@@ -9,6 +9,7 @@ import pandas as pd
 import streamlit as st
 
 from dashboard.responsive import metric_columns
+from dashboard.presentation import occupation_context
 from geography import county_area_relations, select_area_observations
 from dashboard.pressure_charts import (BLUE, GOLD, draw, evidence,
                                       horizontal, metric_card, program_titles)
@@ -115,7 +116,8 @@ def render_pathways(frame, detail, regional, county, key="outlook_pathways_"):
     codes = sorted(titles, key=lambda code: (titles[code], code))
     default = codes.index("51-4121") if "51-4121" in codes else 0
     occupation = st.selectbox("Occupation and related training", codes, index=default,
-                              format_func=lambda code: f"{titles[code]} ({code})", key=key+"soc")
+                              format_func=lambda code: f"{code} · {titles[code]}", key=key+"soc")
+    occupation_context(titles[occupation], occupation)
     st.caption("This occupation selector is independent of the industry selection above. No industry-to-occupation relationship is inferred.")
     chosen = rows.loc[rows.occupation_code.eq(occupation)]
     from geography import county_region

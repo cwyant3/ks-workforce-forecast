@@ -7,6 +7,8 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
+from dashboard.presentation import plot_chart
+
 from demographic_pipeline import single_age_population
 from fertility_model import national_schedules, calibrated_schedule
 from fertility_validation import compare_fertility_models
@@ -54,7 +56,7 @@ def render_fertility_details(paths, schedules, calibration, bridge, history, cou
                           xaxis=dict(title="Year ending June 30",tickformat="d"),
                           yaxis=dict(title="Births per year",rangemode="tozero"),
                           legend=dict(orientation="h",y=-.3))
-        st.plotly_chart(fig,width="stretch",key=key+"fertility_births")
+        plot_chart(fig,width="stretch",key=key+"fertility_births")
         st.caption("Low and high gradually reach 20% below/above the central age-specific rates by 2042. "
                    "They are analyst sensitivity assumptions, not 80% prediction intervals. "
                    "Birth totals also respond to female cohort size and composition; a decline is not imposed.")
@@ -74,7 +76,7 @@ def render_fertility_details(paths, schedules, calibration, bridge, history, cou
         rates.update_layout(height=290,margin=dict(l=10,r=10,t=20,b=70),
                             xaxis_title="Modeled maternal age",yaxis_title="Births per 1,000 women per year",
                             legend=dict(orientation="h",y=-.3))
-        st.plotly_chart(rates,width="stretch",key=key+"fertility_rates")
+        plot_chart(rates,width="stretch",key=key+"fertility_rates")
         st.write("Local calibration pools KDHE resident births in calendar years 2020–2024. "
                  "ACS 2020–2024 female estimates × five approximate the matching woman-years. "
                  "Within each published maternal-age band, Census supplies the modeled single-age pattern. "

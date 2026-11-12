@@ -10,6 +10,8 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
+from dashboard.presentation import occupation_context, plot_chart
+
 from dashboard.responsive import metric_columns
 from data_contracts import KEY, latest_observations
 from geography import inbound_labor_shed, county_label
@@ -116,7 +118,7 @@ def comparison_figure(values, selected):
 
 
 def draw(fig, key):
-    st.plotly_chart(fig, width="stretch",key=key,config={"displaylogo":False,"toImageButtonOptions":{"format":"png","scale":2}})
+    plot_chart(fig, width="stretch",key=key,config={"displaylogo":False,"toImageButtonOptions":{"format":"png","scale":2}})
 
 
 def metric_card(frame, rows, title, key, *, peer_label=None, color=BLUE):
@@ -256,7 +258,8 @@ def pay(frame,county,key):
     if published.empty:
         return
     titles=published.drop_duplicates("occupation_code").set_index("occupation_code").occupation_title.to_dict()
-    soc=st.selectbox("Occupation pay",sorted(titles),format_func=lambda x:f"{titles[x]} ({x})",key=key+"soc")
+    soc=st.selectbox("Occupation pay",sorted(titles),format_func=lambda x:f"{x} · {titles[x]}",key=key+"soc")
+    occupation_context(titles[soc], soc)
     rows=area_rows[area_rows.occupation_code.eq(soc)]
     cols=metric_columns(2, key+"metrics")
     for col,m,title in zip(cols,["oews_median_annual_wage","oews_mean_annual_wage"],["Median annual pay","Mean annual pay"]):
@@ -515,7 +518,8 @@ def regional_view(regional,county,key):
         return
     rows=regional[regional.geography_id.eq(region_id)]
     titles=rows.drop_duplicates("occupation_code").set_index("occupation_code").occupation_title.to_dict()
-    soc=st.selectbox("Projected occupation",sorted(titles),format_func=lambda x:f"{titles[x]} ({x})",key=key+"soc")
+    soc=st.selectbox("Projected occupation",sorted(titles),format_func=lambda x:f"{x} · {titles[x]}",key=key+"soc")
+    occupation_context(titles[soc], soc)
     rows=rows[rows.occupation_code.eq(soc)]
     st.caption(f"{region_name} Kansas projection region · published 2022–2032 projections. The same regional estimate applies to all {len(members)} member counties ({', '.join(members)}); it is not allocated to the selected county.")
     values={r.measure_id:r for _,r in rows.iterrows()}

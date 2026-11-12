@@ -7,6 +7,8 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
+from dashboard.presentation import plot_chart
+
 from demographic_pipeline import (DISPLAY_BANDS, single_age_population,
                                   participation_shares, project_cohorts)
 from dashboard.age_violin import age_violin_figure, band_summary, scale_for_paths
@@ -145,7 +147,7 @@ def render_demographic_pipeline(county, key="demographic_pipeline_"):
     density_scale = scale_for_paths(*all_age_paths)
     selected_state = selected_path[selected_year-2024]
     baseline_state = selected_path[0]
-    st.plotly_chart(age_violin_figure(selected_state, selected_year, density_scale,
+    plot_chart(age_violin_figure(selected_state, selected_year, density_scale,
                                       baseline_state=baseline_state, baseline_year=2024),
                     width="stretch", key=key+"chart")
     st.caption("Wider sections mean more residents at that age. Widths use one common scale across all age ranges and slider years. "
@@ -164,7 +166,7 @@ def render_demographic_pipeline(county, key="demographic_pipeline_"):
     with st.expander("Selected-year age counts and labor-force trend"):
         st.dataframe(band_summary(selected_state, baseline_state), hide_index=True, width="stretch",
                      column_config={"Change vs baseline (%)": st.column_config.NumberColumn(format="%+.1f%%")})
-        st.plotly_chart(pipeline_figure(baseline, scenario), width="stretch", key=key+"labor_trend")
+        plot_chart(pipeline_figure(baseline, scenario), width="stretch", key=key+"labor_trend")
     first, last = baseline.iloc[0], baseline.iloc[-1]
     change = last.labor_force_18_plus-first.labor_force_18_plus
     st.caption(f"No-net-migration baseline: {first.labor_force_18_plus:,.0f} modeled participants in 2024 → "
@@ -174,7 +176,7 @@ def render_demographic_pipeline(county, key="demographic_pipeline_"):
         st.caption(f"Selected scenario in 2042: {scenario.iloc[-1].labor_force_18_plus:,.0f} participants "
                    f"({scenario.iloc[-1].labor_force_18_plus-last.labor_force_18_plus:+,.0f} versus the demographic baseline).")
     st.markdown("##### Who is approaching working age?")
-    st.plotly_chart(entrants_figure(baseline), width="stretch", key=key+"entrants")
+    plot_chart(entrants_figure(baseline), width="stretch", key=key+"entrants")
     st.caption("Reaching 18 signals potential workforce entry; reaching 65 does not imply retirement. "
                "Workers age 65+ remain in the main chart. These bars count residents, not hires or job openings.")
     if proxies:

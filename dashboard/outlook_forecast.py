@@ -6,6 +6,8 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
+from dashboard.presentation import plot_chart
+
 from fetch_qcew import SECTOR_NAICS, SECTOR_DISPLAY_NAMES
 
 TEAL = "#36816B"
@@ -255,7 +257,7 @@ def render_forecast(proj, effective, sectors, summary, county, industry, key="ou
             elif view[name].empty or view[name].value.notna().sum() == 0:
                 st.info("This county model is unavailable.")
             else:
-                st.plotly_chart(_figure(view[name], color, label, band, baseline, limits),
+                plot_chart(_figure(view[name], color, label, band, baseline, limits),
                                 width="stretch", key=key + name)
                 if name == "population" and baseline:
                     st.caption(f"ACS {baseline[0]-4}–{baseline[0]} period estimate shown at its ending year. Dashed line: cohort model; the band is P10–P90 across simulations.")
@@ -289,7 +291,7 @@ def render_forecast(proj, effective, sectors, summary, county, industry, key="ou
                                               dash="dot" if name == "participation" else "solid")))
         year = int(indexed.index_year.iloc[0])
         fig.update_layout(height=300, yaxis_title=f"{year} model value = 100", xaxis_title="Model year")
-        st.plotly_chart(fig, width="stretch", key=key + "index_chart")
+        plot_chart(fig, width="stretch", key=key + "index_chart")
         st.caption("Indexed paths compare growth only. The common starting point is modeled, and no resident-to-job gap is calculated.")
     return view
 
@@ -314,7 +316,7 @@ def render_scenarios(proj, effective, county, key="outlook_scenario_"):
                                 line=dict(color=color), connectgaps=False))
     fig.update_layout(height=330, yaxis_title="Participating residents, approximate ages 18–64",
                       xaxis_title="Model year", legend=dict(orientation="h", y=1.15))
-    st.plotly_chart(fig, width="stretch", key=key + "chart")
+    plot_chart(fig, width="stretch", key=key + "chart")
     last = result.iloc[-1]
     if pd.notna(last.scenario_participation):
         st.metric(f"{int(last.year)} sensitivity", f"{last.scenario_participation:,.0f}", f"{last.change:+,.0f} versus adopted model")

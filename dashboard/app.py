@@ -1114,11 +1114,14 @@ def main():
     st.markdown(funnel_strip(selected_state), unsafe_allow_html=True)
 
     # ── Tabs ──────────────────────────────────────────────────────────────
+    detail_tabs_key = f"detail-tabs-{view_mode}"
     (tab_exec, tab_population, tab_available, tab_demand, tab_sector,
      tab_local, tab_explorer, tab_data, tab_method) = st.tabs([
         "Executive Narrative", "Population", "Available Workforce", "Demand Pressure",
         "Sector Exposure", "Local Action", "Explorer", "Data", "Methodology",
-    ], key=f"detail-tabs-{view_mode}", default="Executive Narrative", on_change="rerun")
+    ], key=detail_tabs_key,
+       default=st.session_state.get(detail_tabs_key, "Executive Narrative"),
+       on_change="rerun")
 
     pressure_enabled = state_fips == "20" and bool(ACTIVE_RELEASE)
     selected_fips5 = state_fips.zfill(2) + str(summary.loc[

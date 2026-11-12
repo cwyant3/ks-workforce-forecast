@@ -1445,6 +1445,7 @@ def main():
                 st.plotly_chart(
                     state_choropleth(map_data, state_fips, end_year, base_year=base_year),
                     width="stretch",
+                    key=f"state-county-map-{state_fips}-{view_mode}",
                 )
             except Exception:
                 st.warning(

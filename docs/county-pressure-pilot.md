@@ -4,7 +4,7 @@
 
 ## Current release
 
-Adopted release: `20261110T202805_ec5cdfee` (2026-11-10, commit 3da0ebc). Rollback target: `20261110T200509_c512f8b3`. Evidence folder: `data/pressure_sources/2026-11-10-kc-metro` (git-ignored, local only). Each step of 2026-11-10 is recorded in `docs/data-refresh-log.md`. It is not a statewide shortage score; no composite is calculated.
+Adopted release: `20261112T154042_8f2556d5` (2026-11-12). Rollback target: `20261110T202805_ec5cdfee`. Evidence folder: `data/pressure_sources/2026-11-12-oews-kansas` (git-ignored, local only). Each source update is recorded in `docs/data-refresh-log.md`. It is not a statewide shortage score; no composite is calculated.
 
 Coverage, all 105 Kansas counties unless noted:
 
@@ -14,10 +14,12 @@ Coverage, all 105 Kansas counties unless noted:
 - **Commuting:** LODES8 2023 JT01. Inbound uses Kansas main+aux. Resident outbound uses Kansas main plus every other state's aux; Alaska and Michigan publish no 2023 files, and that gap is disclosed on every measure (Chris's decision, 2026-11-10).
 - **Training:** IPEDS 2025 provisional awards at reporting institutions (36 counties have one).
 - **Regional occupation outlook:** KDOL 2022–2032, all seven projection regions. Each county maps to its region in `crosswalks/county_areas_20261020.csv`.
-- **Occupation pay:** BLS OEWS May 2025 for Wichita (four-SOC sample) and the full Kansas City, MO-KS inventory (Johnson, Leavenworth, Linn, Miami, Wyandotte). Other Kansas areas are not adopted yet (see `TASKS.md` in the vault).
+- **Occupation pay:** BLS OEWS May 2025 for all eight Kansas pay areas, mapping all 105 counties once. Wichita retains its four-SOC sample. Kansas City, Topeka, Lawrence, Manhattan, St. Joseph, Joplin and Kansas nonmetro use inventories staged from the existing Kansas/Missouri detailed/total SOC candidate universe. Nonmetro area `2000006` covers 85 counties; it uses substate API type `M`, not national type `N`. Cross-state metro estimates include Missouri members. See `crosswalks/oews-areas-source.md` for verified definitions and acquisition scope.
 - **Kansas City metro panel:** shown for the five Kansas metro counties. It compares all 14 counties of OEWS area 28140 with the same sources: ACS, LAUS, QCEW and working-age forecasts. Both states' forecasts use the same cohort model and the same NCES CCD single-grade youth update. The builder refuses forecasts whose seed or base year differ.
 
 ## Rebuild the current release
+
+To reproduce the November 12 extension, copy the November 10 Kansas City metro evidence into a new dated folder and run `scripts/stage_oews_area.py --area CODE --slug NAME --out NEW` for Topeka (`45820`, `topeka`), Lawrence (`29940`, `lawrence`), Manhattan (`31740`, `manhattan`), St. Joseph (`41140`, `stjoseph`), Joplin (`27900`, `joplin`), and Kansas nonmetro (`2000006`, `kansasnonmetro`). Preserve the reviewed area-definition/probe records with that bundle. Completed API batches are cached for resumable staging. Build, preview and validate before adopting; do not rerun population forecasts for a pay-area update.
 
 Each staging script resumes when rerun and never overwrites an adopted release. Run them from this repository (not a worktree), in this order, into a new dated evidence folder:
 
@@ -112,9 +114,11 @@ As of 2026-11-08 the full suite is 180 tests, all passing, and both `validate_ou
 
 As of 2026-11-10 the full suite is 209 tests, all passing, and `validate_outputs.py --state 20 --pressure` passes on the adopted release. Runtime checks covered metro and non-metro counties (Johnson, Linn, Wyandotte, Sedgwick, Greeley and others) in Workforce Outlook and County Brief.
 
+As of 2026-11-12 the full suite is 213 tests, all passing. Twelve runtime checks cover Shawnee, Douglas, Riley, Doniphan, Cherokee and Greeley in both County Brief and Workforce Outlook, including exact-occupation pay selection. The adopted release passes output validation. Non-OEWS observations, the other 13 release tables, existing Wichita/Kansas City observations and all 141 original output files are unchanged. Only the occupation-pay extension and its release provenance changed. No hosted publication, commit or push was performed.
+
 Still gated or unavailable:
 
-- OEWS pay outside Wichita and Kansas City (Topeka, Lawrence, Manhattan, St. Joseph, Joplin, nonmetro areas).
+- Wichita still has its original four-SOC pay sample; a broader Wichita occupation inventory is a separate extension. All other Kansas pay areas are now adopted.
 - 155 county-sector job cells withheld in every source.
 - Alaska and Michigan commuting.
 - The newest quarter's QWI separations and earnings.

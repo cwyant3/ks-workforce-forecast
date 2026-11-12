@@ -137,6 +137,13 @@ REVIEWED_OEWS_AREAS = {
     "wichita": ("48620", "Wichita, KS", "Verified Wichita area sample only; not a complete occupation inventory"),
     "kansascity": ("28140", "Kansas City, MO-KS",
                    "Full published Kansas City, MO-KS area inventory; the area spans Kansas and Missouri counties"),
+    "topeka": ("45820", "Topeka, KS", "Published area inventory; shared across five Kansas counties, not county-specific pay"),
+    "lawrence": ("29940", "Lawrence, KS", "Published Lawrence area inventory (Douglas County)"),
+    "manhattan": ("31740", "Manhattan, KS", "Published area inventory; shared across three Kansas counties, not county-specific pay"),
+    "stjoseph": ("41140", "St. Joseph, MO-KS", "Published bistate area inventory; Doniphan is its Kansas member, not a Kansas-only estimate"),
+    "joplin": ("27900", "Joplin, MO-KS", "Published bistate area inventory; Cherokee is its Kansas member, not a Kansas-only estimate"),
+    "kansasnonmetro": ("2000006", "Kansas nonmetropolitan area",
+                       "Published nonmetropolitan area inventory shared across 85 Kansas counties; not county-specific pay"),
 }
 
 

@@ -93,13 +93,31 @@ def test_crosswalk_maps_every_kansas_county_to_one_projection_region():
     region_id, name, members = county_region("20091")
     assert (region_id, name) == ("KS-KC", "Kansas City") and "Johnson" in members and len(members) == 4
     assert county_region("20999") == ("", "", [])
-    # Only adopted OEWS areas are mapped; other counties never inherit them.
-    from geography import KANSAS_CITY_OEWS_COUNTIES, county_oews_area
+    # Each Kansas county maps to exactly one reviewed native pay area.
+    from geography import OEWS_AREAS, county_oews_area
     mapped = relations.loc[relations.oews_area.ne("")]
-    assert set(mapped.county_fips5) == set(WICHITA_OEWS_COUNTIES) | set(KANSAS_CITY_OEWS_COUNTIES)
+    assert len(mapped) == 105
+    members = [county for _, counties in OEWS_AREAS.values() for county in counties]
+    assert len(members) == len(set(members)) == 105
+    assert set(members) == set(mapped.county_fips5)
+    for code, (_, counties) in OEWS_AREAS.items():
+        assert set(mapped.loc[mapped.oews_area.eq(code), 'county_fips5']) == set(counties)
     assert county_oews_area("20107")[:2] == ("28140", "Kansas City, MO-KS")  # Linn: KC pay area, Southeast projection region
     assert county_region("20107")[0] == "KS-SE"
-    assert county_oews_area("20045") == ("", "", [])  # Douglas (Lawrence) is not adopted
+    assert county_oews_area("20045")[:2] == ("29940", "Lawrence, KS")
+    assert county_oews_area("20043")[:2] == ("41140", "St. Joseph, MO-KS")
+    assert county_oews_area("20021")[:2] == ("27900", "Joplin, MO-KS")
+    assert county_oews_area("20177")[:2] == ("45820", "Topeka, KS")
+    assert county_oews_area("20161")[:2] == ("31740", "Manhattan, KS")
+    assert county_oews_area("20071")[:2] == ("2000006", "Kansas nonmetropolitan area")
+    assert len(county_oews_area("20071")[2]) == 85
+    assert county_oews_area("20999") == ("", "", [])
+
+
+def test_nonmetro_pay_is_selected_once_for_multiple_counties():
+    obs = pd.DataFrame({'geography_id': ['2000006', '29940'], 'estimate': [100, 200]})
+    selected = select_area_observations(obs, ['20001', '20071', '20095'])
+    assert selected.geography_id.tolist() == ['2000006']
 
 
 def test_resident_outbound_discloses_unpublished_states_and_fails_closed_on_access():

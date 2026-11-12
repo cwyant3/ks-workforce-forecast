@@ -30,6 +30,7 @@ from training_supply import build_training_indicators
 from fetch_ipeds import summarize_by_sector
 from fetch_cbp import parse_cbp_county_payload
 from fetch_oes import build_oews_observations
+from geography import GEOGRAPHY_VERSION
 from participation_model import build_participation_table, project_effective_workforce
 from scripts.parse_manual_ks_occproj import build_regional_context
 from pressure_release import stage_release, adopt_release, rollback_release, resolve_output, read_active
@@ -171,12 +172,16 @@ def build(evidence_dir: Path, outputs: Path = OUTPUTS, *, correction_dir: Path |
             if name in active.get("files", {}):
                 tables[name] = pd.read_parquet(resolve_output(outputs, name, active))
 
+    oews_definitions = evidence_dir / "oews-area-definitions-2026-11-12.json"
+    oews_verification_date = (json.loads(oews_definitions.read_text(encoding="utf-8"))["verified"]
+                              if oews_definitions.exists() else "2026-10-20")
     sources = []
     for source, rows in observations.groupby("source_id"):
         sources.append({"source_id": source, "reference_period": str(rows.period_end.max()),
             "release_id": "; ".join(sorted(rows.release_id.dropna().unique())),
             "adoption_status": "validated observations" if rows.availability_status.eq("published").any() else "unavailable",
-            "verification_date": "2026-10-20", "source_url": "; ".join(sorted(rows.source_url.dropna().unique()))})
+            "verification_date": oews_verification_date if source == "oews" else "2026-10-20",
+            "source_url": "; ".join(sorted(rows.source_url.dropna().unique()))})
     sources.extend([
         {"source_id":"apprenticeship", "adoption_status":"disabled: aggregate export/geography unresolved", "verification_date":"2026-10-20"},
         {"source_id":"pseo", "adoption_status":"disabled: Kansas not in verified coverage", "verification_date":"2026-10-20"},
@@ -192,8 +197,10 @@ def build(evidence_dir: Path, outputs: Path = OUTPUTS, *, correction_dir: Path |
         "input_hashes":inputs,
         "population_forecast": ("projections_s20.parquet sha256 " + hashlib.sha256((outputs / "projections_s20.parquet").read_bytes()).hexdigest()
                                 if (outputs / "projections_s20.parquet").exists() else "not available"),
-        "geography_crosswalk_version":"2026-10-20",
-        "regional_context":("KDOL projection regions 2022-2032 (all seven); OEWS May2025: Wichita sample, Kansas City MO-KS full inventory"
+        "geography_crosswalk_version":GEOGRAPHY_VERSION,
+        "regional_context":("KDOL projection regions 2022-2032 (all seven); OEWS May2025 areas in this release: " +
+                            "; ".join(sorted(observations.loc[observations.source_id.eq("oews"), "area_name"].dropna().unique())) +
+                            ". Wichita retains its reviewed four-SOC sample."
                             if len(scope_counties) > len(PILOT) else "South Central 2022-2032; Wichita OEWS May2025 sample only"),
         "sector_correction":"reviewed rebuild" if correction_dir else "retained from adopted release" if "sector_projections_s20.parquet" in tables else "not included; legacy sector forecast withheld in pressure comparisons",
         "composite_score":"not calculated"})

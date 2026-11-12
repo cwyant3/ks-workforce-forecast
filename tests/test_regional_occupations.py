@@ -86,3 +86,18 @@ def test_oews_missing_and_uncertainty_fields_are_not_imputed():
 def test_oews_national_type_cannot_be_called_nonmetro():
     with pytest.raises(ValueError, match="national"):
         area_series_ids("48620", ["47-2111"], "N")
+
+
+def test_nonmetro_seven_digit_area_retains_native_identity_and_missing_pay():
+    ids = area_series_ids('2000006', ['00-0000', '47-2111'])
+    payload = {'status': 'REQUEST_SUCCEEDED', 'Results': {'series': [
+        {'seriesID': ids[0], 'data': [{'year': '2025', 'period': 'A01', 'value': '374010', 'footnotes': [{}]}]},
+        {'seriesID': ids[-1], 'data': [{'year': '2025', 'period': 'A01', 'value': '-',
+                                     'footnotes': [{'text': 'Estimate not released'}]}]},
+    ]}}
+    frame = parse_area_api_response(payload, ids)
+    assert frame.geography_id.eq('2000006').all()
+    assert frame.source_series_id.str.startswith('OEUM2000006').all()
+    assert validate_observations(frame) == []
+    wage = frame.loc[frame.occupation_code.eq('47-2111') & frame.measure_id.eq('oews_median_annual_wage')].iloc[0]
+    assert wage.availability_status == 'suppressed' and pd.isna(wage.estimate) and pd.isna(wage.rse)

@@ -262,8 +262,11 @@ def pay(frame,county,key):
     wage=rows[rows.measure_id.isin(["oews_mean_annual_wage","oews_median_annual_wage"])&rows.availability_status.eq("published")]
     if not wage.empty:
         draw(horizontal(wage.estimate.tolist(),["Mean" if "mean" in m else "Median" for m in wage.measure_id],"Annual pay (USD)",unit="USD/year"),key+"wages")
-    scope="four reviewed occupation groups" if area=="48620" else "occupations the area publishes; the area also includes Missouri counties"
-    st.caption(f"{area_name} OEWS area · Kansas members: {', '.join(members)}. May 2025 OEWS; {scope}. Area pay is not a county estimate. Source details retain employment and mean-wage RSE; median wages do not inherit mean-wage RSE.")
+    scope="four reviewed occupation groups" if area=="48620" else "published occupation inventory"
+    if area in {"28140", "41140", "27900"}:
+        scope += "; the area also includes Missouri counties"
+    member_label = ', '.join(members) if len(members) <= 5 else f'{len(members)} Kansas counties'
+    st.caption(f"{area_name} OEWS area · Kansas members: {member_label}. May 2025 OEWS; {scope}. Area pay is not a county estimate. Source details retain employment and mean-wage RSE; median wages do not inherit mean-wage RSE.")
     evidence(rows)
 
 

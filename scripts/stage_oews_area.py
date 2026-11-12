@@ -1,4 +1,4 @@
-"""Stage one OEWS metropolitan area's full occupation inventory via the BLS API.
+"""Stage one OEWS substate area's occupation inventory via the BLS API.
 
     python scripts/stage_oews_area.py --area 28140 --slug kansascity \
         --out data/pressure_sources/2026-11-10 [--year 2025]
@@ -48,11 +48,20 @@ def main():
         sys.exit("BLS_API_KEY is required for a full-area inventory (unregistered limits are too low)")
     titles = candidate_occupations(args.year)
     ids = area_series_ids(args.area, list(titles))
+    out.mkdir(parents=True, exist_ok=True)
+    batches = out / f".oews-{args.slug}-{args.year}-batches"
+    batches.mkdir(exist_ok=True)
     series, messages = [], []
     for i in range(0, len(ids), 50):
-        body = {"seriesid": ids[i:i + 50], "startyear": str(args.year), "endyear": str(args.year),
+        batch_ids = ids[i:i + 50]
+        saved = batches / f"{i // 50:03d}.json"
+        data = json.loads(saved.read_text(encoding="utf-8")) if saved.exists() else None
+        if data is not None and (data.get("status") != "REQUEST_SUCCEEDED" or
+                {s.get("seriesID") for s in data.get("Results", {}).get("series", [])} != set(batch_ids)):
+            raise ValueError(f"Cached OEWS batch does not match requested series: {saved.name}")
+        body = {"seriesid": batch_ids, "startyear": str(args.year), "endyear": str(args.year),
                 "registrationkey": key}
-        for attempt in range(4):
+        for attempt in range(4) if data is None else []:
             try:
                 r = requests.post(API, json=body, timeout=90)
                 data = r.json()
@@ -61,11 +70,17 @@ def main():
             except (requests.RequestException, ValueError):
                 data = {}
             time.sleep(3 * (attempt + 1))
-        else:
-            sys.exit(f"BLS OEWS batch {i // 50} failed: {data.get('message')}")
+        if data is None or data.get("status") != "REQUEST_SUCCEEDED":
+            sys.exit(f"BLS OEWS batch {i // 50} failed: {(data or {}).get('message')}")
+        if {s.get("seriesID") for s in data["Results"]["series"]} != set(batch_ids):
+            sys.exit(f"BLS OEWS batch {i // 50} returned an incomplete series inventory")
+        if not saved.exists():
+            saved.write_text(json.dumps(data), encoding="utf-8")
         series.extend(data["Results"]["series"])
         messages.extend(m for m in data.get("message", []) if "does not exist" not in m)
         time.sleep(0.4)
+        if i // 50 % 10 == 0 or i + 50 >= len(ids):
+            print(f"{args.slug}: {min(i + 50, len(ids))}/{len(ids)} series staged", flush=True)
     payload = {"status": "REQUEST_SUCCEEDED", "responseTime": 0, "message": messages,
                "Results": {"series": series}}
     (out / f"oews-{args.slug}-{args.year}.json").write_text(json.dumps(payload), encoding="utf-8")

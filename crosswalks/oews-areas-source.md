@@ -19,7 +19,11 @@ The six newly added area codes were independently probed through the BLS API for
 
 `scripts/stage_oews_area.py` requests employment, employment RSE, mean annual wage, mean-wage RSE and median annual wage for the 776 detailed/total occupation candidates in the existing Kansas/Missouri state cache. Missing and suppressed area observations remain unavailable. This is the same candidate-universe method used for Kansas City. It does not add major-group totals or infer missing estimates. Each completed batch is retained locally for resumable retrieval; the merged response and occupation titles enter the source manifest.
 
-Each county maps once. Area observations are selected once at native area grain and never allocated to or summed over member counties. KDOL projection-region assignments remain separate and unchanged. Wichita retains its existing four-SOC sample; this update adds the six previously missing areas.
+Each county maps once. Area observations are selected once at native area grain and never allocated to or summed over member counties. KDOL projection-region assignments remain separate and unchanged.
+
+Wichita's sample was expanded locally on 2026-11-12 using the held official `all_data_M_2025.xlsx`, sheet `All May 2025 data`. The vault preprocessing tool produced a streaming profile before the slice was read. The stage script preserves all 508 exact-area source rows and all 32 columns in `oews-wichita-2025.csv`; the adapter selects 485 detailed rows plus the all-occupation total at cross-industry/all-covered ownership. The 22 major-group aggregates are not mixed into the detailed inventory. All 12 original sample values match the workbook. Evidence and workbook SHA-256 are retained in `data/pressure_sources/2026-11-12-oews-wichita/oews-wichita-2025-source.json`.
+
+The bulk adapter retains unavailable markers and the published annual-wage lower bound (`#` means at least USD 239,200), and never annualizes hourly-only occupations. These conditions display an explanation rather than an exact annual point estimate. Median wages never inherit the mean-wage RSE. This uses the existing May 2025 source, not a claim of a newly downloaded/revised release.
 
 ## Items Requiring Verification
 

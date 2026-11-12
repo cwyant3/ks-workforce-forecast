@@ -250,19 +250,24 @@ def pay(frame,county,key):
     if not area:
         st.info("OEWS occupation pay for this county's area has not been adopted in this release. The industry wage card above remains a separate county measure.")
         return
-    rows=frame[frame.source_id.eq("oews")&frame.geography_id.eq(area)&frame.availability_status.eq("published")]
-    if rows.empty:
+    area_rows=frame[frame.source_id.eq("oews")&frame.geography_id.eq(area)]
+    published=area_rows[area_rows.availability_status.eq("published")]
+    if published.empty:
         return
-    titles=rows.drop_duplicates("occupation_code").set_index("occupation_code").occupation_title.to_dict()
+    titles=published.drop_duplicates("occupation_code").set_index("occupation_code").occupation_title.to_dict()
     soc=st.selectbox("Occupation pay",sorted(titles),format_func=lambda x:f"{titles[x]} ({x})",key=key+"soc")
-    rows=rows[rows.occupation_code.eq(soc)]
+    rows=area_rows[area_rows.occupation_code.eq(soc)]
     cols=st.columns(2)
     for col,m,title in zip(cols,["oews_median_annual_wage","oews_mean_annual_wage"],["Median annual pay","Mean annual pay"]):
         with col: metric_card(frame,rows[rows.measure_id.eq(m)],title,key+m)
     wage=rows[rows.measure_id.isin(["oews_mean_annual_wage","oews_median_annual_wage"])&rows.availability_status.eq("published")]
     if not wage.empty:
         draw(horizontal(wage.estimate.tolist(),["Mean" if "mean" in m else "Median" for m in wage.measure_id],"Annual pay (USD)",unit="USD/year"),key+"wages")
-    scope="four reviewed occupation groups" if area=="48620" else "published occupation inventory"
+    notes=rows.loc[~rows.availability_status.eq('published'), 'quality_note'].dropna().unique()
+    for note in notes:
+        if note:
+            st.caption(note)
+    scope="four reviewed occupation groups" if rows.coverage_note.str.contains('sample',case=False,na=False).any() else "published occupation inventory"
     if area in {"28140", "41140", "27900"}:
         scope += "; the area also includes Missouri counties"
     member_label = ', '.join(members) if len(members) <= 5 else f'{len(members)} Kansas counties'

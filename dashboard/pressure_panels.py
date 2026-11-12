@@ -70,14 +70,14 @@ def render_demand(frame, county):
     from geography import county_oews_area, select_area_observations
     area_code, area_name, members = county_oews_area(county)
     if area_code:
-        area = select_area_observations(frame[frame.source_id.eq("oews")], [county])
-        area = area[area.availability_status.eq("published")]
+        area_rows = select_area_observations(frame[frame.source_id.eq("oews")], [county])
+        area = area_rows[area_rows.availability_status.eq("published")]
         member_label = ', '.join(members) if len(members) <= 5 else f'{len(members)} Kansas counties'
         st.caption(f"{area_name} OEWS area, May 2025 (Kansas members: {member_label}). Area employment is not allocated to counties. Employment and mean wages retain their own relative standard errors; median wages do not inherit the mean-wage RSE.")
         if not area.empty:
             titles = area.drop_duplicates("occupation_code").set_index("occupation_code").occupation_title.to_dict()
             occupation = st.selectbox("Area occupation", sorted(titles), format_func=lambda v: f"{v} · {titles[v]}", key="oews_occupation")
-            area = area[area.occupation_code.eq(occupation)]
+            area = area_rows[area_rows.occupation_code.eq(occupation)]
         show_observations(area, "oews_area")
     else:
         st.info("Occupation pay for this county's OEWS area has not been adopted in this release.")

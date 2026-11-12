@@ -13,6 +13,8 @@ empty and stay not_reported. Writes the unmodified API payload as
 from __future__ import annotations
 
 import argparse
+import csv
+import hashlib
 import json
 import sys
 import time
@@ -29,6 +31,45 @@ from scripts.stage_statewide_sources import load_env_key  # noqa: E402
 API = "https://api.bls.gov/publicAPI/v2/timeseries/data/"
 
 
+def stage_workbook_area(workbook: Path, area: str, slug: str, year: int, out: Path):
+    """Stream an exact area slice after the source workbook has been preprocessed.
+
+    Retain every source column and occupation level. The observation adapter
+    selects detailed occupations plus the all-occupation total explicitly.
+    """
+    from openpyxl import load_workbook
+    sheet_name = f"All May {year} data"
+    book = load_workbook(workbook, read_only=True, data_only=True)
+    try:
+        if sheet_name not in book.sheetnames:
+            raise ValueError(f"Expected verified vintage sheet: {sheet_name}")
+        rows = book[sheet_name].iter_rows(values_only=True)
+        header = next(rows)
+        area_column = header.index("AREA")
+        selected = [row for row in rows if str(row[area_column]).strip().removesuffix('.0') == str(area)]
+    finally:
+        book.close()
+    if not selected:
+        raise ValueError(f"No published source rows for area {area}")
+    out.mkdir(parents=True, exist_ok=True)
+    target = out / f"oews-{slug}-{year}.csv"
+    with target.open('w', newline='', encoding='utf-8') as f:
+        writer = csv.writer(f)
+        writer.writerow(header)
+        writer.writerows(selected)
+    with workbook.open('rb') as f:
+        digest = hashlib.file_digest(f, 'sha256').hexdigest()
+    (out / f"oews-{slug}-{year}-source.json").write_text(json.dumps({
+        'source_file': workbook.name, 'source_sha256': digest, 'sheet': sheet_name,
+        'source_url': f'https://www.bls.gov/oes/special-requests/oesm{str(year)[-2:]}all.zip',
+        'catalog_url': 'https://www.bls.gov/oes/tables.htm',
+        'area_code': area, 'reference_year': year, 'source_rows': len(selected),
+        'selection': 'All rows with exact AREA; all source columns and occupation levels preserved',
+        'observation_scope': 'cross-industry, all covered ownership, detailed occupations plus all-occupation total',
+    }, indent=2), encoding='utf-8')
+    print(f'{slug}: staged {len(selected)} original area rows from {sheet_name}', flush=True)
+
+
 def candidate_occupations(year: int, states=("20", "29")) -> dict[str, str]:
     d = pd.read_parquet(ROOT / f"data/oes_cache/oes_allstates_{year}.parquet")
     d = d[d.area.astype(str).str.zfill(2).isin(states) & d.o_group.isin(["detailed", "total"])]
@@ -41,8 +82,13 @@ def main():
     ap.add_argument("--slug", required=True)
     ap.add_argument("--out", type=Path, required=True)
     ap.add_argument("--year", type=int, default=2025)
+    ap.add_argument("--workbook", type=Path, help="Preprocessed official all-data workbook; stage an offline area CSV slice")
     args = ap.parse_args()
     out = args.out if args.out.is_absolute() else ROOT / args.out
+    if args.workbook:
+        workbook = args.workbook if args.workbook.is_absolute() else ROOT / args.workbook
+        stage_workbook_area(workbook, args.area, args.slug, args.year, out)
+        return
     key = load_env_key("BLS_API_KEY")
     if not key:
         sys.exit("BLS_API_KEY is required for a full-area inventory (unregistered limits are too low)")

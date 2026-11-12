@@ -134,7 +134,7 @@ WICHITA_SAMPLE_TITLES = {"00-0000": "All occupations", "47-2111": "Electricians"
                          "29-2061": "Licensed Practical and Licensed Vocational Nurses"}
 # Reviewed OEWS areas: file slug -> (area code, area name, coverage note).
 REVIEWED_OEWS_AREAS = {
-    "wichita": ("48620", "Wichita, KS", "Verified Wichita area sample only; not a complete occupation inventory"),
+    "wichita": ("48620", "Wichita, KS", "Published Wichita area inventory; shared across four Kansas counties, not county-specific pay"),
     "kansascity": ("28140", "Kansas City, MO-KS",
                    "Full published Kansas City, MO-KS area inventory; the area spans Kansas and Missouri counties"),
     "topeka": ("45820", "Topeka, KS", "Published area inventory; shared across five Kansas counties, not county-specific pay"),
@@ -171,11 +171,61 @@ def _load_area_payload(path: Path, area_code: str, area_name: str, titles: dict,
     return frame
 
 
+def parse_area_bulk_csv(path: Path, area_code: str, area_name: str, note: str, *, year: int = 2025) -> pd.DataFrame:
+    """Normalize a lossless official-workbook area slice without estimating censored pay."""
+    from data_contracts import normalize_observations
+    data = _normalise_cols(pd.read_csv(path, dtype=str, keep_default_na=False))
+    required = {'area', 'area_type', 'naics', 'i_group', 'own_code', 'o_group',
+                'occ_code', 'occ_title', 'tot_emp', 'emp_prse', 'a_mean', 'mean_prse', 'a_median'}
+    if required - set(data):
+        raise ValueError(f'OEWS bulk area slice missing fields: {sorted(required - set(data))}')
+    native = lambda column: data[column].str.strip().str.removesuffix('.0')
+    if not native('area').eq(area_code).all() or not native('area_type').isin(['4', '6']).all():
+        raise ValueError('OEWS bulk slice contains an unreviewed area or non-substate geography')
+    selected = data.loc[native('naics').isin(['0', '000000']) &
+                        data.i_group.str.strip().eq('cross-industry') & native('own_code').eq('1235') &
+                        data.o_group.str.strip().isin(['detailed', 'total'])].copy()
+    if selected.empty or selected.occ_code.duplicated().any():
+        raise ValueError('OEWS bulk area requires unique detailed/all-occupation rows at all covered ownership')
+    source_url = f'https://www.bls.gov/oes/special-requests/oesm{str(year)[-2:]}all.zip'
+    rows = []
+    for item in selected.to_dict('records'):
+        for column, (measure, unit), rse_column in [
+            ('tot_emp', AREA_MEASURES['01'], 'emp_prse'),
+            ('a_mean', AREA_MEASURES['04'], 'mean_prse'),
+            ('a_median', AREA_MEASURES['13'], None),
+        ]:
+            raw = item[column].strip()
+            value = pd.to_numeric(raw, errors='coerce')
+            status = 'published' if pd.notna(value) else 'not_reported'
+            quality = ''
+            if raw == '#':
+                status = 'cannot_compute'
+                quality = 'BLS publishes annual wage >= USD 239,200; no exact point estimate is released.'
+            elif column != 'tot_emp' and item.get('hourly', '').strip().upper() == 'TRUE' and pd.isna(value):
+                status = 'not_applicable'
+                quality = 'Hourly-only occupation: BLS does not release this annual wage; no annualization is applied.'
+            elif pd.isna(value):
+                quality = 'Estimate not available in the source workbook; original marker retained in source_status.'
+            rse = pd.to_numeric(item[rse_column], errors='coerce') if rse_column else None
+            rows.append(dict(geography_id=area_code, geography_type='oews_area', area_name=area_name,
+                occupation_code=item['occ_code'], occupation_title=item['occ_title'], industry_code='000000',
+                oews_area_type='M', measure_id=measure, unit=unit, estimate=value if status == 'published' else None,
+                availability_status=status, rse=rse, source_status=f'Official bulk field {column}: {raw}',
+                quality_note=quality, source_series_id='', source_rse_series_id='',
+                rse_availability_status='not_applicable' if not rse_column else 'published' if pd.notna(rse) else 'not_reported',
+                source_url=source_url, period_start=f'{year}-05-01', period_end=f'{year}-05-31',
+                reference_label=f'May {year}', release_id=f'OEWS-May-{year}', coverage_note=note))
+    return normalize_observations(pd.DataFrame(rows), source_id='oews', defaults={
+        'location_basis': 'workplace', 'job_universe': 'nonfarm wage and salary jobs',
+        'ownership': 'all covered ownership', 'frequency': 'annual', 'method_type': 'published estimate'})
+
+
 def build_oews_observations(evidence_dir: Path, *, year: int = 2025) -> pd.DataFrame:
     """Load reviewed OEWS area API payloads without any network activity.
 
-    The Wichita file is the original four-SOC sample; other reviewed areas are
-    full inventories staged by scripts/stage_oews_area.py with a titles file.
+    Prefer a complete official-workbook area CSV or a staged API inventory.
+    The historical Wichita four-SOC sample remains a backward-compatible fallback.
     Employment and mean-wage rows carry RSE; median wages never inherit it.
     Native OEWS area identifiers remain intact; county coverage is a separate
     crosswalk and this function does not invent nonmetropolitan areas.
@@ -183,12 +233,20 @@ def build_oews_observations(evidence_dir: Path, *, year: int = 2025) -> pd.DataF
     evidence_dir = Path(evidence_dir)
     frames = []
     for slug, (code, name, note) in REVIEWED_OEWS_AREAS.items():
-        path = evidence_dir / (f"oews-{slug}-{year}-sample.json" if slug == "wichita" else f"oews-{slug}-{year}.json")
+        bulk_path = evidence_dir / f"oews-{slug}-{year}.csv"
+        if bulk_path.exists():
+            frames.append(parse_area_bulk_csv(bulk_path, code, name, note, year=year))
+            continue
+        path = evidence_dir / f"oews-{slug}-{year}.json"
+        if slug == 'wichita' and not path.exists():
+            path = evidence_dir / f"oews-{slug}-{year}-sample.json"
+            note = 'Verified Wichita area sample only; not a complete occupation inventory'
         if not path.exists():
             continue
         titles_path = evidence_dir / f"oews-{slug}-{year}-titles.json"
-        titles = (json.loads(titles_path.read_text(encoding="utf-8")) if titles_path.exists()
-                  else WICHITA_SAMPLE_TITLES)
+        if not titles_path.exists() and not path.name.endswith('-sample.json'):
+            raise ValueError('Full OEWS API inventory requires its occupation-title file')
+        titles = (json.loads(titles_path.read_text(encoding="utf-8")) if titles_path.exists() else WICHITA_SAMPLE_TITLES)
         frames.append(_load_area_payload(path, code, name, titles, note, year))
     if not frames:
         raise FileNotFoundError("No reviewed OEWS area files in " + str(evidence_dir))

@@ -71,7 +71,7 @@ def build(evidence_dir: Path, outputs: Path = OUTPUTS, *, correction_dir: Path |
         if match:
             pieces.append(parse_cbp_county_payload(json.loads(path.read_text(encoding="utf-8")), scope_counties,
                                                    naics=match[2], year=int(match[1])))
-    if any((evidence_dir / name).exists() for name in ("oews-wichita-2025-sample.json", "oews-kansascity-2025.json")):
+    if any(evidence_dir.glob('oews-*-2025.csv')) or any((evidence_dir / name).exists() for name in ("oews-wichita-2025-sample.json", "oews-kansascity-2025.json")):
         pieces.append(build_oews_observations(evidence_dir))
     lodes = evidence_dir / "lodes_observations.parquet"
     if lodes.exists():
@@ -199,9 +199,7 @@ def build(evidence_dir: Path, outputs: Path = OUTPUTS, *, correction_dir: Path |
                                 if (outputs / "projections_s20.parquet").exists() else "not available"),
         "geography_crosswalk_version":GEOGRAPHY_VERSION,
         "regional_context":("KDOL projection regions 2022-2032 (all seven); OEWS May2025 areas in this release: " +
-                            "; ".join(sorted(observations.loc[observations.source_id.eq("oews"), "area_name"].dropna().unique())) +
-                            ". Wichita retains its reviewed four-SOC sample."
-                            if len(scope_counties) > len(PILOT) else "South Central 2022-2032; Wichita OEWS May2025 sample only"),
+                            "; ".join(sorted(observations.loc[observations.source_id.eq("oews"), "area_name"].dropna().unique()))),
         "sector_correction":"reviewed rebuild" if correction_dir else "retained from adopted release" if "sector_projections_s20.parquet" in tables else "not included; legacy sector forecast withheld in pressure comparisons",
         "composite_score":"not calculated"})
 

@@ -4,7 +4,7 @@
 
 ## Current release
 
-Adopted release: `20261112T154042_8f2556d5` (2026-11-12). Rollback target: `20261110T202805_ec5cdfee`. Evidence folder: `data/pressure_sources/2026-11-12-oews-kansas` (git-ignored, local only). Each source update is recorded in `docs/data-refresh-log.md`. It is not a statewide shortage score; no composite is calculated.
+Adopted release: `20261112T193557_923d1ce9` (2026-11-12). Rollback target: `20261112T154042_8f2556d5`. Evidence folder: `data/pressure_sources/2026-11-12-oews-wichita` (git-ignored, local only). Publication of the Wichita expansion is authorized; hosted verification is pending. The previously verified hosted release is `20261112T154042_8f2556d5`. Each source update is recorded in `docs/data-refresh-log.md`. It is not a statewide shortage score; no composite is calculated.
 
 Coverage, all 105 Kansas counties unless noted:
 
@@ -14,10 +14,12 @@ Coverage, all 105 Kansas counties unless noted:
 - **Commuting:** LODES8 2023 JT01. Inbound uses Kansas main+aux. Resident outbound uses Kansas main plus every other state's aux; Alaska and Michigan publish no 2023 files, and that gap is disclosed on every measure (Chris's decision, 2026-11-10).
 - **Training:** IPEDS 2025 provisional awards at reporting institutions (36 counties have one).
 - **Regional occupation outlook:** KDOL 2022–2032, all seven projection regions. Each county maps to its region in `crosswalks/county_areas_20261020.csv`.
-- **Occupation pay:** BLS OEWS May 2025 for all eight Kansas pay areas, mapping all 105 counties once. Wichita retains its four-SOC sample. Kansas City, Topeka, Lawrence, Manhattan, St. Joseph, Joplin and Kansas nonmetro use inventories staged from the existing Kansas/Missouri detailed/total SOC candidate universe. Nonmetro area `2000006` covers 85 counties; it uses substate API type `M`, not national type `N`. Cross-state metro estimates include Missouri members. See `crosswalks/oews-areas-source.md` for verified definitions and acquisition scope.
+- **Occupation pay:** BLS OEWS May 2025 for all eight Kansas pay areas, mapping all 105 counties once. Wichita now has all 485 detailed occupations plus the all-occupations total from the held official workbook; 480 rows have published median annual wages. Kansas City, Topeka, Lawrence, Manhattan, St. Joseph, Joplin and Kansas nonmetro retain the existing API inventories. Nonmetro area `2000006` covers 85 counties; it uses substate API type `M`, not national type `N`. Cross-state metro estimates include Missouri members. See `crosswalks/oews-areas-source.md` for verified definitions and acquisition scope.
 - **Kansas City metro panel:** shown for the five Kansas metro counties. It compares all 14 counties of OEWS area 28140 with the same sources: ACS, LAUS, QCEW and working-age forecasts. Both states' forecasts use the same cohort model and the same NCES CCD single-grade youth update. The builder refuses forecasts whose seed or base year differ.
 
 ## Rebuild the current release
+
+For the Wichita expansion, preprocess/profile the official `data/oes_manual/all_data_M_2025.xlsx` through the vault's existing preprocessing tool. Copy the reviewed all-Kansas source bundle to a new folder, then run `scripts/stage_oews_area.py --area 48620 --slug wichita --out NEW --workbook data/oes_manual/all_data_M_2025.xlsx`. This streams the exact source area into a CSV with all original columns and records the workbook hash. The adapter prefers that CSV over the historical sample, selects cross-industry/all-covered ownership detailed rows plus the total, and never appends duplicate sample rows. Keep the sample for historical reproducibility. Profiled workbook schema and source-slice provenance are recorded with the release.
 
 To reproduce the November 12 extension, copy the November 10 Kansas City metro evidence into a new dated folder and run `scripts/stage_oews_area.py --area CODE --slug NAME --out NEW` for Topeka (`45820`, `topeka`), Lawrence (`29940`, `lawrence`), Manhattan (`31740`, `manhattan`), St. Joseph (`41140`, `stjoseph`), Joplin (`27900`, `joplin`), and Kansas nonmetro (`2000006`, `kansasnonmetro`). Preserve the reviewed area-definition/probe records with that bundle. Completed API batches are cached for resumable staging. Build, preview and validate before adopting; do not rerun population forecasts for a pay-area update.
 
@@ -118,10 +120,12 @@ As of 2026-11-12 the full suite is 213 tests, all passing. Twelve runtime checks
 
 Still gated or unavailable:
 
-- Wichita still has its original four-SOC pay sample; a broader Wichita occupation inventory is a separate extension. All other Kansas pay areas are now adopted.
+- Wichita's expanded annual wages are unavailable for six occupation rows because of non-release, hourly-only reporting or a published lower bound. Those rows retain their source marker/explanation rather than an invented point estimate.
 - 155 county-sector job cells withheld in every source.
 - Alaska and Michigan commuting.
 - The newest quarter's QWI separations and earnings.
 - Apprenticeship, PSEO and proprietary feeds.
 
 The hosted Streamlit app shows a release only after it is redeployed. Source files should be refreshed and their release identities reverified before future adoption. Do not label a successful cache rebuild as a new agency publication.
+
+Wichita expansion validation, 2026-11-12: 216 tests passed, 16 runtime checks across all four member counties in County Brief and Workforce Outlook, and the adopted output validator passed. Registered Nurses, Aircraft Mechanics and Software Developers were checked, along with censored and hourly-only occupations. The original four occupations' 12 values match exactly. Other areas/observations and 13 other release tables have unchanged values/schema; all 141 original output files retain their hashes.

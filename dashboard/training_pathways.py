@@ -136,6 +136,10 @@ def render_pathways(frame, detail, regional, county, key="outlook_pathways_"):
     else:
         from geography import county_oews_area
         st.caption(f"Pay describes the {county_oews_area(county)[1]} OEWS area, not county pay or starting pay. It keeps its own reference period, separate from the regional projection.")
+        if 'quality_note' in pay:
+            for note in pay.loc[~pay.availability_status.eq('published'), 'quality_note'].dropna().unique():
+                if note:
+                    st.caption(note)
     st.caption("Projected annual openings include growth, occupation transfers and labor-force exits. They are not current vacancies; exits are not measured retirements.")
     mapping = crosswalk.loc[crosswalk.occupation_code.eq(occupation)]
     st.markdown("#### Related programs at institutions in the county")

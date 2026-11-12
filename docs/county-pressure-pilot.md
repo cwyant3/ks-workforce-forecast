@@ -4,7 +4,7 @@
 
 ## Current release
 
-Adopted release: `20261112T193557_923d1ce9` (2026-11-12). Rollback target: `20261112T154042_8f2556d5`. Evidence folder: `data/pressure_sources/2026-11-12-oews-wichita` (git-ignored, local only). Publication of the Wichita expansion is authorized; hosted verification is pending. The previously verified hosted release is `20261112T154042_8f2556d5`. Each source update is recorded in `docs/data-refresh-log.md`. It is not a statewide shortage score; no composite is calculated.
+Adopted release: `20261112T193557_923d1ce9` (2026-11-12). Rollback target: `20261112T154042_8f2556d5`. Evidence folder: `data/pressure_sources/2026-11-12-oews-wichita` (git-ignored, local only). Dashboard commit `0df157f` was pushed to working/deployment branches; Chris restarted the hosted app. Hosted verification confirms this release, all 486 Wichita options, published-inventory scope, three occupation wage checks, lower-bound/hourly-only explanations and Registered Nurses in Workforce Outlook. Each source update is recorded in `docs/data-refresh-log.md`. It is not a statewide shortage score; no composite is calculated.
 
 Coverage, all 105 Kansas counties unless noted:
 

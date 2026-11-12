@@ -1443,10 +1443,20 @@ def main():
         # needs neither Reset nor a browser resize to fit the county boundaries.
         if tab_population.open:
             try:
-                st.plotly_chart(
-                    state_choropleth(map_data, state_fips, end_year, base_year=base_year),
-                    width="stretch",
-                    key=f"state-county-map-{state_fips}-{view_mode}",
+                # Bundle the figure's own Plotly renderer. The hosted native
+                # chart renderer restored a different initial geo view even
+                # when explicit bounds and visible-tab mounting were supplied.
+                figure = state_choropleth(map_data, state_fips, end_year, base_year=base_year)
+                map_html = figure.to_html(
+                    full_html=False, include_plotlyjs=True,
+                    config={"responsive": True, "displaylogo": False, "scrollZoom": False},
+                    default_width="100%", div_id="state-county-map",
+                )
+                st.iframe(
+                    "<!doctype html><html><head><title>County population map</title>"
+                    "<style>html,body{margin:0;padding:0;overflow:hidden}</style></head>"
+                    f"<body>{map_html}</body></html>",
+                    height=420, width="stretch",
                 )
             except Exception:
                 st.warning(

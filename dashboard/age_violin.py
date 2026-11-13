@@ -69,7 +69,11 @@ def age_violin_figure(state, year, density_scale, baseline_state=None, baseline_
         labels.append(f"{name}<br>{total:,.0f}")
         if baseline_state is not None and year != baseline_year:
             change = float(summary.iloc[index]["Change vs baseline (%)"])
-            fig.add_annotation(x=index, xref="x", y=1.0, yref="paper", yanchor="bottom", showarrow=False,
+            # Alternate rows keep neighboring full-value labels apart on phones.
+            # Retain readable type and the same signed percentage text at every width.
+            fig.add_annotation(x=index, xref="x", y=1.12 if index % 2 == 0 else 1.0,
+                               yref="paper", xanchor="center", yanchor="bottom", showarrow=False,
+                               bgcolor="#F8FAFC", borderpad=2,
                                text=f"<b>{format_change(change)}</b>", font=dict(size=14,
                                color="#6B7780" if np.isnan(change) else "#2F7D32" if change > 0 else "#B3261E" if change < 0 else "#6B7780"))
         if total <= 0:

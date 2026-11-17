@@ -1811,6 +1811,9 @@ def main():
             sector_stats: dict = {}
             total_jobs_2023 = 0
             total_jobs_end  = 0
+            # A sector whose baseline the source withheld is left out of BOTH
+            # totals; adding its projection alone would overstate the change.
+            sectors_without_base: list[str] = []
             for sector in SECTORS:
                 s_rows   = state_sector_df[state_sector_df["sector"] == sector]
                 base     = float(s_rows["emp_base"].iloc[0]) if len(s_rows) and not pd.isna(s_rows["emp_base"].iloc[0]) else None
@@ -1822,10 +1825,11 @@ def main():
                 pct      = (delta / base * 100) if (base and delta is not None) else None
                 sector_stats[sector] = dict(base=base, proj=proj_val, ci_lo=ci_lo, ci_hi=ci_hi,
                                             delta=delta, pct=pct)
-                if base:
+                if base and proj_val:
                     total_jobs_2023 += base
-                if proj_val:
                     total_jobs_end  += proj_val
+                elif proj_val:
+                    sectors_without_base.append(sector)
 
             total_delta = total_jobs_end - total_jobs_2023
             wf_supply_2023 = float(summary["workforce_base"].sum())
@@ -1877,6 +1881,13 @@ def main():
                 _fmt(total_jobs_end),
                 f'<span class="{demand_arrow}">{total_delta:+,.0f} net new jobs</span>',
             ), unsafe_allow_html=True)
+            if sectors_without_base:
+                st.caption(
+                    f"Sector job totals cover {len(SECTORS) - len(sectors_without_base)} of {len(SECTORS)} sectors. "
+                    f"The {sec_base_year} baseline is withheld by the source for "
+                    + ", ".join(sector_label(x) for x in sectors_without_base)
+                    + "; those sectors are left out of both totals so the change compares like with like."
+                )
 
             st.markdown("<br>", unsafe_allow_html=True)
 

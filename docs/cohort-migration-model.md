@@ -2,9 +2,10 @@
 
 Revised 2026-11-17 on branch `fix/cohort-migration-uncertainty`. Code: `cohort_model.py`
 (`fit_migration_model`, `CountyCohortModel.project`). Check: `scripts/backtest_cohort_migration.py`.
-The Kansas forecast tables were regenerated on this branch for review, with preview release
-`20261117T214752_1e1cf231` staged beside them. Nothing is adopted; that is a separate
-release decision. The app's migration and range text follows the forecast on file
+The Kansas and Missouri forecast tables were regenerated on this branch for review, and the
+Kansas county sector table was rebuilt on the revised population. Preview release
+`20261117T221214_8929b5f9` holds the dependent Kansas tables and supersedes
+`20261117T214752_1e1cf231`. Nothing is adopted; that is a separate release decision. The app's migration and range text follows the forecast on file
 (`pooled_migration` in `dashboard/app.py`), so it describes whichever model built it.
 
 An independent review on 2026-11-17 re-derived the estimator, reproduced the figures below

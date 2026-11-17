@@ -2465,3 +2465,15 @@ Effect, Missouri: 2035 median 3,567,902 (-3.61%) -> 3,660,085 (-1.12%); P10-P90 
 Effect, Kansas City metro panel (2026 -> 2035): metro +3.17% -> +3.23%; Kansas counties +4.49% -> +2.38%; Missouri counties +2.24% -> +3.83%.
 Not rebuilt: Missouri's sector tables. They predate the current sector code (suppression handling) and would change for reasons unrelated to the population model: 127 county-sector baselines and 210 methods differ on a like-for-like rebuild. Colorado, Nebraska and Oklahoma are unchanged.
 Needs a human decision to adopt.
+
+## [2026-11-17] cohort-model | Colorado, Nebraska and Oklahoma forecasts rebuilt on the revised model (not adopted)
+Vintage before: projections / state_projection / county_summary / projections_effective for s08, s31 and s40, last committed 2026-08-27 (512b70c).
+Vintage after:  on branch fix/cohort-migration-uncertainty only. The four tables per state regenerated with the revised model (seed 20260424, 2,000 draws, 2026-2035).
+Checked: the previous model on each state's committed acs_combined table reproduces its stored forecast exactly (max difference 0). These three states' stored runs applied no single-grade youth update, and none was added here, so the comparison is like for like. scripts/validate_outputs.py passes for 08, 31 and 40; 240 tests pass; headless app render shows no errors for each state.
+Effect, Colorado (64 counties): 2035 median 4,185,678 (+12.62%) -> 4,088,200 (+10.00%); P10-P90 4.155M-4.217M -> 3.871M-4.332M; counties down >10% 26 -> 2; county change range -43.3..+36.5 -> -10.4..+30.5; 42 counties move more than 5 points, 18 change direction.
+Effect, Nebraska (93): 2035 median 1,204,161 (+3.53%) -> 1,211,625 (+4.17%); P10-P90 1.192M-1.216M -> 1.188M-1.236M; counties down >10% 45 -> 13; range -58.2..+57.7 -> -23.2..+13.9; 60 move more than 5 points, 19 change direction.
+Effect, Oklahoma (77): 2035 median 2,491,364 (+3.55%) -> 2,495,283 (+3.71%); P10-P90 2.472M-2.510M -> 2.456M-2.534M; counties down >10% 26 -> 14; range -29.1..+31.0 -> -16.8..+33.5; 17 move more than 5 points, 7 change direction.
+Fit by state (points per year): Colorado statewide +1.45 (sd 0.45), persistent county sd 1.04, annual shock 0.54, share of own history kept 0.22-0.95; Nebraska +0.51 (0.14), 0.67, 0.26, 0.15-0.97; Oklahoma +0.51 (0.07), 1.04, 0.57, 0.65-0.95. Backtest 80% range held 69% (Colorado), 62% (Nebraska) and 65% (Oklahoma); Colorado's 2024 state total fell outside its 80% range.
+App: the methodology text now reads each state's own range of shares kept; it previously quoted the Kansas figures for every state.
+Not rebuilt: these states' participation tables still use the retired disability-subtracted formula, so projections_effective keeps that basis and the app continues to hide participation for them. Their sector tables predate the current sector code (610, 890 and 810 county-sector baseline rows differ on a like-for-like rebuild) and were left alone. No youth update was added.
+Needs a human decision to adopt.

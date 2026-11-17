@@ -582,8 +582,8 @@ anything else the aging step misses, so it is not a count of movers.
 - One county's residual is partly survey noise, most of all in small counties. All counties
   in the state are therefore fitted together: each county's rate is pulled toward the
   statewide rate by how much of the county-to-county spread persists from one period to the
-  next and by how large its ACS sampling error is. The largest counties keep about 85% of
-  their own rate; the smallest keep about 40%.
+  next and by how large its ACS sampling error is. In this state counties keep between
+  {keep_low:.0%} and {keep_high:.0%} of their own rate; larger counties keep more.
 - The statewide rate is population-weighted, so it mostly reflects the largest counties.
 
 ### Model Ranges
@@ -3465,7 +3465,10 @@ def main():
     # ═════════════════════════════════════════════════════════════════════
     with tab_method:
         _pooled = pooled_migration(proj)
-        migration_text = (MIGRATION_TEXT_POOLED if _pooled else MIGRATION_TEXT_LEGACY).format(base_year=base_year)
+        # Shares differ by state, so the text reads them from the forecast on file.
+        _kept = proj["mig_shrink_weight"] if _pooled and "mig_shrink_weight" in proj.columns else pd.Series([0.0, 1.0])
+        migration_text = (MIGRATION_TEXT_POOLED if _pooled else MIGRATION_TEXT_LEGACY).format(
+            base_year=base_year, keep_low=float(_kept.min()), keep_high=float(_kept.max()))
         migration_limits = MIGRATION_LIMITS_POOLED if _pooled else MIGRATION_LIMITS_LEGACY
         st.markdown(f"""
 ## Methodology

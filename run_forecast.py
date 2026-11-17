@@ -438,9 +438,12 @@ def main(state_fips: str = "20", api_key: str | None = None,
 
 def _build_summary(proj_df: pd.DataFrame, start_year: int, end_year: int) -> pd.DataFrame:
     """One-row-per-county summary: baseline + mid + end-point metrics."""
+    # Migration-model columns added 2026-11-17; older projection files lack them.
+    migration_cols = [c for c in ("mig_raw_pct", "mig_shrink_weight", "mig_mean_sd_pct",
+                                  "base_cv_pct", "migration_method") if c in proj_df.columns]
     base = proj_df.groupby("county_fips").first()[
         ["county_name", "workforce_base", "pop_total_base", "mig_mean_pct", "mig_std_pct",
-         "state_fips", "estimate_type", "acs_overlap_note"]
+         *migration_cols, "state_fips", "estimate_type", "acs_overlap_note"]
     ].reset_index()
 
     mid_year = (start_year + end_year) // 2

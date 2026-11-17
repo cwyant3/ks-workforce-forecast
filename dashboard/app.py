@@ -560,6 +560,83 @@ def _markdown_table(headers: list[str], rows: list[list[str]]) -> str:
     return "\n".join([header, divider, body]) if rows else "\n".join([header, divider])
 
 
+def pooled_migration(data) -> bool:
+    """True when the loaded forecast came from the state-pooled migration model.
+
+    Text about the migration estimate and the ranges follows the data on file,
+    so a code update never describes a model the stored forecast did not use.
+    """
+    values = data.get("migration_method") if data is not None else None
+    if values is None:
+        return False
+    return bool(pd.Series(values).eq("state_pooled_shrinkage").all())
+
+
+MIGRATION_TEXT_POOLED = """### Migration Estimation
+A county's migration rate is a **cohort-survival residual**: age the county's own ACS age
+structure forward with no migration, compare the expected working-age population with the
+next ACS estimate, and annualize the gap. The residual also absorbs survey error and
+anything else the aging step misses, so it is not a count of movers.
+- Only non-overlapping ACS 5-year vintages are compared, ending at the latest one
+  (for this release 2015 → 2019 → {base_year}; 2021 overlaps both neighbours and is skipped).
+- One county's residual is partly survey noise, most of all in small counties. All counties
+  in the state are therefore fitted together: each county's rate is pulled toward the
+  statewide rate by how much of the county-to-county spread persists from one period to the
+  next and by how large its ACS sampling error is. The largest counties keep about 85% of
+  their own rate; the smallest keep about 40%.
+- The statewide rate is population-weighted, so it mostly reflects the largest counties.
+
+### Model Ranges
+2,000 Monte Carlo simulations per county. Each simulation combines four sources:
+1. uncertainty in the county's long-run migration rate (held for the whole horizon);
+2. a statewide shift shared by every county, so county results add up to a state range;
+3. year-to-year shocks from an **AR(1) process** (φ = 0.3, an assumption);
+4. sampling error in the ACS baseline count itself.
+
+| Band | Percentiles |
+|------|-------------|
+| 50% model range (IQR) | P25–P75 |
+| 80% model range | P10–P90 |
+| 90% model range | P5–P95 |
+
+These are model ranges, not guarantees. In a backtest from the 2015–2019 ACS to the
+2020–2024 ACS, the 80% range held the later estimate in about 3 of 4 Kansas counties and
+about 2 of 3 counties across Kansas, Colorado, Missouri, Nebraska and Oklahoma. That
+backtest had one historical period to learn from, so it tested assumed settings, not the
+two-period fit used here, and it is one five-year window spanning the pandemic and the
+2020 Census re-base. The statewide range rests on the difference between two historical
+periods and is indicative only. Mortality, aging and participation are treated as known,
+so true uncertainty is wider than shown.
+"""
+
+MIGRATION_TEXT_LEGACY = """### Migration Estimation
+The forecast on file predates the 2026-11-17 revision of the migration model. Each
+county's migration rate is its annualized working-age growth between the 2011–2015 and
+2015–2019 ACS, plus a flat 0.3%: one observation per county, with no adjustment for the
+county's age structure.
+
+### Model Ranges
+2,000 Monte Carlo simulations per county draw a yearly rate around that value with a fixed
+spread of 0.5 points and an **AR(1) process** (φ = 0.3). The spread is an assumption, the
+same for every county, and the county's rate is treated as known.
+
+| Band | Percentiles |
+|------|-------------|
+| 50% model range (IQR) | P25–P75 |
+| 80% model range | P10–P90 |
+| 90% model range | P5–P95 |
+
+Read these as simulation ranges, not likelihoods. In a backtest from the 2015–2019 ACS to
+the 2020–2024 ACS, the P10–P90 range held the later Kansas estimate in about 1 of 5
+counties.
+"""
+
+MIGRATION_LIMITS_POOLED = """- Small counties have wide model ranges: their baseline is a survey estimate with a large margin of error, and about half of their migration rate comes from the statewide rate
+- The statewide migration rate and its spread rest on two historical periods"""
+
+MIGRATION_LIMITS_LEGACY = """- Model ranges use one fixed migration spread for every county and understate uncertainty, most of all in small counties"""
+
+
 def build_narrative_handoff(
     selected_state: str,
     spotlight_county: str,
@@ -692,7 +769,8 @@ Forecast window: {base_year}-{end_year}
         ["Median projection", _fmt(spotlight["wf_end_p50"]), f"{spotlight['pct_change_end']:+.1f}% by {end_year}"],
         ["Annual age-range exits", _fmt(spotlight["annual_retirements_end"]), f"{end_year} exit pressure"],
         ["Annual entries", _fmt(spotlight["annual_entries_end"]), f"{end_year} youth pipeline"],
-        ["Migration history", f"{spotlight['mig_mean_pct']:+.2f}%/yr", "ACS cohort residual"],
+        ["Migration assumption", f"{spotlight['mig_mean_pct']:+.2f}%/yr",
+         "ACS residual, pooled with the state" if pooled_migration(spotlight) else "2015–2019 ACS growth rule"],
     ],
 )}
 {sector_table}
@@ -762,7 +840,8 @@ Forecast window: {base_year}-{end_year}
 The dashboard uses an annual cohort-component model for working-age population (18-64)
 by county. It starts from ACS 5-year age-by-sex estimates, applies survival and aging,
 models entry from the 15-17 cohort into 18-24, models age-range exits from 60-64 into
-65+, and applies county migration residuals through Monte Carlo simulation.
+65+, and applies a county migration rate through Monte Carlo simulation. The Methodology
+tab states how that rate and its range were estimated for the forecast on file.
 
 ## Layer Status
 {_markdown_table(["Layer", "Status", "Use"], layer_rows)}
@@ -791,13 +870,13 @@ def ci_chart(df: pd.DataFrame, title: str,
         x=pd.concat([df["year"], df["year"].iloc[::-1]]),
         y=pd.concat([df["p95"], df["p5"].iloc[::-1]]),
         fill="toself", fillcolor="rgba(0,63,135,0.10)",
-        line=dict(color="rgba(255,255,255,0)"), name="90% PI", hoverinfo="skip",
+        line=dict(color="rgba(255,255,255,0)"), name="90% model range", hoverinfo="skip",
     ))
     fig.add_trace(go.Scatter(
         x=pd.concat([df["year"], df["year"].iloc[::-1]]),
         y=pd.concat([df["p90"], df["p10"].iloc[::-1]]),
         fill="toself", fillcolor="rgba(0,63,135,0.17)",
-        line=dict(color="rgba(255,255,255,0)"), name="80% PI", hoverinfo="skip",
+        line=dict(color="rgba(255,255,255,0)"), name="80% model range", hoverinfo="skip",
     ))
     fig.add_trace(go.Scatter(
         x=pd.concat([df["year"], df["year"].iloc[::-1]]),
@@ -990,8 +1069,8 @@ def main():
 
         if view_mode == "Full Explorer":
             st.markdown("### Chart options")
-            show_90ci = st.checkbox("Show 90% prediction band", value=True)
-            show_50ci = st.checkbox("Show 50% prediction band (IQR)", value=True)
+            show_90ci = st.checkbox("Show 90% model range", value=True)
+            show_50ci = st.checkbox("Show 50% model range (IQR)", value=True)
             st.markdown("---")
             st.markdown("### Map filter")
             min_pop = st.slider("Min county pop (baseline)", 0, 50000, 0, step=1000)
@@ -999,7 +1078,7 @@ def main():
         st.markdown(
             "**Data:** U.S. Census Bureau ACS 5-Year  \n"
             "**Model:** Annual cohort-component  \n"
-            "**Intervals:** Monte Carlo AR(1) migration"
+            "**Ranges:** Monte Carlo migration simulation"
         )
         st.markdown(
             '<div class="note-box">Forecast is for planning purposes. '
@@ -1314,7 +1393,8 @@ def main():
                 {"Signal": f"{end_year} median projection", "Value": _fmt(spotlight["wf_end_p50"]), "Read": f"{spotlight['pct_change_end']:+.1f}% change"},
                 {"Signal": f"Annual age-range exits ({end_year})", "Value": _fmt(spotlight["annual_retirements_end"]), "Read": "exit pressure"},
                 {"Signal": f"Annual entries ({end_year})", "Value": _fmt(spotlight["annual_entries_end"]), "Read": "youth pipeline"},
-                {"Signal": "Migration history", "Value": f"{spotlight['mig_mean_pct']:+.2f}%/yr", "Read": "ACS cohort residual"},
+                {"Signal": "Migration assumption", "Value": f"{spotlight['mig_mean_pct']:+.2f}%/yr",
+                 "Read": "ACS residual, pooled with the state" if pooled_migration(spotlight) else "2015–2019 ACS growth rule"},
             ])
             st.dataframe(spotlight_rows, hide_index=True, width="stretch")
 
@@ -1558,8 +1638,9 @@ def main():
         ckpis = [
             (f"{base_year} Working-Age",       _fmt(wf_base), ""),
             (f"Projected {end_year} (Median)", _fmt(wf_end),  _delta_html(pct_end)),
-            (f"80% PI ({end_year})",           f"{_fmt(wf_end_lo)} – {_fmt(wf_end_hi)}", ""),
-            ("Est. Annual Migration Rate",     f"{mig_rate:+.2f}%", "historical avg"),
+            (f"80% model range ({end_year})",  f"{_fmt(wf_end_lo)} – {_fmt(wf_end_hi)}", ""),
+            ("Est. Annual Migration Rate",     f"{mig_rate:+.2f}%",
+             "pooled estimate" if pooled_migration(county_sum) else "2015–2019 growth rule"),
             (f"Annual Age-Range Exits ({end_year})", _fmt(ann_ret), f"entries: {_fmt(ann_ent)}"),
         ]
         for col, (lbl, val, dlt) in zip(ccols, ckpis):
@@ -1568,8 +1649,9 @@ def main():
         data_flags = ["ACS 5-year period estimate", "overlapping vintages"]
         if county_sum.get("pop_total_base", 0) < 2000:
             data_flags.append("small county: wider uncertainty")
-        if county_sum.get("mig_std_pct", 0) >= 3:
-            data_flags.append("volatile migration history")
+        # Under 60% of the county's own migration history is kept; the rest is the statewide rate.
+        if county_sum.get("mig_shrink_weight", 1) < 0.6:
+            data_flags.append("migration leans on statewide rate")
         st.markdown(quality_badges(*data_flags), unsafe_allow_html=True)
 
         # ── Participation model KPI row (shown if data exists) ────────────
@@ -1631,13 +1713,13 @@ def main():
                 x=pd.concat([county_proj["year"], county_proj["year"].iloc[::-1]]),
                 y=pd.concat([county_proj["p95"], county_proj["p5"].iloc[::-1]]),
                 fill="toself", fillcolor="rgba(0,63,135,0.10)",
-                line=dict(color="rgba(0,0,0,0)"), name="90% PI", hoverinfo="skip",
+                line=dict(color="rgba(0,0,0,0)"), name="90% model range", hoverinfo="skip",
             ))
         fig_c.add_trace(go.Scatter(
             x=pd.concat([county_proj["year"], county_proj["year"].iloc[::-1]]),
             y=pd.concat([county_proj["p90"], county_proj["p10"].iloc[::-1]]),
             fill="toself", fillcolor="rgba(0,63,135,0.18)",
-            line=dict(color="rgba(0,0,0,0)"), name="80% PI", hoverinfo="skip",
+            line=dict(color="rgba(0,0,0,0)"), name="80% model range", hoverinfo="skip",
         ))
         if show_50ci:
             fig_c.add_trace(go.Scatter(
@@ -1955,7 +2037,7 @@ def main():
                 y=pd.concat([state_proj["p90"], state_proj["p10"].iloc[::-1]]),
                 fill="toself", fillcolor="rgba(0,63,135,0.10)",
                 line=dict(color="rgba(0,0,0,0)"),
-                name="Population 80% PI", hoverinfo="skip", yaxis="y1",
+                name="Population 80% model range", hoverinfo="skip", yaxis="y1",
                 showlegend=False,
             ))
             fig_svd.add_trace(go.Scatter(
@@ -3382,6 +3464,9 @@ def main():
     # TAB 9 — METHODOLOGY
     # ═════════════════════════════════════════════════════════════════════
     with tab_method:
+        _pooled = pooled_migration(proj)
+        migration_text = (MIGRATION_TEXT_POOLED if _pooled else MIGRATION_TEXT_LEGACY).format(base_year=base_year)
+        migration_limits = MIGRATION_LIMITS_POOLED if _pooled else MIGRATION_LIMITS_LEGACY
         st.markdown(f"""
 ## Methodology
 
@@ -3417,23 +3502,7 @@ county of **{selected_state}** from a {base_year} ACS baseline through {end_year
 4. **Working-age range exits** — The 60–64 cohort ages into 65+ (1/5 per year)
 5. **Net migration** — Annual net migration rate applied proportionally across all working-age cohorts
 
-### Migration Estimation
-County net migration rates are estimated using the **cohort-survival residual method**:
-- Historical working-age population change is observed from ACS 5-year snapshots (2015 → 2019 → 2021 → {base_year})
-- Overlapping ACS 5-year intervals are downweighted/excluded where non-overlapping comparisons are available
-- The expected change from mortality alone is subtracted, leaving the migration residual
-- The mean and standard deviation form the county's migration distribution
-
-### Prediction Intervals
-2,000 Monte Carlo simulations per county. Each draws an annual migration-rate sequence
-from an **AR(1) process** (φ = 0.3) reflecting migration persistence year-over-year.
-
-| Band | Percentiles | Interpretation |
-|------|-------------|----------------|
-| 50% PI (IQR) | P25–P75 | Core range — outcomes in this band half the time |
-| 80% PI | P10–P90 | Most likely range |
-| 90% PI | P5–P95 | Near-full uncertainty envelope |
-
+{migration_text}
 ### Industry Sector Forecast
 County-level employment and wage projections for five sectors using BLS QCEW 2015–{sec_base_year}
 annual averages. NAICS code groupings:
@@ -3496,7 +3565,7 @@ it does not change the cohort-model population projection.
 ### Limitations
 - National survival rates used; state-specific mortality may differ
 - ACS 5-year vintages are overlapping period estimates, not independent annual observations
-- Small counties (pop < 2,000) will have very wide confidence intervals
+{migration_limits}
 - Birth-rate pipeline — children born after {base_year} won't enter workforce until {base_year + 18}+
 - JOLTS and BLS projections are **national** — state-level demand signals must be inferred
 - LODES commute data lags 2–3 years; snapshot year may not match forecast base year

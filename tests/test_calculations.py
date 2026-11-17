@@ -51,7 +51,10 @@ def test_migration_estimator_skips_heavily_overlapping_acs_vintages():
     ]
     model = CountyCohortModel({}, history, n_sim=1)
 
-    expected = (1100 / 1000) ** (1 / 4) - 1 - (-0.003)
+    # The chain ends at the latest vintage (2017-21). 2015-19 overlaps it by
+    # three years and is skipped; 2011-15 does not overlap, so the one usable
+    # comparison is 2015 -> 2021. 2019 is never paired with 2021.
+    expected = (2000 / 1000) ** (1 / 6) - 1 - (-0.003)
     assert math.isclose(model.mig_mean, expected)
 
 

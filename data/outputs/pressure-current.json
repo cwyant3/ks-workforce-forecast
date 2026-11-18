@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "release_id": "20261112T193557_923d1ce9",
-  "created_utc": "2026-11-12T19:35:58.664975+00:00",
+  "release_id": "20261117T221214_8929b5f9",
+  "created_utc": "2026-11-17T22:12:15.470784+00:00",
   "scope": {
     "state": "20",
     "pilot_counties": [
@@ -468,10 +468,10 @@
       "qwi-2026-Q1-ks-81.json": "bd254324d3bf8657497e56fefedba7327c1ed4dc7cd0f45b02dd7e97fe3ddbcc",
       "qwi-version.txt": "4143de0f8d7b53df5ebc0464165759d4748e2261206d28a3dd26ae0b5ec84e4c"
     },
-    "population_forecast": "projections_s20.parquet sha256 6bb08eedde6abbfe0bc323b9ad595d02c2890ec9a0aa461018407245b3dd72a8",
+    "population_forecast": "projections_s20.parquet sha256 d6ec916ffa97ac7955181b522202e70f40406ff801bebdf6ef709ae93135b2f9",
     "geography_crosswalk_version": "2026-11-12",
     "regional_context": "KDOL projection regions 2022-2032 (all seven); OEWS May2025 areas in this release: Joplin, MO-KS; Kansas City, MO-KS; Kansas nonmetropolitan area; Lawrence, KS; Manhattan, KS; St. Joseph, MO-KS; Topeka, KS; Wichita, KS",
-    "sector_correction": "retained from adopted release",
+    "sector_correction": "reviewed rebuild",
     "composite_score": "not calculated"
   },
   "files": {
@@ -935,7 +935,7 @@
       ]
     },
     "pressure_kc_metro.parquet": {
-      "sha256": "df5b02f3f3be79cc3f9a0f48a291c921a7f0020e8ded871d62130208eb835757",
+      "sha256": "39e6a059891e963a3964f095bfef96da2c28e42a4b167961b5fee4f97a3639e3",
       "rows": 2338,
       "columns": [
         "source_id",
@@ -1051,7 +1051,7 @@
       ]
     },
     "projections_effective_s20.parquet": {
-      "sha256": "7d5356beb8fc026ea526f3dd0a99b0a346793fac6315755f9a9c7434fa441258",
+      "sha256": "115fc0b9b61c5101cf08cc563ea6eac7d96f0a78e063ec349fa9bc0da5e26a58",
       "rows": 1050,
       "columns": [
         "year",
@@ -1067,6 +1067,11 @@
         "entries_p50",
         "mig_mean_pct",
         "mig_std_pct",
+        "mig_mean_sd_pct",
+        "base_cv_pct",
+        "migration_method",
+        "mig_raw_pct",
+        "mig_shrink_weight",
         "county_fips",
         "county_name",
         "workforce_base",
@@ -1100,7 +1105,7 @@
       ]
     },
     "sector_projections_s20.parquet": {
-      "sha256": "7d54c25db6a2f0ee8f2744edd3f33b98d1de7f84d9a67a450bef17467222428b",
+      "sha256": "889ff4c9e5c7a2fdaeaec9f4fd2f470c30274ab51d67acfb792457a4829c57e3",
       "rows": 5250,
       "columns": [
         "year",
@@ -1671,5 +1676,5 @@
       }
     }
   ],
-  "previous_release_id": "20261112T154042_8f2556d5"
+  "previous_release_id": "20261112T193557_923d1ce9"
 }

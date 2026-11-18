@@ -2489,3 +2489,12 @@ Effect, participation (2024 baseline, share of working-age residents): Colorado 
 App: the statewide sector totals card added every sector's projection but only the baselines that exist, which would have shown Missouri with about 590,000 "net new jobs". A sector without a baseline is now left out of both totals and named in a caption. Kansas is unchanged (720,721 -> 773,353).
 Limits: the sector model itself is unchanged and still extrapolates county trends freely (Logan County, Oklahoma IT: 800 jobs in 2025 to 12,217 in 2035). County-sectors with no usable local data take a population share of the state forecast and can be far from reality. The 2025 statewide suppression for Missouri and Nebraska is as recorded in the cached BLS files and was not re-fetched.
 Needs a human decision to adopt.
+
+## [2026-11-17] release | Revised working-age forecast adopted; release 20261117T221214_8929b5f9
+Decision: Chris, in session on 2026-11-17: adopt the preview release, then publish to main and master and bring the working branch level.
+Vintage before: adopted release 20261112T193557_923d1ce9 with the 2026-11-10 population forecast.
+Vintage after:  adopted release 20261117T221214_8929b5f9; rollback target 20261112T193557_923d1ce9. Population forecast, Missouri, Colorado, Nebraska and Oklahoma tables as recorded in the four entries above.
+Checked: adopt_release re-hashed and re-validated all fourteen tables and confirmed the active release matched the staged manifest's previous release. scripts/validate_outputs.py --state 20 --pressure passes; 240 tests pass; headless app render shows no errors in Workforce Outlook, County Brief and Full Explorer and reports the new release.
+Changed for a Kansas viewer: working-age forecast and ranges (now labelled model ranges), participating residents, 228 population-share county-sector forecasts, the Kansas City metro panel, and the methodology text. Kansas 2035 median 1,724,635 -> 1,731,277; counties down more than 10%: 62 -> 18.
+Known limits carried into this release: small-county rates depend on two modeling choices that two historical periods cannot settle; the 80% range held about three in four Kansas counties in the backtest and fewer elsewhere; the sector model is unchanged. See docs/cohort-migration-model.md.
+Pending: hosted verification after publication and app restart.

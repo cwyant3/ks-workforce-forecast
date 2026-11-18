@@ -50,6 +50,7 @@ OUTPUT_DIR   = BASE_DIR / "data" / "outputs"
 sys.path.insert(0, str(BASE_DIR))
 from fetch_acs      import fetch_all
 from cohort_model   import DEFAULT_RANDOM_SEED, run_all_counties
+from forecast_settings import extra_acs_years, refined
 from fetch_qcew     import fetch_state_qcew
 from sector_model   import run_all_sectors, project_total_employment
 from fetch_laus     import fetch_laus, compute_lfpr
@@ -99,7 +100,11 @@ def main(state_fips: str = "20", api_key: str | None = None,
 
     # ── 1. Fetch ACS data ──────────────────────────────────────────────────
     print("\n=== STEP 1: Fetching ACS data ===")
-    acs_df = fetch_all(state_fips=state_fips, api_key=api_key, cache_dir=CACHE_DIR)
+    # Refined states (forecast_settings.py) add the 2005-2009 vintage and need
+    # the survey-error column; Kansas keeps the four vintages behind its release.
+    use_refined = refined(state_fips)
+    acs_df = fetch_all(state_fips=state_fips, api_key=api_key, cache_dir=CACHE_DIR,
+                       extra_years=extra_acs_years(state_fips), require_survey_error=use_refined)
     print(f"  Loaded {len(acs_df)} county-year rows "
           f"({acs_df['county_fips'].nunique()} counties, "
           f"years: {sorted(acs_df['year'].unique())})")
@@ -113,7 +118,9 @@ def main(state_fips: str = "20", api_key: str | None = None,
     # youth bands from the ACS period midpoint to the baseline year by ratio
     # (see fetch_ksde.apply_ksde_override). Enrollment never replaces ACS levels.
     # NCES CCD single-grade enrollment is national, so the youth update runs for
-    # any state (Missouri added 2026-11-10); the grade-group trend file is Kansas-only.
+    # any state (Missouri added 2026-11-10; Colorado, Nebraska and Oklahoma
+    # 2026-11-18); the grade-group trend file is Kansas-only. Refined states
+    # leave out fully virtual schools, which sit in the wrong county.
     if run_ksde:
         print("\n=== STEP 1b: Updating ACS youth cohorts with NCES CCD single-grade enrollment ===")
         if state_fips.zfill(2) == "20":
@@ -123,7 +130,8 @@ def main(state_fips: str = "20", api_key: str | None = None,
                 ksde_df.to_parquet(ksde_out, index=False)
                 print(f"  Saved: {ksde_out.name}")
         anchor_year, target_year = ksde_override_years(int(acs_df["year"].max()))
-        grades_df = fetch_ksde_grades([anchor_year, target_year], cache_dir=KSDE_CACHE, state_fips=state_fips)
+        grades_df = fetch_ksde_grades([anchor_year, target_year], cache_dir=KSDE_CACHE, state_fips=state_fips,
+                                      exclude_virtual=use_refined)
         if not grades_df.empty:
             acs_df, ksde_diag = apply_ksde_override(acs_df, grades_df, return_diagnostics=True)
             diag_out = OUTPUT_DIR / f"ksde_youth_adjustment_s{state_fips}.parquet"
@@ -141,6 +149,7 @@ def main(state_fips: str = "20", api_key: str | None = None,
         n_sim=n_sim,
         return_state_simulations=True,
         random_seed=random_seed,
+        refined=use_refined,
     )
 
     proj_out = OUTPUT_DIR / f"projections_s{state_fips}.parquet"
@@ -561,7 +570,8 @@ if __name__ == "__main__":
     parser.add_argument("--kdol",  action="store_true",
                         help="Fetch Kansas KDOL UI claims (KS only; requires manual file if download fails)")
     parser.add_argument("--ksde", action="store_true",
-                        help="Fetch KSDE K-12 enrollment; move ACS youth cohorts to the baseline year by single-grade ratios (KS only)")
+                        help="Move ACS youth cohorts to the baseline year by NCES CCD single-grade enrollment ratios (any state); "
+                             "also fetch the Kansas grade-group trend file for state 20")
     parser.add_argument("--ssa",  action="store_true",
                         help="Fetch SSA SSDI/SSI disability counts and build participation model Layer 2")
     parser.add_argument("--bls-proj", action="store_true", dest="bls_proj",

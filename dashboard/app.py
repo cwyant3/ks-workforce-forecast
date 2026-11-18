@@ -569,7 +569,15 @@ def pooled_migration(data) -> bool:
     values = data.get("migration_method") if data is not None else None
     if values is None:
         return False
-    return bool(pd.Series(values).eq("state_pooled_shrinkage").all())
+    return bool(pd.Series(values).isin(["state_pooled_shrinkage", "state_pooled_refined"]).all())
+
+
+def refined_migration(data) -> bool:
+    """True when the forecast on file used the refined estimator (2026-11-18)."""
+    values = data.get("migration_method") if data is not None else None
+    if values is None:
+        return False
+    return bool(pd.Series(values).eq("state_pooled_refined").all())
 
 
 MIGRATION_TEXT_POOLED = """### Migration Estimation
@@ -609,6 +617,50 @@ periods and is indicative only. Mortality, aging and participation are treated a
 so true uncertainty is wider than shown.
 """
 
+MIGRATION_TEXT_REFINED = """### Migration Estimation
+A county's migration rate is a **cohort-survival residual**: age the county's own ACS age
+structure forward with no migration, compare the expected working-age population with the
+next ACS estimate, and annualize the gap. The residual also absorbs survey error and
+anything else the aging step misses, so it is not a count of movers.
+- Only non-overlapping ACS 5-year vintages are compared, ending at the latest one
+  (for this state 2009 → 2015 → 2019 → {base_year}; 2021 overlaps both neighbours and is skipped).
+- One county's residual is partly survey noise, most of all in small counties. All counties
+  in the state are therefore fitted together: each county's rate is pulled toward the state
+  pattern by how much of the county-to-county spread persists from one period to the next
+  and by how large its ACS sampling error is. The sampling error is taken from the margins
+  the Census Bureau publishes. In this state counties keep between {keep_low:.0%} and
+  {keep_high:.0%} of their own rate; larger counties keep more.
+- The state pattern is the population-weighted statewide rate, tilted by county size: in
+  this state's history larger counties gained working-age residents faster than smaller
+  ones. The tilt leaves the statewide rate itself unchanged.
+- Smaller counties are given larger year-to-year swings, sized from their own history.
+
+### Model Ranges
+2,000 Monte Carlo simulations per county. Each simulation combines four sources:
+1. uncertainty in the county's long-run migration rate (held for the whole horizon);
+2. a statewide shift shared by every county, so county results add up to a state range;
+3. year-to-year shocks from an **AR(1) process** (φ = 0.3, an assumption), larger in
+   smaller counties;
+4. sampling error in the ACS baseline count itself.
+
+| Band | Percentiles |
+|------|-------------|
+| 50% model range (IQR) | P25–P75 |
+| 80% model range | P10–P90 |
+| 90% model range | P5–P95 |
+
+These are model ranges, not guarantees, and two backtests disagree about them. From the
+2015–2019 ACS to the 2020–2024 ACS, a window that spans the pandemic and the 2020 Census
+re-base, the 80% range held the later estimate in 77% of Colorado counties, 69% in
+Nebraska, 69% in Oklahoma and 55% in Missouri. From the 2011–2015 ACS to the 2015–2019
+ACS it held 70% in Colorado, 87% in Nebraska, 92% in Oklahoma and 91% in Missouri. So the
+ranges were too narrow in a period with a census re-base and about right or wide in a
+period without one, and this forecast runs through the 2030 Census. Missouri's ranges are
+the least reliable. The statewide range rests on three historical periods and is
+indicative only. Mortality, aging and participation are treated as known, so true
+uncertainty is wider than shown.
+"""
+
 MIGRATION_TEXT_LEGACY = """### Migration Estimation
 The forecast on file predates the 2026-11-17 revision of the migration model. Each
 county's migration rate is its annualized working-age growth between the 2011–2015 and
@@ -633,6 +685,10 @@ counties.
 
 MIGRATION_LIMITS_POOLED = """- Small counties have wide model ranges: their baseline is a survey estimate with a large margin of error, and about half of their migration rate comes from the statewide rate
 - The statewide migration rate and its spread rest on two historical periods"""
+
+MIGRATION_LIMITS_REFINED = """- Small counties have wide model ranges: their baseline is a survey estimate with a large margin of error, their history is volatile, and much of their migration rate comes from the state pattern
+- The statewide migration rate and its spread rest on three historical periods
+- In the backtest that spans the 2020 Census re-base the 80% range held between 55% and 77% of counties, so the ranges are better read as a lower bound on uncertainty"""
 
 MIGRATION_LIMITS_LEGACY = """- Model ranges use one fixed migration spread for every county and understate uncertainty, most of all in small counties"""
 
@@ -1192,7 +1248,7 @@ def main():
         <h1>{selected_state} Workforce Dashboard &nbsp; {start_year}–{end_year}</h1>
         <p>Population &rarr; Available Workforce &rarr; Demand Pressure &rarr;
            Sector Exposure &rarr; Local Action &nbsp;·&nbsp;
-           ACS 5-Year Estimates (2015–2024) &nbsp;·&nbsp; {n_counties} counties</p>
+           ACS 5-Year Estimates ({2009 if refined_migration(proj) else 2015}–2024) &nbsp;·&nbsp; {n_counties} counties</p>
     </div>""", unsafe_allow_html=True)
     st.markdown(funnel_strip(selected_state), unsafe_allow_html=True)
 
@@ -3479,9 +3535,12 @@ def main():
         _pooled = pooled_migration(proj)
         # Shares differ by state, so the text reads them from the forecast on file.
         _kept = proj["mig_shrink_weight"] if _pooled and "mig_shrink_weight" in proj.columns else pd.Series([0.0, 1.0])
-        migration_text = (MIGRATION_TEXT_POOLED if _pooled else MIGRATION_TEXT_LEGACY).format(
+        _refined = refined_migration(proj)
+        migration_text = (MIGRATION_TEXT_REFINED if _refined else
+                          MIGRATION_TEXT_POOLED if _pooled else MIGRATION_TEXT_LEGACY).format(
             base_year=base_year, keep_low=float(_kept.min()), keep_high=float(_kept.max()))
-        migration_limits = MIGRATION_LIMITS_POOLED if _pooled else MIGRATION_LIMITS_LEGACY
+        migration_limits = (MIGRATION_LIMITS_REFINED if _refined else
+                            MIGRATION_LIMITS_POOLED if _pooled else MIGRATION_LIMITS_LEGACY)
         st.markdown(f"""
 ## Methodology
 
@@ -3492,7 +3551,7 @@ county of **{selected_state}** from a {base_year} ACS baseline through {end_year
 ### Core Data Sources
 | Source | Tab | CLI Flag | Description |
 |--------|-----|----------|-------------|
-| U.S. Census Bureau ACS 5-Year Estimates | Population / Available Workforce | (required) | Age-by-sex population (B01001) and labor-force status (B23001) for 2015–2024; each vintage is a 5-year period estimate |
+| U.S. Census Bureau ACS 5-Year Estimates | Population / Available Workforce | (required) | Age-by-sex population (B01001) and labor-force status (B23001) for {2009 if _refined else 2015}–2024; each vintage is a 5-year period estimate |
 | CDC 2021 National Life Tables | All | (built-in) | Age-specific annual survival probabilities |
 | BLS Quarterly Census of Employment & Wages (QCEW) | Sector Exposure | (auto) | County annual employment and wages by NAICS sector, 2015–{sec_base_year} |
 
@@ -3506,7 +3565,7 @@ county of **{selected_state}** from a {base_year} ACS baseline through {end_year
 | 5 | Census CBP | (internal) | `--cbp` | County business patterns; establishment counts and trends |
 | 6 | BLS JOLTS | Demand Pressure | `--jolts` | National job openings and vacancy rates by sector |
 | 7 | KDOL UI | Demand Pressure | `--kdol` | Kansas county UI claims by industry (KS-only) |
-| 8 | KSDE/NCES CCD | (cohort model) | `--ksde` | Single-grade K-12 enrollment ratios move ACS youth cohorts from the ACS period midpoint to the baseline year (KS-only) |
+| 8 | KSDE/NCES CCD | (cohort model) | `--ksde` | Single-grade K-12 enrollment ratios move ACS youth cohorts from the ACS period midpoint to the baseline year (Kansas, Missouri, Colorado, Nebraska, Oklahoma; outside Kansas fully virtual schools are left out) |
 | 9 | SSA Disability | Available Workforce | `--ssa` | SSDI + SSI beneficiary context; no automatic labor-force deduction |
 | 10 | BLS Employment Projections | Demand Pressure | `--bls-proj` | 10-year national occupational employment projections |
 

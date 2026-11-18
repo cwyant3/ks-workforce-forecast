@@ -52,7 +52,13 @@ from cache_freshness import load_fresh_cache, save_if_complete
 _KS_FIPS   = "20"
 _ENROLL_BASE = "https://educationdata.urban.org/api/v1/school-districts/ccd/enrollment"
 _DIR_BASE    = "https://educationdata.urban.org/api/v1/school-districts/ccd/directory"
+_SCHOOL_ENROLL_BASE = "https://educationdata.urban.org/api/v1/schools/ccd/enrollment"
+_SCHOOL_DIR_BASE    = "https://educationdata.urban.org/api/v1/schools/ccd/directory"
 _PAGE_SIZE   = 1000
+# Education Data Portal code for the NCES school status FULLVIRTUAL ("all
+# instruction offered by the school is virtual"). 2 and 3 are schools with
+# face-to-face options or supplemental virtual courses and stay in.
+FULL_VIRTUAL_CODE = 1
 
 # CCD grade numbers: 0=Kindergarten, 1-12=grades 1-12
 _GRADE_GROUPS: dict[str, list[int]] = {
@@ -193,8 +199,38 @@ def _fetch_year_all_groups(
     return pd.concat([df, totals], ignore_index=True)
 
 
-def _fetch_year_grades(year: int, leaid_county: dict[str, str], state_fips: str = _KS_FIPS) -> pd.DataFrame:
-    """Fetch single grades K-12 for one year; aggregate to county x grade."""
+def _fetch_full_virtual_schools(years: list[int], state_fips: str) -> dict[str, str]:
+    """{school id: district id} for schools NCES classes as fully virtual in any requested year.
+
+    A statewide online school is reported under the district that authorizes
+    it and so lands in that district office's county, where its students do
+    not live. Colorado Connections Academy at Durango (964 students, 2022)
+    closed before 2024 and alone cut La Plata County's enrollment by 18%.
+    A school flagged in either year is left out of both, so a change of
+    status cannot pass for a change in population.
+    """
+    schools: dict[str, str] = {}
+    for year in years:
+        for row in _paginate(f"{_SCHOOL_DIR_BASE}/{year}/", {"fips": int(state_fips.zfill(2))}):
+            flag = row.get("virtual")
+            if flag is not None and int(flag) == FULL_VIRTUAL_CODE and row.get("ncessch") and row.get("leaid"):
+                schools[str(row["ncessch"]).zfill(12)] = str(row["leaid"])
+    return schools
+
+
+def _fetch_school_grade(year: int, grade: int, state_fips: str) -> list[dict]:
+    """School-level enrollment for one year and grade (all races, both sexes)."""
+    url = f"{_SCHOOL_ENROLL_BASE}/{year}/grade-{grade}/"
+    return _paginate(url, {"fips": int(state_fips.zfill(2)), "race": 99, "sex": 99})
+
+
+def _fetch_year_grades(year: int, leaid_county: dict[str, str], state_fips: str = _KS_FIPS,
+                       virtual_schools: dict[str, str] | None = None) -> pd.DataFrame:
+    """Fetch single grades K-12 for one year; aggregate to county x grade.
+
+    ``virtual_schools`` ({school id: district id}) are subtracted from their
+    district's county.
+    """
     out: dict[tuple[str, int], int] = {}
     for grade in range(0, 13):
         for row in _fetch_grade(year, grade, state_fips):
@@ -204,6 +240,14 @@ def _fetch_year_grades(year: int, leaid_county: dict[str, str], state_fips: str 
             if county is None or enroll is None or int(enroll) < 0:
                 continue
             out[(county, grade)] = out.get((county, grade), 0) + int(enroll)
+        if virtual_schools:
+            for row in _fetch_school_grade(year, grade, state_fips):
+                district = virtual_schools.get(str(row.get("ncessch", "")).zfill(12))
+                county = leaid_county.get(district) if district else None
+                enroll = row.get("enrollment")
+                if county is None or enroll is None or int(enroll) < 0 or (county, grade) not in out:
+                    continue
+                out[(county, grade)] = max(out[(county, grade)] - int(enroll), 0)
         time.sleep(0.2)
     return pd.DataFrame([{"state_fips": state_fips.zfill(2), "county_fips": c, "year": year, "grade": g, "enrollment": v}
                          for (c, g), v in out.items()])
@@ -384,6 +428,7 @@ def fetch_ksde_grades(
     years: list[int],
     cache_dir: Path,
     state_fips: str = "20",
+    exclude_virtual: bool = False,
 ) -> pd.DataFrame:
     """
     Single-grade (K-12) CCD enrollment by county for the requested years.
@@ -395,11 +440,17 @@ def fetch_ksde_grades(
     works; Missouri was added 2026-11-10. Cached at
     {cache_dir}/ksde_grades.parquet for Kansas (unchanged name) and
     {cache_dir}/ccd_grades_s{state}.parquet for other states.
+
+    ``exclude_virtual`` (2026-11-18) leaves out schools NCES classes as fully
+    virtual; see _fetch_full_virtual_schools. That variant has its own cache
+    file (suffix _novirtual) and carries a virtual_excluded column, so the
+    two can never be mistaken for each other.
     """
     sf = state_fips.zfill(2)
     years = sorted({int(y) for y in years})
     cache_dir.mkdir(parents=True, exist_ok=True)
-    cache_file = cache_dir / ("ksde_grades.parquet" if sf == _KS_FIPS else f"ccd_grades_s{sf}.parquet")
+    stem = "ksde_grades" if sf == _KS_FIPS else f"ccd_grades_s{sf}"
+    cache_file = cache_dir / (f"{stem}_novirtual.parquet" if exclude_virtual else f"{stem}.parquet")
     cached = load_fresh_cache(cache_file, years, "KSDE single-grade enrollment")
     if cached is not None:
         return cached[cached["year"].isin(years)].reset_index(drop=True)
@@ -411,11 +462,14 @@ def fetch_ksde_grades(
         warnings.warn("KSDE single-grade enrollment unavailable: CCD directory fetch failed.", UserWarning, stacklevel=2)
         return pd.DataFrame(columns=["state_fips", "county_fips", "year", "grade", "enrollment"])
 
+    virtual_schools = _fetch_full_virtual_schools(years, sf) if exclude_virtual else None
+    if exclude_virtual:
+        print(f"  CCD: leaving out {len(virtual_schools)} fully virtual schools")
     frames = []
     for year in years:
         print(f"  KSDE/CCD single grades {year}…")
         try:
-            frame = _fetch_year_grades(year, leaid_county, sf)
+            frame = _fetch_year_grades(year, leaid_county, sf, virtual_schools)
             if not frame.empty:
                 frames.append(frame)
         except Exception as exc:
@@ -423,6 +477,8 @@ def fetch_ksde_grades(
     if not frames:
         return pd.DataFrame(columns=["state_fips", "county_fips", "year", "grade", "enrollment"])
     df = pd.concat(frames, ignore_index=True).sort_values(["county_fips", "year", "grade"]).reset_index(drop=True)
+    if exclude_virtual:
+        df["virtual_excluded"] = True
     save_if_complete(df, cache_file, years, sorted(df["year"].unique()), "KSDE single-grade enrollment")
     return df
 
@@ -522,6 +578,9 @@ def apply_ksde_override(
 
     lo, hi = RATIO_BOUNDS
     bl_mask = acs["year"] == baseline_year
+    method = f"ccd_ratio_{anchor_year}_{target_year}"
+    if "virtual_excluded" in grades_df.columns and bool(grades_df["virtual_excluded"].all()):
+        method += "_novirtual"
     rows = []
     for col, grades in BAND_GRADES.items():
         if col not in acs.columns:
@@ -544,7 +603,7 @@ def apply_ksde_override(
             acs.loc[mask, col] = patched
             if status != "kept_acs_small_or_missing":
                 acs.loc[mask, "ksde_override"] = True
-                acs.loc[mask, "ksde_method"] = f"ccd_ratio_{anchor_year}_{target_year}"
+                acs.loc[mask, "ksde_method"] = method
             rows.append({"county_fips": county, "band": col, "anchor_year": anchor_year, "target_year": target_year,
                          "anchor_enrollment": a, "target_enrollment": t, "raw_ratio": raw, "applied_ratio": applied,
                          "acs_value": acs_value, "patched_value": patched, "status": status})

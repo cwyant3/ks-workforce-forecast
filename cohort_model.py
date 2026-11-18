@@ -21,6 +21,12 @@ run_all_counties pools every county in the state (fit_migration_model):
     long-run rate, a statewide shift shared by every county, year-to-year
     shocks, and sampling error in the ACS baseline count itself.
 
+Refined estimator (2026-11-18, Colorado, Missouri, Nebraska and Oklahoma; see
+forecast_settings.py and fit_refined_migration_model): survey error comes from
+published ACS margins, small counties carry extra volatility that does not
+reverse, and the mean tilts with county size. Kansas keeps the 2026-11-17
+estimator until its release is revisited.
+
 The ranges are model ranges conditional on these assumptions. See
 docs/cohort-migration-model.md for the estimator and its backtest.
 """
@@ -163,7 +169,7 @@ class CountyCohortModel:
             self.mig_mean_sd  = float(migration["mig_mean_sd"])
             self.mig_state_sd = float(migration["mig_state_sd"])
             self.base_cv      = float(migration["base_cv"])
-            self.migration_method = "state_pooled_shrinkage"
+            self.migration_method = str(migration.get("method", "state_pooled_shrinkage"))
 
     # ── Migration estimation ────────────────────────────────────────────────
 
@@ -458,8 +464,12 @@ def _fit_variance_components(x: np.ndarray, inv_n: np.ndarray, noise: np.ndarray
     return np.array(unpack(best.x))
 
 
-def fit_migration_model(acs_df: pd.DataFrame, phi: float = MIGRATION_AR1):
+def fit_migration_model(acs_df: pd.DataFrame, phi: float = MIGRATION_AR1, refined: bool = False):
     """Pool every county's residual rates into one state model.
+
+    ``refined`` selects fit_refined_migration_model (2026-11-18), which needs
+    the working_age_survey_cv column. The default is the 2026-11-17 estimator
+    described below, unchanged.
 
     Returns (per-county parameter frame indexed by county_fips, info dict), or
     (None, info) when the state lacks enough history for a pooled fit.
@@ -473,6 +483,8 @@ def fit_migration_model(acs_df: pd.DataFrame, phi: float = MIGRATION_AR1):
     to the statewide rate and leaves large counties near their own. The
     statewide rate is population-weighted, so it reflects the large counties.
     """
+    if refined:
+        return fit_refined_migration_model(acs_df, phi)
     helper = CountyCohortModel({}, [], n_sim=1)
     latest_year = acs_df["year"].max()
     records = {}
@@ -547,12 +559,171 @@ def fit_migration_model(acs_df: pd.DataFrame, phi: float = MIGRATION_AR1):
     return pd.DataFrame.from_dict(rows, orient="index"), info
 
 
+SURVEY_CV_COL = "working_age_survey_cv"   # written by fetch_acs.fetch_year
+
+
+def _fit_refined_components(x: np.ndarray, inv_n: np.ndarray, survey: np.ndarray) -> tuple[float, float, float]:
+    """Maximum-likelihood (persistent, transient, size-related) variances.
+
+    For county i the centred residual rates across periods have covariance
+        tau2·J + (omega2 + nu / N_i)·I + survey_i
+    where survey_i is known from published ACS margins (it reverses: adjacent
+    periods share a vintage with opposite sign) and nu / N_i is volatility
+    that grows as counties get smaller and does not reverse. With one period,
+    tau2 and omega2 are not separable; their sum is returned as tau2.
+    """
+    n_periods = x.shape[1]
+    ones, eye = np.ones((n_periods, n_periods)), np.eye(n_periods)
+
+    def unpack(params):
+        values = np.exp(np.clip(params, -40.0, 10.0))
+        return (values[0], values[1], values[2]) if n_periods > 1 else (values[0], 0.0, values[1])
+
+    def negative_log_likelihood(params):
+        tau2, omega2, nu = unpack(params)
+        sigma = tau2 * ones + (omega2 + nu * inv_n[:, None, None]) * eye + survey
+        sign, logdet = np.linalg.slogdet(sigma)
+        if (sign <= 0).any():
+            return np.inf
+        quad = np.einsum("ik,ik->i", x, np.linalg.solve(sigma, x[..., None])[..., 0])
+        return float(np.sum(logdet + quad))
+
+    rate_var = max(float(np.mean(x ** 2)), 1e-10)
+    best = None
+    for share in (0.3, 0.8):
+        for nu0 in (0.05, 1.0):
+            start = ([rate_var * share, rate_var * (1 - share), nu0] if n_periods > 1 else [rate_var, nu0])
+            result = minimize(negative_log_likelihood, np.log(start), method="Nelder-Mead",
+                              options={"xatol": 1e-7, "fatol": 1e-9, "maxiter": 8000})
+            if best is None or result.fun < best.fun:
+                best = result
+    return unpack(best.x)
+
+
+def fit_refined_migration_model(acs_df: pd.DataFrame, phi: float = MIGRATION_AR1):
+    """State-pooled migration model with the 2026-11-18 refinements.
+
+    Same model as fit_migration_model, in annual rates, with three changes:
+
+        rate_ik = state_k + slope·z_i + county_i + transient_ik + survey error
+
+    1. Survey error is not estimated. Its variance for each county and vintage
+       comes from the published ACS margins (working_age_survey_cv), so the
+       fit can no longer set it to zero or inflate it.
+    2. transient_ik has variance omega2 + nu / N_i: small counties are more
+       volatile, and that part does not reverse in the next period.
+    3. The mean tilts with county size. z_i is log working-age population,
+       centred at its population-weighted mean, so the population-weighted
+       mean of state_k + slope·z_i is still the statewide rate state_k. Only
+       the slope is estimated (generalized least squares).
+
+    Returns the same (per-county frame, info) pair as fit_migration_model;
+    mig_annual_sd now differs by county.
+    """
+    if SURVEY_CV_COL not in acs_df.columns:
+        raise ValueError(f"The refined migration model needs the {SURVEY_CV_COL} column "
+                         "(fetch_acs.fetch_all with require_survey_error=True).")
+    helper = CountyCohortModel({}, [], n_sim=1)
+    records = {}
+    for fips, group in acs_df.groupby("county_fips"):
+        chain = nonoverlapping_chain(group.to_dict("records"))
+        years = tuple(int(row["year"]) for row in chain)
+        rates = [helper._migration_residual_rate(prev, curr) if _has_cohorts(prev) else None
+                 for prev, curr in zip(chain, chain[1:])]
+        size = float(np.mean([float(row.get("pop_working_age", 0) or 0) for row in chain]))
+        rel = np.array([float(row.get(SURVEY_CV_COL, np.nan)) ** 2 for row in chain])
+        # A vintage with too many unpublished margins borrows the average of the others.
+        if np.isnan(rel).any() and not np.isnan(rel).all():
+            rel = np.where(np.isnan(rel), np.nanmean(rel), rel)
+        records[fips] = (years, rates, size, rel)
+
+    info = {"method": "county_history_only", "counties_fitted": 0}
+    if not records:
+        return None, info
+    chain_years = pd.Series([r[0] for r in records.values()]).mode().iloc[0]
+    spans = np.diff(chain_years).astype(float)
+    fitted = [fips for fips, (years, rates, size, rel) in records.items()
+              if years == chain_years and size > 0 and rates and all(r is not None for r in rates)
+              and np.isfinite(rel).all()]
+    if len(spans) == 0 or len(fitted) < MIN_POOLED_COUNTIES:
+        return None, info
+
+    rates = np.array([records[f][1] for f in fitted])
+    sizes = np.array([records[f][2] for f in fitted])
+    rel = np.array([records[f][3] for f in fitted])
+    n_periods = len(spans)
+    state_rates = (rates * sizes[:, None]).sum(axis=0) / sizes.sum()
+    log_size_mean = float(np.average(np.log(sizes), weights=sizes))
+    z = np.log(sizes) - log_size_mean
+
+    # Sampling error of period k is (e_end - e_start) / span_k in relative terms.
+    survey = np.zeros((len(fitted), n_periods, n_periods))
+    for k in range(n_periods):
+        survey[:, k, k] = (rel[:, k] + rel[:, k + 1]) / spans[k] ** 2
+        if k < n_periods - 1:
+            survey[:, k, k + 1] = survey[:, k + 1, k] = -rel[:, k + 1] / (spans[k] * spans[k + 1])
+
+    ones = np.ones(n_periods)
+    ones_m, eye = np.outer(ones, ones), np.eye(n_periods)
+    slope = 0.0
+    centred = rates - state_rates
+    tau2, omega2, nu = _fit_refined_components(centred, 1.0 / sizes, survey)
+    for _ in range(4):   # slope and variances depend on each other; this settles quickly
+        sigma = tau2 * ones_m + (omega2 + nu / sizes[:, None, None]) * eye + survey
+        weight = np.linalg.solve(sigma, np.broadcast_to(ones, (len(fitted), n_periods))[..., None])[..., 0]
+        slope = float(np.sum(z * np.einsum("ik,ik->i", weight, rates - state_rates))
+                      / np.sum(z ** 2 * weight.sum(axis=1)))
+        centred = rates - state_rates - slope * z[:, None]
+        tau2, omega2, nu = _fit_refined_components(centred, 1.0 / sizes, survey)
+
+    if n_periods == 1:
+        tau2, omega2 = DEFAULT_PERSISTENT_SHARE * tau2, (1 - DEFAULT_PERSISTENT_SHARE) * tau2
+        state_sd_period = DEFAULT_STATE_SD
+    else:
+        state_sd_period = float(np.std(state_rates, ddof=1))
+    state_mean = float(np.average(state_rates, weights=spans))
+    state_sd = float(state_sd_period * np.sqrt(1 + 1 / n_periods))
+    factor = _period_average_factor(spans.mean(), phi)
+
+    position = {fips: i for i, fips in enumerate(fitted)}
+    rows = {}
+    for fips, (years, county_rates, size, county_rel) in records.items():
+        zi = float(np.log(size) - log_size_mean) if size > 0 else 0.0
+        transient = omega2 + (nu / size if size > 0 else 0.0)
+        latest_rel = float(county_rel[-1]) if len(county_rel) and np.isfinite(county_rel[-1]) else 0.0
+        row = {"mig_mean": state_mean + slope * zi, "mig_mean_sd": float(np.sqrt(tau2)),
+               "mig_annual_sd": float(np.sqrt(transient / factor)), "mig_state_sd": state_sd,
+               "base_cv": float(np.sqrt(latest_rel)), "mig_raw": np.nan, "mig_shrink_weight": 0.0,
+               "method": "state_pooled_refined"}
+        if fips in position:
+            i = position[fips]
+            sigma = tau2 * ones_m + transient * eye + survey[i]
+            solve = np.linalg.solve(sigma, np.column_stack([centred[i], ones]))
+            reliability = tau2 * float(ones @ solve[:, 1])
+            row["mig_mean"] = state_mean + slope * zi + tau2 * float(ones @ solve[:, 0])
+            row["mig_mean_sd"] = float(np.sqrt(max(tau2 * (1 - reliability), 0.0)))
+            row["mig_raw"] = float(np.average(np.array(county_rates), weights=spans))
+            row["mig_shrink_weight"] = reliability
+        rows[fips] = row
+
+    info = {"method": "state_pooled_refined", "counties_fitted": len(fitted),
+            "chain_years": list(chain_years), "state_period_rates": state_rates.tolist(),
+            "state_mean": state_mean, "state_sd": state_sd,
+            "persistent_var": float(tau2), "transient_var": float(omega2),
+            "size_volatility": float(nu), "size_slope": slope, "log_size_mean": log_size_mean,
+            "sampling_kappa": float("nan"), "survey_error": "published_margins",
+            "annual_sd": float(np.sqrt(omega2 / factor)),
+            "persistent_share_assumed": n_periods == 1, "ar1": phi}
+    return pd.DataFrame.from_dict(rows, orient="index"), info
+
+
 def run_all_counties(acs_df: pd.DataFrame,
                      start_year: int = 2026,
                      end_year: int   = 2035,
                      n_sim: int      = 2000,
                      return_state_simulations: bool = False,
-                     random_seed: int | None = DEFAULT_RANDOM_SEED):
+                     random_seed: int | None = DEFAULT_RANDOM_SEED,
+                     refined: bool = False):
     """
     Run CountyCohortModel for every county in the ACS DataFrame.
 
@@ -561,6 +732,7 @@ def run_all_counties(acs_df: pd.DataFrame,
     acs_df : DataFrame from fetch_acs.fetch_all()
     start_year, end_year : forecast window
     n_sim : Monte Carlo draws per county
+    refined : use fit_refined_migration_model (see forecast_settings.py)
 
     Returns
     -------
@@ -575,7 +747,10 @@ def run_all_counties(acs_df: pd.DataFrame,
     if random_seed is not None:
         print(f"  Random seed: {random_seed}")
 
-    migration, info = fit_migration_model(acs_df)
+    migration, info = fit_migration_model(acs_df, refined=refined)
+    if refined and migration is not None:
+        print(f"  Refined estimator: size slope {info['size_slope']*100:+.3f} points per log unit, "
+              f"size-related volatility {info['size_volatility']:.3f} / N, survey error from published margins")
     if migration is None:
         print("  Migration: too little history for a state-pooled fit; "
               "each county uses its own residual and annual shocks only.")

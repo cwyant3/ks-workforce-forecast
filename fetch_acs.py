@@ -148,14 +148,54 @@ def _get(url: str, params: dict, retries: int = 3) -> list:
             ) from None
 
 
+# Published 90% margins divide by this to give a standard error.
+MOE_Z = 1.645
+SURVEY_CV_COL = "working_age_survey_cv"
+
+
+def working_age_survey_cv(df: pd.DataFrame) -> pd.Series:
+    """Relative sampling error of the 18-64 count, from published cell margins.
+
+    The ACS controls each county's total population to the population
+    estimates, so the working-age count varies in the sample only through the
+    age split. Root-sum-of-squares over the working-age cells (w) and over the
+    remaining cells (c) each overstate that; for a split of a fixed total the
+    sampling variance is w*c / (w + c).
+
+    A cell the Census Bureau reports as controlled (margin not published) has
+    no sampling error and counts as zero. A county with more than half of
+    either group's margins unpublished returns NaN, never zero.
+    """
+    def group(variables: list[str]) -> tuple[pd.Series, pd.Series]:
+        frame = pd.concat(
+            [pd.to_numeric(df.get(v[:-1] + "M", pd.Series(float("nan"), index=df.index)),
+                           errors="coerce").where(lambda s: s >= 0) for v in variables], axis=1)
+        return (frame / MOE_Z).pow(2).sum(axis=1), frame.isna().mean(axis=1)
+
+    working = [v for g in WORKFORCE_GROUPS for v in AGE_GROUPS[g]]
+    others = [v for g in YOUTH_GROUPS + RETIREMENT_GROUPS for v in AGE_GROUPS[g]]
+    w, w_missing = group(working)
+    c, c_missing = group(others)
+    count = (pd.to_numeric(df["pop_working_age"], errors="coerce") if "pop_working_age" in df.columns
+             else df[[v for v in working if v in df.columns]].sum(axis=1))
+    variance = (w * c / (w + c)).where((w + c) > 0)
+    usable = (w_missing <= 0.5) & (c_missing <= 0.5) & (count > 0)
+    return (variance.pow(0.5) / count).where(usable)
+
+
 def _chunks(items: list[str], size: int) -> list[list[str]]:
     return [items[i : i + size] for i in range(0, len(items), size)]
 
 
 def fetch_year(year: int, state_fips: str = "20",
                api_key: str | None = None,
-               cache_dir: Path | None = None) -> pd.DataFrame:
-    """Fetch full age distribution for all counties in state for one ACS year."""
+               cache_dir: Path | None = None,
+               require_survey_error: bool = False) -> pd.DataFrame:
+    """Fetch full age distribution for all counties in state for one ACS year.
+
+    ``require_survey_error`` refuses a cached file that predates the
+    working_age_survey_cv column (added 2026-11-18) and refetches it.
+    """
 
     cache_file = (cache_dir / f"acs5_{year}_s{state_fips}.parquet") if cache_dir else None
     if cache_file and cache_file.exists():
@@ -164,8 +204,15 @@ def fetch_year(year: int, state_fips: str = "20",
         cached = _add_acs_metadata(cached, year, state_fips)
         cache_ver = int(cached["acs_lf_schema_version"].iloc[0]) \
             if "acs_lf_schema_version" in cached.columns and len(cached) else 0
-        if all(c in cached.columns for c in ACS_LF_STATUS_COLS) and cache_ver >= B23001_SCHEMA_VERSION:
+        # Caches written before 2026-11-18 hold the cell margins but not the column.
+        if SURVEY_CV_COL not in cached.columns and MALE_VARS[0][:-1] + "M" in cached.columns:
+            cached[SURVEY_CV_COL] = working_age_survey_cv(cached)
+        has_survey_error = SURVEY_CV_COL in cached.columns
+        if (all(c in cached.columns for c in ACS_LF_STATUS_COLS) and cache_ver >= B23001_SCHEMA_VERSION
+                and (has_survey_error or not require_survey_error)):
             return cached
+        if require_survey_error and not has_survey_error:
+            print(f"  [cache stale] {year} lacks {SURVEY_CV_COL}; refetching")
         print(f"  [cache stale] {year} ACS labor-force status missing or schema "
               f"v{cache_ver} < v{B23001_SCHEMA_VERSION}; refetching")
 
@@ -236,6 +283,7 @@ def fetch_year(year: int, state_fips: str = "20",
     df["pop_total"]        = df[TOTAL_POP]
     df["pop_total_moe"] = df[TOTAL_POP[:-1] + "M"]
     df["moe_confidence_level"] = 0.90
+    df[SURVEY_CV_COL] = working_age_survey_cv(df)
     df = _add_labor_force_status(df)
     df["year"] = year
     df = _add_acs_metadata(df, year, state_fips)
@@ -439,12 +487,18 @@ def fetch_acs_supply(year: int = 2024, state_fips: str = "20",
 
 def fetch_all(state_fips: str = "20",
               api_key: str | None = None,
-              cache_dir: Path | None = None) -> pd.DataFrame:
-    """Fetch all ACS years and return combined DataFrame."""
+              cache_dir: Path | None = None,
+              extra_years: tuple[int, ...] = (),
+              require_survey_error: bool = False) -> pd.DataFrame:
+    """Fetch all ACS years and return combined DataFrame.
+
+    ``extra_years`` adds vintages to ACS_YEARS for one state (the 2005-2009
+    vintage gives the migration model a third non-overlapping period).
+    """
     frames = []
-    for year in ACS_YEARS:
+    for year in sorted(set(ACS_YEARS) | set(extra_years)):
         print(f"Fetching ACS 5-yr {year} (state {state_fips})…")
-        df = fetch_year(year, state_fips, api_key, cache_dir)
+        df = fetch_year(year, state_fips, api_key, cache_dir, require_survey_error)
         frames.append(df)
         time.sleep(2)
     combined = pd.concat(frames, ignore_index=True)

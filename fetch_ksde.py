@@ -224,17 +224,80 @@ def _fetch_school_grade(year: int, grade: int, state_fips: str) -> list[dict]:
     return _paginate(url, {"fips": int(state_fips.zfill(2)), "race": 99, "sex": 99})
 
 
+# A district that reports in only some of the requested years breaks the
+# series. When such districts hold this share or more of a county's enrollment
+# in any year, they are a reporting gap or a reorganization, not a change in
+# population, and the county's ratio is taken from its other districts. Below
+# the share they are kept: a small charter or district that opens or closes
+# usually exchanges students with districts in the same county.
+DISTRICT_BREAK_SHARE = 0.10
+
+
+def find_district_breaks(district_totals: pd.DataFrame, leaid_county: dict[str, str],
+                         share: float = DISTRICT_BREAK_SHARE) -> set[str]:
+    """Districts to leave out of every year.
+
+    ``district_totals`` has columns leaid, year, enrollment (K-12 total, valid
+    counts only). Found 2026-11-18: Milan C-2 (Sullivan County, Missouri) is
+    absent from the 2024 district file, which cut the county's enrollment by
+    two thirds; and a Nebraska unified district counted in Clay County split
+    into one district there and one in Nuckolls County.
+    """
+    if district_totals.empty:
+        return set()
+    years = sorted(int(y) for y in district_totals["year"].unique())
+    wide = (district_totals.assign(leaid=district_totals["leaid"].astype(str))
+            .pivot_table(index="leaid", columns="year", values="enrollment", aggfunc="sum")
+            .reindex(columns=years).fillna(0))
+    wide = wide[[d in leaid_county for d in wide.index]]
+    if wide.empty:
+        return set()
+    county = pd.Series([leaid_county[d] for d in wide.index], index=wide.index)
+    reporting = (wide > 0).sum(axis=1)
+    partial = (reporting >= 1) & (reporting < len(years))
+    breaks: set[str] = set()
+    county_totals = wide.groupby(county).sum()
+    for c, part in wide[partial].groupby(county[partial]):
+        total = county_totals.loc[c]
+        largest = float((part.sum() / total.where(total > 0)).max())
+        if np.isfinite(largest) and largest >= share:
+            breaks |= set(part.index)
+    return breaks
+
+
+def _fetch_district_totals(years: list[int], state_fips: str) -> pd.DataFrame:
+    """K-12 enrollment by district and year from the district file (valid counts only)."""
+    rows = []
+    for year in years:
+        for grade in range(0, 13):
+            for row in _fetch_grade(year, grade, state_fips):
+                enroll = row.get("enrollment")
+                if enroll is None or int(enroll) < 0:
+                    continue
+                rows.append({"leaid": str(row.get("leaid", "")), "year": year, "enrollment": int(enroll)})
+            time.sleep(0.2)
+    if not rows:
+        return pd.DataFrame(columns=["leaid", "year", "enrollment"])
+    return pd.DataFrame(rows).groupby(["leaid", "year"], as_index=False)["enrollment"].sum()
+
+
 def _fetch_year_grades(year: int, leaid_county: dict[str, str], state_fips: str = _KS_FIPS,
-                       virtual_schools: dict[str, str] | None = None) -> pd.DataFrame:
+                       virtual_schools: dict[str, str] | None = None,
+                       skip_districts: set[str] | None = None) -> pd.DataFrame:
     """Fetch single grades K-12 for one year; aggregate to county x grade.
 
     ``virtual_schools`` ({school id: district id}) are subtracted from their
-    district's county.
+    district's county. ``skip_districts`` are left out altogether, together
+    with any virtual school they run.
     """
+    skip = skip_districts or set()
     out: dict[tuple[str, int], int] = {}
     for grade in range(0, 13):
         for row in _fetch_grade(year, grade, state_fips):
-            county = leaid_county.get(str(row.get("leaid", "")))
+            leaid = str(row.get("leaid", ""))
+            if leaid in skip:
+                continue
+            county = leaid_county.get(leaid)
             enroll = row.get("enrollment")
             # CCD codes suppressed/missing counts as negatives; never count them as zero.
             if county is None or enroll is None or int(enroll) < 0:
@@ -243,6 +306,8 @@ def _fetch_year_grades(year: int, leaid_county: dict[str, str], state_fips: str 
         if virtual_schools:
             for row in _fetch_school_grade(year, grade, state_fips):
                 district = virtual_schools.get(str(row.get("ncessch", "")).zfill(12))
+                if district in skip:
+                    continue
                 county = leaid_county.get(district) if district else None
                 enroll = row.get("enrollment")
                 if county is None or enroll is None or int(enroll) < 0 or (county, grade) not in out:
@@ -429,6 +494,7 @@ def fetch_ksde_grades(
     cache_dir: Path,
     state_fips: str = "20",
     exclude_virtual: bool = False,
+    consistent_districts: bool = False,
 ) -> pd.DataFrame:
     """
     Single-grade (K-12) CCD enrollment by county for the requested years.
@@ -445,12 +511,18 @@ def fetch_ksde_grades(
     virtual; see _fetch_full_virtual_schools. That variant has its own cache
     file (suffix _novirtual) and carries a virtual_excluded column, so the
     two can never be mistaken for each other.
+
+    ``consistent_districts`` (2026-11-18) leaves out districts that report in
+    only some of the requested years where they are a large part of their
+    county; see find_district_breaks. Cache suffix _panel, column
+    district_breaks_excluded.
     """
     sf = state_fips.zfill(2)
     years = sorted({int(y) for y in years})
     cache_dir.mkdir(parents=True, exist_ok=True)
     stem = "ksde_grades" if sf == _KS_FIPS else f"ccd_grades_s{sf}"
-    cache_file = cache_dir / (f"{stem}_novirtual.parquet" if exclude_virtual else f"{stem}.parquet")
+    suffix = ("_novirtual" if exclude_virtual else "") + ("_panel" if consistent_districts else "")
+    cache_file = cache_dir / f"{stem}{suffix}.parquet"
     cached = load_fresh_cache(cache_file, years, "KSDE single-grade enrollment")
     if cached is not None:
         return cached[cached["year"].isin(years)].reset_index(drop=True)
@@ -465,11 +537,16 @@ def fetch_ksde_grades(
     virtual_schools = _fetch_full_virtual_schools(years, sf) if exclude_virtual else None
     if exclude_virtual:
         print(f"  CCD: leaving out {len(virtual_schools)} fully virtual schools")
+    skip_districts: set[str] | None = None
+    if consistent_districts:
+        skip_districts = find_district_breaks(_fetch_district_totals(years, sf), leaid_county)
+        print(f"  CCD: leaving out {len(skip_districts)} districts that report in only some years "
+              f"and hold {DISTRICT_BREAK_SHARE:.0%} or more of their county: {sorted(skip_districts)}")
     frames = []
     for year in years:
         print(f"  KSDE/CCD single grades {year}…")
         try:
-            frame = _fetch_year_grades(year, leaid_county, sf, virtual_schools)
+            frame = _fetch_year_grades(year, leaid_county, sf, virtual_schools, skip_districts)
             if not frame.empty:
                 frames.append(frame)
         except Exception as exc:
@@ -479,6 +556,8 @@ def fetch_ksde_grades(
     df = pd.concat(frames, ignore_index=True).sort_values(["county_fips", "year", "grade"]).reset_index(drop=True)
     if exclude_virtual:
         df["virtual_excluded"] = True
+    if consistent_districts:
+        df["district_breaks_excluded"] = True
     save_if_complete(df, cache_file, years, sorted(df["year"].unique()), "KSDE single-grade enrollment")
     return df
 

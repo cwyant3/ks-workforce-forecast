@@ -258,6 +258,16 @@ Kansas as adopted.
 5. **Youth update.** Colorado, Nebraska and Oklahoma now get the school-enrollment update
    Kansas and Missouri had, and all four states leave out schools NCES classes as fully
    virtual, because a statewide online school is counted in its district office's county.
+6. **Districts that report in only one year.** The youth update compares two years of
+   the CCD district file. A district present in only one of them, where such districts
+   hold a tenth or more of the county's enrollment in either year, is left out of both
+   years (`fetch_ksde.find_district_breaks`). Three counties are affected: Sullivan,
+   Missouri (Milan C-2 is missing from the 2024 file, which had cut the county's
+   enrollment by two thirds), and Clay and Nuckolls, Nebraska (a unified district counted
+   in Clay County split into one district there and one in Nuckolls). Smaller openings
+   and closings stay in the count, since their students usually move to or from districts
+   in the same county. The tenth is a judgment; the nearest county below it is Holt,
+   Missouri (9%), which is unchanged and unverified.
 
 ### Fit
 
@@ -335,8 +345,8 @@ reproduces the stored tables exactly (maximum difference 0).
 | State | 2035 median before | after | Change before | after |
 |---|---|---|---|---|
 | Colorado | 4,088,200 | 4,060,415 | +10.00% | +9.25% |
-| Missouri | 3,660,085 | 3,635,587 | −1.12% | −1.78% |
-| Nebraska | 1,211,625 | 1,220,195 | +4.17% | +4.90% |
+| Missouri | 3,660,085 | 3,635,658 | −1.12% | −1.78% |
+| Nebraska | 1,211,625 | 1,220,239 | +4.17% | +4.91% |
 | Oklahoma | 2,495,283 | 2,535,106 | +3.71% | +5.37% |
 
 | State | State 80% range before | after |

@@ -131,7 +131,7 @@ def main(state_fips: str = "20", api_key: str | None = None,
                 print(f"  Saved: {ksde_out.name}")
         anchor_year, target_year = ksde_override_years(int(acs_df["year"].max()))
         grades_df = fetch_ksde_grades([anchor_year, target_year], cache_dir=KSDE_CACHE, state_fips=state_fips,
-                                      exclude_virtual=use_refined)
+                                      exclude_virtual=use_refined, consistent_districts=use_refined)
         if not grades_df.empty:
             acs_df, ksde_diag = apply_ksde_override(acs_df, grades_df, return_diagnostics=True)
             diag_out = OUTPUT_DIR / f"ksde_youth_adjustment_s{state_fips}.parquet"

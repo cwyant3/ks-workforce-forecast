@@ -173,3 +173,56 @@ def test_youth_update_records_when_virtual_schools_were_left_out():
     marked = fetch_ksde.apply_ksde_override(acs, grades.assign(virtual_excluded=True))
     assert plain.ksde_method.iloc[0] == "ccd_ratio_2022_2024"
     assert marked.ksde_method.iloc[0] == "ccd_ratio_2022_2024_novirtual"
+
+
+def _district_totals(rows):
+    return pd.DataFrame(rows, columns=["leaid", "year", "enrollment"])
+
+
+def test_a_district_missing_from_one_year_is_left_out_when_it_is_a_large_part_of_its_county():
+    # Sullivan County, Missouri: one district of three is absent from the later file.
+    totals = _district_totals([("A", 2022, 628), ("B", 2022, 200), ("B", 2024, 190),
+                               ("C", 2022, 126), ("C", 2024, 110)])
+    county = {"A": "211", "B": "211", "C": "211"}
+    assert fetch_ksde.find_district_breaks(totals, county) == {"A"}
+
+
+def test_a_reorganized_district_is_left_out_of_both_counties_it_touches():
+    # A unified district counted in county 035 splits into one district there and one in 129.
+    totals = _district_totals([("OLD", 2022, 618), ("NEW1", 2024, 421), ("NEW2", 2024, 206),
+                               ("K", 2022, 600), ("K", 2024, 557), ("N", 2022, 372), ("N", 2024, 390)])
+    county = {"OLD": "035", "NEW1": "035", "K": "035", "NEW2": "129", "N": "129"}
+    assert fetch_ksde.find_district_breaks(totals, county) == {"OLD", "NEW1", "NEW2"}
+
+
+def test_small_openings_and_closings_stay_in_the_count():
+    # A charter that opens with under a tenth of the county's students trades with its neighbours.
+    totals = _district_totals([("BIG", 2022, 10000), ("BIG", 2024, 9400), ("CHARTER", 2024, 800),
+                               ("CLOSED", 2022, 300)])
+    county = {"BIG": "143", "CHARTER": "143", "CLOSED": "143"}
+    assert fetch_ksde.find_district_breaks(totals, county) == set()
+    # The test is by county: once it trips, every part-time district there is left out.
+    assert fetch_ksde.find_district_breaks(totals, county, share=0.05) == {"CHARTER", "CLOSED"}
+
+
+def test_no_district_is_left_out_when_every_district_reports_every_year():
+    totals = _district_totals([("A", 2022, 50), ("A", 2024, 40), ("B", 2022, 900), ("B", 2024, 950)])
+    assert fetch_ksde.find_district_breaks(totals, {"A": "001", "B": "001"}) == set()
+    assert fetch_ksde.find_district_breaks(_district_totals([]), {}) == set()
+
+
+def test_skipped_districts_and_their_virtual_schools_are_left_out_of_the_county(monkeypatch):
+    monkeypatch.setattr(fetch_ksde.time, "sleep", lambda s: None)
+    monkeypatch.setattr(fetch_ksde, "_fetch_grade",
+                        lambda year, grade, state: [{"leaid": "A", "enrollment": 100}, {"leaid": "B", "enrollment": 40}])
+    monkeypatch.setattr(fetch_ksde, "_fetch_school_grade",
+                        lambda year, grade, state: [{"ncessch": "000000000001", "enrollment": 30},
+                                                    {"ncessch": "000000000002", "enrollment": 10}])
+    virtual = {"000000000001": "A", "000000000002": "B"}
+    county = {"A": "001", "B": "001"}
+    kept = fetch_ksde._fetch_year_grades(2024, county, "31", virtual)
+    assert set(kept.enrollment) == {100 + 40 - 30 - 10}
+    skipped = fetch_ksde._fetch_year_grades(2024, county, "31", virtual, skip_districts={"B"})
+    assert set(skipped.enrollment) == {100 - 30}
+    # The default call is unchanged: Kansas does not use this rule.
+    assert fetch_ksde._fetch_year_grades(2024, county, "20").enrollment.eq(140).all()

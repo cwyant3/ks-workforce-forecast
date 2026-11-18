@@ -9,7 +9,9 @@ Colorado, Missouri, Nebraska and Oklahoma use, together:
     that grows as counties get smaller, and a mean that tilts with county size
     around the population-weighted statewide rate;
   - a youth update that leaves out schools NCES classes as fully virtual,
-    whose students do not live in the district office's county.
+    whose students do not live in the district office's county, and
+    districts that report in only one of the two years where they are a
+    tenth or more of their county (a reporting gap or a reorganization).
 
 Kansas is deliberately absent. Its forecast sits behind adopted release
 20261117T221214_8929b5f9, and moving it is a release decision, not a side

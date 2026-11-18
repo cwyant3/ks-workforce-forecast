@@ -882,7 +882,7 @@ def ci_chart(df: pd.DataFrame, title: str,
         x=pd.concat([df["year"], df["year"].iloc[::-1]]),
         y=pd.concat([df["p75"], df["p25"].iloc[::-1]]),
         fill="toself", fillcolor="rgba(0,63,135,0.28)",
-        line=dict(color="rgba(255,255,255,0)"), name="50% PI (IQR)", hoverinfo="skip",
+        line=dict(color="rgba(255,255,255,0)"), name="50% model range (IQR)", hoverinfo="skip",
     ))
     fig.add_trace(go.Scatter(
         x=df["year"], y=df["p50"],
@@ -1726,7 +1726,7 @@ def main():
                 x=pd.concat([county_proj["year"], county_proj["year"].iloc[::-1]]),
                 y=pd.concat([county_proj["p75"], county_proj["p25"].iloc[::-1]]),
                 fill="toself", fillcolor="rgba(0,63,135,0.28)",
-                line=dict(color="rgba(0,0,0,0)"), name="50% PI (IQR)", hoverinfo="skip",
+                line=dict(color="rgba(0,0,0,0)"), name="50% model range (IQR)", hoverinfo="skip",
             ))
         fig_c.add_trace(go.Scatter(
             x=county_proj["year"], y=county_proj["p50"],

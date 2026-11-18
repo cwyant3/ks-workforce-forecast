@@ -1032,15 +1032,19 @@ def state_effective_labor_chart(part_df: pd.DataFrame,
 # ── Main app ──────────────────────────────────────────────────────────────────
 def main():
 
-    # ── Sidebar — state selector at the very top ──────────────────────────
+    # ── Sidebar — state and county selectors at the very top ──────────────
     with st.sidebar:
         st.image(str(LOGO_PATH), width="stretch")
         st.markdown("---")
-        st.markdown("### State")
+        st.markdown("### Location")
         state_names = sorted(STATE_FIPS.keys())
         default_idx = state_names.index("Kansas")
-        selected_state = st.selectbox("Select state", state_names, index=default_idx)
+        selected_state = st.selectbox("State", state_names, index=default_idx)
         state_fips     = STATE_FIPS[selected_state]
+
+        # County selector sits directly under the state; it is filled once
+        # the state's data has loaded (the default depends on the mode).
+        county_selector_placeholder = st.empty()
 
         # Show which states already have data pre-computed
         available = [FIPS_STATE[f.stem.split("_s")[1]]
@@ -1063,9 +1067,6 @@ def main():
             show_50ci = False
             min_pop = 0
             st.caption("Charts for presentation. Choose Full Explorer for the detailed model views.")
-
-        # County selector — only shown after data loads
-        county_selector_placeholder = st.empty()
 
         if view_mode == "Full Explorer":
             st.markdown("### Chart options")
